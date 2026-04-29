@@ -1,0 +1,28 @@
+.PHONY: run build test test-integration lint docker-up docker-down migrate-up migrate-down
+
+run:
+	go run ./cmd/server
+
+build:
+	go build -o bin/server ./cmd/server
+
+test:
+	go test -short ./... -v -count=1
+
+test-integration:
+	go test ./... -v -count=1 -timeout 180s
+
+lint:
+	golangci-lint run ./...
+
+docker-up:
+	docker-compose up --build -d
+
+docker-down:
+	docker-compose down
+
+migrate-up:
+	migrate -path migrations -database "$(DATABASE_URL)" up
+
+migrate-down:
+	migrate -path migrations -database "$(DATABASE_URL)" down
