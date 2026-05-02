@@ -97,7 +97,7 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repo string)
 		if rollbackErr := s.subs.UpdateStatus(ctx, sub.ID, model.StatusUnsubscribed); rollbackErr != nil {
 			log.Printf("failed to rollback subscription %d after email failure: %v", sub.ID, rollbackErr)
 		}
-		return fmt.Errorf("%w: %v", ErrEmailSendFailed, err)
+		return fmt.Errorf("%w: %w", ErrEmailSendFailed, err)
 	}
 
 	return nil
@@ -145,7 +145,7 @@ func (s *SubscriptionService) GetSubscriptions(ctx context.Context, email string
 func normalizeEmail(raw string) (string, error) {
 	addr, err := mail.ParseAddress(raw)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("parsing email address: %w", err)
 	}
 	return strings.ToLower(addr.Address), nil
 }
@@ -161,7 +161,7 @@ func parseRepo(repo string) (string, string, error) {
 func generateToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		return "", fmt.Errorf("generating random token: %w", err)
 	}
 	return hex.EncodeToString(b), nil
 }

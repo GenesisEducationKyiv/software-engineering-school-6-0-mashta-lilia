@@ -19,6 +19,8 @@ func newTestSubscriptionService(
 	return NewSubscriptionService(subs, repos, gh, mail)
 }
 
+const testEmail = "user@example.com"
+
 // --- Subscribe Tests ---
 
 func TestSubscribe_Success(t *testing.T) {
@@ -51,7 +53,7 @@ func TestSubscribe_Success(t *testing.T) {
 		},
 	)
 
-	err := svc.Subscribe(context.Background(), "user@example.com", "golang/go")
+	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -59,8 +61,8 @@ func TestSubscribe_Success(t *testing.T) {
 	if createdSub == nil {
 		t.Fatal("expected subscription to be created")
 	}
-	if createdSub.Email != "user@example.com" {
-		t.Errorf("email = %q, want %q", createdSub.Email, "user@example.com")
+	if createdSub.Email != testEmail {
+		t.Errorf("email = %q, want %q", createdSub.Email, testEmail)
 	}
 	if createdSub.RepoOwner != "golang" || createdSub.RepoName != "go" {
 		t.Errorf("repo = %s/%s, want golang/go", createdSub.RepoOwner, createdSub.RepoName)
@@ -71,8 +73,8 @@ func TestSubscribe_Success(t *testing.T) {
 	if createdSub.Token == "" {
 		t.Error("expected token to be generated")
 	}
-	if sentEmail != "user@example.com" {
-		t.Errorf("confirmation email sent to %q, want %q", sentEmail, "user@example.com")
+	if sentEmail != testEmail {
+		t.Errorf("confirmation email sent to %q, want %q", sentEmail, testEmail)
 	}
 	if sentToken != createdSub.Token {
 		t.Error("confirmation token mismatch")
@@ -109,7 +111,7 @@ func TestSubscribe_InvalidRepoFormat(t *testing.T) {
 
 	tests := []string{"", "noslash", "/", "owner/", "/repo", "a/b/c"}
 	for _, repo := range tests {
-		err := svc.Subscribe(context.Background(), "user@example.com", repo)
+		err := svc.Subscribe(context.Background(), testEmail, repo)
 		if !errors.Is(err, ErrInvalidRepo) {
 			t.Errorf("Subscribe(repo=%q): got %v, want ErrInvalidRepo", repo, err)
 		}
@@ -126,7 +128,7 @@ func TestSubscribe_RepoNotFound(t *testing.T) {
 		&mockMailer{},
 	)
 
-	err := svc.Subscribe(context.Background(), "user@example.com", "nonexistent/repo")
+	err := svc.Subscribe(context.Background(), testEmail, "nonexistent/repo")
 	if !errors.Is(err, ErrRepoNotFound) {
 		t.Errorf("got %v, want ErrRepoNotFound", err)
 	}
@@ -144,7 +146,7 @@ func TestSubscribe_AlreadyExists(t *testing.T) {
 		&mockMailer{},
 	)
 
-	err := svc.Subscribe(context.Background(), "user@example.com", "golang/go")
+	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 	if !errors.Is(err, ErrAlreadyExists) {
 		t.Errorf("got %v, want ErrAlreadyExists", err)
 	}
@@ -162,7 +164,7 @@ func TestSubscribe_GitHubAPIError(t *testing.T) {
 		&mockMailer{},
 	)
 
-	err := svc.Subscribe(context.Background(), "user@example.com", "golang/go")
+	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -239,7 +241,7 @@ func TestSubscribe_SMTPFailure_RollsBackSubscription(t *testing.T) {
 		},
 	)
 
-	err := svc.Subscribe(context.Background(), "user@example.com", "golang/go")
+	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 	if err == nil {
 		t.Fatal("expected error from SMTP failure")
 	}
@@ -461,14 +463,14 @@ func TestUnsubscribe_DBError_Propagates(t *testing.T) {
 
 func TestGetSubscriptions_Success(t *testing.T) {
 	expected := []model.Subscription{
-		{ID: 1, Email: "user@example.com", RepoOwner: "golang", RepoName: "go", Status: model.StatusActive},
+		{ID: 1, Email: testEmail, RepoOwner: "golang", RepoName: "go", Status: model.StatusActive},
 	}
 
 	svc := newTestSubscriptionService(
 		&mockSubscriptionRepo{
 			GetActiveByEmailFn: func(_ context.Context, email string) ([]model.Subscription, error) {
-				if email != "user@example.com" {
-					t.Errorf("queried email = %q, want %q", email, "user@example.com")
+				if email != testEmail {
+					t.Errorf("queried email = %q, want %q", email, testEmail)
 				}
 				return expected, nil
 			},
@@ -478,7 +480,7 @@ func TestGetSubscriptions_Success(t *testing.T) {
 		&mockMailer{},
 	)
 
-	subs, err := svc.GetSubscriptions(context.Background(), "user@example.com")
+	subs, err := svc.GetSubscriptions(context.Background(), testEmail)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -569,7 +571,7 @@ func TestGetSubscriptions_NormalizesEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if queriedEmail != "user@example.com" {
-		t.Errorf("queried email = %q, want %q", queriedEmail, "user@example.com")
+	if queriedEmail != testEmail {
+		t.Errorf("queried email = %q, want %q", queriedEmail, testEmail)
 	}
 }

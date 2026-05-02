@@ -80,7 +80,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("failed to create migrator: %v", err)
 	}
-	if err := mig.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := mig.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 

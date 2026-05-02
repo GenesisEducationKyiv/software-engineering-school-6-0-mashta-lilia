@@ -71,7 +71,7 @@ func (c *Client) doRequest(ctx context.Context, url string) (*http.Response, err
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("building GitHub request: %w", err)
 		}
 
 		req.Header.Set("Accept", "application/vnd.github.v3+json")
@@ -81,7 +81,7 @@ func (c *Client) doRequest(ctx context.Context, url string) (*http.Response, err
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("executing GitHub request: %w", err)
 		}
 
 		if resp.StatusCode != http.StatusTooManyRequests {
@@ -97,7 +97,7 @@ func (c *Client) doRequest(ctx context.Context, url string) (*http.Response, err
 		wait := parseRateLimitWait(resp.Header, attempt)
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("waiting for rate limit reset: %w", ctx.Err())
 		case <-time.After(wait):
 		}
 	}

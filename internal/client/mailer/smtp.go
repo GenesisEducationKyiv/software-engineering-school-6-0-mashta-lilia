@@ -117,5 +117,8 @@ func (m *SMTPMailer) sendWithContext(ctx context.Context, to, subject, body stri
 		return fmt.Errorf("closing email body: %w", err)
 	}
 
-	return client.Quit()
+	if err := client.Quit(); err != nil {
+		return fmt.Errorf("SMTP QUIT: %w", err)
+	}
+	return nil
 }

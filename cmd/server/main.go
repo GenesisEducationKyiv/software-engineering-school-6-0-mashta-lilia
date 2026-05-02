@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -42,7 +43,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create migrator: %v", err)
 	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 	log.Println("migrations applied successfully")

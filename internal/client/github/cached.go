@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -42,7 +43,7 @@ func (c *CachedClient) RepoExists(ctx context.Context, owner, name string) (bool
 	if err == nil {
 		return val == "1", nil
 	}
-	if err != redis.Nil {
+	if !errors.Is(err, redis.Nil) {
 		log.Printf("redis get error (repo_exists): %v", err)
 	}
 
@@ -74,7 +75,7 @@ func (c *CachedClient) GetLatestRelease(ctx context.Context, owner, name string)
 		}
 		log.Printf("redis unmarshal error (release): %v", unmarshalErr)
 
-	} else if err != redis.Nil {
+	} else if !errors.Is(err, redis.Nil) {
 		log.Printf("redis get error (release): %v", err)
 	}
 

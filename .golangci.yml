@@ -3,6 +3,7 @@ run:
 
 linters:
   enable:
+    # --- Basic ---
     - errcheck
     - govet
     - staticcheck
@@ -16,11 +17,39 @@ linters:
     - gosec
     - revive
 
+    # --- HTTP / DB safety ---
+    - bodyclose
+    - sqlclosecheck
+    - rowserrcheck
+    - noctx
+
+    # --- Error handling ---
+    - errorlint
+    - wrapcheck
+    - nilerr
+
+    # --- Context ---
+    - contextcheck
+
+    # --- Code quality ---
+    - goconst
+    - musttag
+    - usestdlibvars
+    - recvcheck
+    - unparam
+
+    # --- Metrics / Linting hygiene ---
+    - promlinter
+    - nolintlint
+
 linters-settings:
   gocyclo:
     min-complexity: 15
   dupl:
     threshold: 100
+  wrapcheck:
+    ignorePackageGlobs:
+      - "github-release-notifier/*"
 
 issues:
   exclude-rules:
@@ -28,3 +57,4 @@ issues:
       linters:
         - errcheck
         - dupl
+        - wrapcheck
