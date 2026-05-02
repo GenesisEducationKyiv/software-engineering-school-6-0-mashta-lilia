@@ -68,11 +68,12 @@ func (c *CachedClient) GetLatestRelease(ctx context.Context, owner, name string)
 	val, err := c.redis.Get(ctx, key).Result()
 	if err == nil {
 		var release model.Release
-		if unmarshalErr := json.Unmarshal([]byte(val), &release); unmarshalErr == nil {
+		unmarshalErr := json.Unmarshal([]byte(val), &release)
+		if unmarshalErr == nil {
 			return &release, nil
-		} else {
-			log.Printf("redis unmarshal error (release): %v", unmarshalErr)
 		}
+		log.Printf("redis unmarshal error (release): %v", unmarshalErr)
+
 	} else if err != redis.Nil {
 		log.Printf("redis get error (release): %v", err)
 	}

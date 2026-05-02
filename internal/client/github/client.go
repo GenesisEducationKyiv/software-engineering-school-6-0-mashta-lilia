@@ -128,5 +128,5 @@ func parseRateLimitWait(headers http.Header, attempt int) time.Duration {
 	}
 
 	// 3. Exponential backoff: 1s, 2s, 4s
-	return time.Duration(1<<uint(attempt)) * time.Second
+	return time.Duration(1<<min(attempt, 62)) * time.Second
 }
