@@ -31,6 +31,5 @@ func NewPostgresDB(databaseURL string) (*sql.DB, error) {
 	db.SetMaxIdleConns(dbMaxIdleConns)
 	db.SetConnMaxLifetime(dbConnMaxLifetime)
 	db.SetConnMaxIdleTime(dbConnMaxIdleTime)
-
 	return db, nil
 }
