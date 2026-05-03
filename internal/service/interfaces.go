@@ -5,7 +5,6 @@ import (
 	"github-release-notifier/internal/model"
 )
 
-//nolint:dupl // SubscriptionRepo interface is intentionally similar to its mock implementation
 type SubscriptionRepo interface {
 	Create(ctx context.Context, sub *model.Subscription) error
 	GetByToken(ctx context.Context, token string) (*model.Subscription, error)

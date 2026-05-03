@@ -9,6 +9,13 @@ import (
 	_ "github.com/lib/pq"
 )
 
+const (
+	dbMaxOpenConns    = 25
+	dbMaxIdleConns    = 10
+	dbConnMaxLifetime = 5 * time.Minute
+	dbConnMaxIdleTime = 1 * time.Minute
+)
+
 func NewPostgresDB(databaseURL string) (*sql.DB, error) {
 	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
@@ -19,10 +26,10 @@ func NewPostgresDB(databaseURL string) (*sql.DB, error) {
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(10)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	db.SetConnMaxIdleTime(1 * time.Minute)
+	db.SetMaxOpenConns(dbMaxOpenConns)
+	db.SetMaxIdleConns(dbMaxIdleConns)
+	db.SetConnMaxLifetime(dbConnMaxLifetime)
+	db.SetConnMaxIdleTime(dbConnMaxIdleTime)
 
 	return db, nil
 }

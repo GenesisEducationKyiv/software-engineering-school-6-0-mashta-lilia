@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
-	"time"
-
 	"github-release-notifier/internal/model"
+	"log/slog"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -44,7 +43,7 @@ func (c *CachedClient) RepoExists(ctx context.Context, owner, name string) (bool
 		return val == "1", nil
 	}
 	if !errors.Is(err, redis.Nil) {
-		log.Printf("redis get error (repo_exists): %v", err)
+		slog.Warn("redis get error (repo_exists)", "error", err)
 	}
 
 	exists, err := c.base.RepoExists(ctx, owner, name)
@@ -56,7 +55,7 @@ func (c *CachedClient) RepoExists(ctx context.Context, owner, name string) (bool
 	// a stale 404 if the user creates the repo and retries within the TTL.
 	if exists {
 		if setErr := c.redis.Set(ctx, key, "1", c.ttl).Err(); setErr != nil {
-			log.Printf("redis set error (repo_exists): %v", setErr)
+			slog.Warn("redis set error (repo_exists)", "error", setErr)
 		}
 	}
 
@@ -73,10 +72,9 @@ func (c *CachedClient) GetLatestRelease(ctx context.Context, owner, name string)
 		if unmarshalErr == nil {
 			return &release, nil
 		}
-		log.Printf("redis unmarshal error (release): %v", unmarshalErr)
-
+		slog.Warn("redis unmarshal error (release)", "error", unmarshalErr)
 	} else if !errors.Is(err, redis.Nil) {
-		log.Printf("redis get error (release): %v", err)
+		slog.Warn("redis get error (release)", "error", err)
 	}
 
 	release, err := c.base.GetLatestRelease(ctx, owner, name)
@@ -90,7 +88,7 @@ func (c *CachedClient) GetLatestRelease(ctx context.Context, owner, name string)
 	data, marshalErr := json.Marshal(release)
 	if marshalErr == nil {
 		if setErr := c.redis.Set(ctx, key, data, c.ttl).Err(); setErr != nil {
-			log.Printf("redis set error (release): %v", setErr)
+			slog.Warn("redis set error (release)", "error", setErr)
 		}
 	}
 

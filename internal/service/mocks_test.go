@@ -1,8 +1,8 @@
+//nolint:testpackage // mock helpers shared across service package tests
 package service
 
 import (
 	"context"
-
 	"github-release-notifier/internal/model"
 )
 
@@ -30,7 +30,9 @@ func (m *mockSubscriptionRepo) GetByToken(ctx context.Context, token string) (*m
 	return m.GetByTokenFn(ctx, token)
 }
 
-func (m *mockSubscriptionRepo) GetActiveByEmail(ctx context.Context, email string) ([]model.Subscription, error) {
+func (m *mockSubscriptionRepo) GetActiveByEmail(
+	ctx context.Context, email string,
+) ([]model.Subscription, error) {
 	if m.GetActiveByEmailFn == nil {
 		panic("mockSubscriptionRepo.GetActiveByEmail called but not configured")
 	}
@@ -44,7 +46,9 @@ func (m *mockSubscriptionRepo) GetEmailsByRepo(ctx context.Context, owner, name 
 	return m.GetEmailsByRepoFn(ctx, owner, name)
 }
 
-func (m *mockSubscriptionRepo) UpdateStatus(ctx context.Context, id int64, status model.SubscriptionStatus) error {
+func (m *mockSubscriptionRepo) UpdateStatus(
+	ctx context.Context, id int64, status model.SubscriptionStatus,
+) error {
 	if m.UpdateStatusFn == nil {
 		panic("mockSubscriptionRepo.UpdateStatus called but not configured")
 	}
@@ -127,7 +131,9 @@ func (m *mockMailer) SendConfirmation(ctx context.Context, email, token, repo st
 	return m.SendConfirmationFn(ctx, email, token, repo)
 }
 
-func (m *mockMailer) SendReleaseNotification(ctx context.Context, email, repo string, release *model.Release) error {
+func (m *mockMailer) SendReleaseNotification(
+	ctx context.Context, email, repo string, release *model.Release,
+) error {
 	if m.SendReleaseNotificationFn == nil {
 		panic("mockMailer.SendReleaseNotification called but not configured")
 	}

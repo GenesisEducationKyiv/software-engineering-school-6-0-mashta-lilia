@@ -1,13 +1,13 @@
+//nolint:testpackage // white-box tests that use mocks from mocks_test.go
 package service
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"testing"
-
 	"github-release-notifier/internal/model"
 	"github-release-notifier/internal/repository"
+	"testing"
 )
 
 func newTestSubscriptionService(

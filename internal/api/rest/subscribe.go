@@ -3,9 +3,8 @@ package rest
 import (
 	"encoding/json"
 	"errors"
-	"net/http"
-
 	"github-release-notifier/internal/service"
+	"net/http"
 )
 
 type subscribeRequest struct {
@@ -32,7 +31,8 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, service.ErrAlreadyExists):
 			respondError(w, http.StatusConflict, "subscription already exists")
 		case errors.Is(err, service.ErrEmailSendFailed):
-			respondError(w, http.StatusServiceUnavailable, "failed to send confirmation email, please try again")
+			respondError(w, http.StatusServiceUnavailable,
+				"failed to send confirmation email, please try again")
 		default:
 			respondError(w, http.StatusInternalServerError, "internal server error")
 		}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-
 	"github-release-notifier/internal/model"
 )
 
@@ -22,7 +21,7 @@ func (r *TrackedRepoStore) Upsert(ctx context.Context, owner, name string) (*mod
 		return nil, fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer func() {
-		_ = tx.Rollback()
+		_ = tx.Rollback() //nolint:errcheck // rollback error safe to ignore
 	}()
 
 	// INSERT if not exists, then always SELECT — avoids unnecessary row versioning.
@@ -61,12 +60,14 @@ func (r *TrackedRepoStore) GetAll(ctx context.Context) ([]model.TrackedRepositor
 	if err != nil {
 		return nil, fmt.Errorf("querying tracked repositories: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows close error is safe to ignore
 
 	repos := make([]model.TrackedRepository, 0)
 	for rows.Next() {
 		var repo model.TrackedRepository
-		if err := rows.Scan(&repo.ID, &repo.Owner, &repo.Name, &repo.LastSeenTag, &repo.LastCheckedAt, &repo.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&repo.ID, &repo.Owner, &repo.Name, &repo.LastSeenTag, &repo.LastCheckedAt, &repo.CreatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scanning tracked repository row: %w", err)
 		}
 		repos = append(repos, repo)

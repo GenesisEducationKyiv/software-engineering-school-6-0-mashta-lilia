@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-
 	"github-release-notifier/internal/model"
 )
 
@@ -67,7 +66,7 @@ func (r *SubscriptionRepo) GetEmailsByRepo(ctx context.Context, owner, name stri
 	if err != nil {
 		return nil, fmt.Errorf("querying subscriber emails: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows close error is safe to ignore
 
 	emails := make([]string, 0)
 	for rows.Next() {
@@ -83,7 +82,9 @@ func (r *SubscriptionRepo) GetEmailsByRepo(ctx context.Context, owner, name stri
 	return emails, nil
 }
 
-func (r *SubscriptionRepo) UpdateStatus(ctx context.Context, id int64, status model.SubscriptionStatus) error {
+func (r *SubscriptionRepo) UpdateStatus(
+	ctx context.Context, id int64, status model.SubscriptionStatus,
+) error {
 	// updated_at is set by the database trigger
 	query := `UPDATE subscriptions SET status = $1 WHERE id = $2`
 	result, err := r.db.ExecContext(ctx, query, status, id)
@@ -108,19 +109,23 @@ func (r *SubscriptionRepo) Exists(ctx context.Context, email, owner, name string
 		)`
 
 	var exists bool
-	if err := r.db.QueryRowContext(ctx, query, email, owner, name, model.StatusUnsubscribed).Scan(&exists); err != nil {
+	if err := r.db.QueryRowContext(
+		ctx, query, email, owner, name, model.StatusUnsubscribed,
+	).Scan(&exists); err != nil {
 		return false, fmt.Errorf("checking subscription existence: %w", err)
 	}
 	return exists, nil
 }
 
 // scanSubscriptions is a shared helper that eliminates the duplicated scan logic.
-func (r *SubscriptionRepo) scanSubscriptions(ctx context.Context, query string, args ...interface{}) ([]model.Subscription, error) {
+func (r *SubscriptionRepo) scanSubscriptions(
+	ctx context.Context, query string, args ...interface{},
+) ([]model.Subscription, error) {
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("querying subscriptions: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows close error is safe to ignore
 
 	subs := make([]model.Subscription, 0)
 	for rows.Next() {

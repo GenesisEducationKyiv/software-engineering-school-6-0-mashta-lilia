@@ -3,13 +3,15 @@ package middleware
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
+
+const xForwardedForParts = 2
 
 type visitor struct {
 	count   int
@@ -46,7 +48,7 @@ func (rl *RateLimiter) Stop() {
 func (rl *RateLimiter) clientIP(r *http.Request) string {
 	if rl.trustedProxy {
 		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			ip := strings.SplitN(forwarded, ",", 2)[0]
+			ip := strings.SplitN(forwarded, ",", xForwardedForParts)[0]
 			return strings.TrimSpace(ip)
 		}
 		if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
@@ -81,8 +83,10 @@ func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
 			w.WriteHeader(http.StatusTooManyRequests)
-			if err := json.NewEncoder(w).Encode(map[string]string{"error": "rate limit exceeded"}); err != nil {
-				log.Printf("failed to encode rate limit response: %v", err)
+			if err := json.NewEncoder(w).Encode(
+				map[string]string{"error": "rate limit exceeded"},
+			); err != nil {
+				slog.Error("failed to encode rate limit response", "error", err)
 			}
 			return
 		}

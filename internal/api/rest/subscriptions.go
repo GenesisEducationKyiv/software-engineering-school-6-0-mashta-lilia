@@ -2,9 +2,8 @@ package rest
 
 import (
 	"errors"
-	"net/http"
-
 	"github-release-notifier/internal/service"
+	"net/http"
 )
 
 func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
