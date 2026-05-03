@@ -18,4 +18,5 @@ tasks:
           git clone https://github.com/vladyslavpavlenko/ses-6-ops .ops
         fi
       - cp .ops/workflows/* .github/workflows/
+      
     silent: false
