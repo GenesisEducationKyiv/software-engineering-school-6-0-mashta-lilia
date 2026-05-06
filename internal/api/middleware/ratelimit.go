@@ -11,7 +11,9 @@ import (
 	"time"
 )
 
-const xForwardedForParts = 2
+// xForwardedForClientIPSplit caps SplitN at 2 so we parse only the first (leftmost) IP,
+// which is the original client address in a trusted-proxy setup.
+const xForwardedForClientIPSplit = 2
 
 type visitor struct {
 	count   int
@@ -48,7 +50,7 @@ func (rl *RateLimiter) Stop() {
 func (rl *RateLimiter) clientIP(r *http.Request) string {
 	if rl.trustedProxy {
 		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			ip := strings.SplitN(forwarded, ",", xForwardedForParts)[0]
+			ip := strings.SplitN(forwarded, ",", xForwardedForClientIPSplit)[0]
 			return strings.TrimSpace(ip)
 		}
 		if realIP := r.Header.Get("X-Real-IP"); realIP != "" {

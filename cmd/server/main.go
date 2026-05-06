@@ -83,17 +83,20 @@ func run() error {
 		Password: cfg.RedisPassword,
 		DB:       cfg.RedisDB,
 	})
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		slog.Warn("redis unavailable, caching disabled", "error", err)
-	} else {
-		slog.Info("redis connected, caching enabled")
-	}
 	defer func() {
 		if err := rdb.Close(); err != nil {
 			slog.Error("failed to close redis", "error", err)
 		}
 	}()
-	ghClient := github.NewCachedClient(baseGHClient, rdb, cfg.RedisCacheTTL)
+
+	var ghClient service.GitHubClient
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		slog.Warn("redis unavailable, caching disabled", "error", err)
+		ghClient = baseGHClient
+	} else {
+		slog.Info("redis connected, caching enabled")
+		ghClient = github.NewCachedClient(baseGHClient, rdb, cfg.RedisCacheTTL)
+	}
 
 	// Services
 	subService := service.NewSubscriptionService(subRepo, repoStore, ghClient, mail)
@@ -118,17 +121,23 @@ func run() error {
 	go scanner.Start(ctx)
 
 	// Start server
+	serverErr := make(chan error, 1)
 	go func() {
 		slog.Info("server starting", "port", cfg.ServerPort)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("server error", "error", err)
+			serverErr <- err
 		}
 	}()
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+
+	select {
+	case err := <-serverErr:
+		return fmt.Errorf("server error: %w", err)
+	case <-quit:
+	}
 
 	slog.Info("shutting down...")
 	cancel()
