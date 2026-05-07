@@ -19,7 +19,6 @@ reviews:
   assess_linked_issues: true
   related_prs: true
   abort_on_close: true
-  review_simple_changes: false
 
   tools:
     golangci-lint: { enabled: true }
@@ -49,9 +48,12 @@ reviews:
         followed by a colon and a space.
     description:
       mode: warning
-      requirements: |
-        Must include a Summary section describing what changed and why,
-        and a Test plan section listing how the change was verified.
+    custom_checks:
+      - name: PR description sections
+        mode: warning
+        instructions: |
+          PR description must include a Summary section describing what changed and why,
+          and a Test plan section listing how the change was verified.
 
   path_filters:
     - '!**/*.pb.go'
@@ -161,4 +163,3 @@ knowledge_base:
       - README.md
       - CONVENTIONS.md
       - CLAUDE.md
-      - .golangci.yaml
