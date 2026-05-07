@@ -104,7 +104,10 @@ func run() error {
 
 	// Services
 	subService := service.NewSubscriptionService(subRepo, repoStore, ghClient, mail)
-	scanner := service.NewScanner(repoStore, subRepo, ghClient, mail, cfg.ScanInterval)
+	scanner, err := service.NewScanner(repoStore, subRepo, ghClient, mail, cfg.ScanInterval)
+	if err != nil {
+		return fmt.Errorf("creating scanner: %w", err)
+	}
 
 	// HTTP
 	handler := rest.NewHandler(subService)

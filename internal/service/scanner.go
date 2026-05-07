@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -19,14 +20,17 @@ type Scanner struct {
 
 func NewScanner(
 	repos RepoStore, subs SubscriptionRepo, gh GitHubClient, mailer Mailer, interval time.Duration,
-) *Scanner {
+) (*Scanner, error) {
+	if interval <= 0 {
+		return nil, fmt.Errorf("scanner interval must be > 0, got %s", interval)
+	}
 	return &Scanner{
 		repos:    repos,
 		subs:     subs,
 		github:   gh,
 		mailer:   mailer,
 		interval: interval,
-	}
+	}, nil
 }
 
 func (s *Scanner) Start(ctx context.Context) {

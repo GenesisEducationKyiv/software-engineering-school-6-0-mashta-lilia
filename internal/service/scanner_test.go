@@ -17,6 +17,26 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
+func mustNewScanner(
+	t *testing.T,
+	repos RepoStore, subs SubscriptionRepo, gh GitHubClient, mailer Mailer, interval time.Duration,
+) *Scanner {
+	t.Helper()
+	s, err := NewScanner(repos, subs, gh, mailer, interval)
+	if err != nil {
+		t.Fatalf("NewScanner: %v", err)
+	}
+	return s
+}
+
+func TestNewScanner_RejectsNonPositiveInterval(t *testing.T) {
+	for _, d := range []time.Duration{0, -time.Second} {
+		if _, err := NewScanner(nil, nil, nil, nil, d); err == nil {
+			t.Errorf("NewScanner(interval=%s) returned nil error, want non-nil", d)
+		}
+	}
+}
+
 func TestScanner_NewRelease_NotifiesSubscribers(t *testing.T) {
 	var updatedTag string
 	var notifiedEmails []string
@@ -55,7 +75,7 @@ func TestScanner_NewRelease_NotifiesSubscribers(t *testing.T) {
 		},
 	}
 
-	scanner := NewScanner(repos, subs, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t,repos, subs, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -94,7 +114,7 @@ func TestScanner_SameTag_NoNotification(t *testing.T) {
 		},
 	}
 
-	scanner := NewScanner(repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -134,7 +154,7 @@ func TestScanner_NullLastSeenTag_TreatsAsNew(t *testing.T) {
 		SendReleaseNotificationFn: func(_ context.Context, _, _ string, _ *model.Release) error { return nil }, //nolint:revive // line exceeds limit due to test data
 	}
 
-	scanner := NewScanner(repos, subs, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t,repos, subs, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -164,7 +184,7 @@ func TestScanner_NoRelease_Skips(t *testing.T) {
 		},
 	}
 
-	scanner := NewScanner(repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
+	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -208,7 +228,7 @@ func TestScanner_GitHubError_ContinuesOtherRepos(t *testing.T) {
 		SendReleaseNotificationFn: func(_ context.Context, _, _ string, _ *model.Release) error { return nil }, //nolint:revive // line exceeds limit due to test data
 	}
 
-	scanner := NewScanner(repos, subs, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t,repos, subs, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -244,7 +264,7 @@ func TestScanner_UpdateLastSeenFails_SkipsNotification(t *testing.T) {
 		},
 	}
 
-	scanner := NewScanner(repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -278,7 +298,7 @@ func TestScanner_ContextCancelled_StopsProcessing(t *testing.T) {
 		},
 	}
 
-	scanner := NewScanner(repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
+	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
 
 	scanner.scan(ctx)
 
