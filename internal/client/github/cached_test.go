@@ -1,15 +1,15 @@
+//nolint:testpackage // white-box tests that share mocks within the package
 package github
 
 import (
 	"context"
 	"encoding/json"
+	"github-release-notifier/internal/model"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github-release-notifier/internal/model"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -27,7 +27,7 @@ func setupCachedClient(t *testing.T, handler http.Handler) (*CachedClient, *mini
 	base.baseURL = srv.URL
 
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	t.Cleanup(func() { rdb.Close() })
+	t.Cleanup(func() { rdb.Close() }) //nolint:errcheck,gosec // close error safe to ignore in test cleanup
 
 	cached := NewCachedClient(base, rdb, 5*time.Minute)
 	return cached, mr
@@ -41,7 +41,7 @@ func TestCachedClient_RepoExists_CacheHit(t *testing.T) {
 	client, _ := setupCachedClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&apiCalls, 1)
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id": 1}`))
+		_, _ = w.Write([]byte(`{"id": 1}`)) //nolint:errcheck // test: write ignored
 	}))
 
 	ctx := context.Background()
@@ -78,7 +78,7 @@ func TestCachedClient_GetLatestRelease_CacheHit(t *testing.T) {
 		atomic.AddInt32(&apiCalls, 1)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(model.Release{
+		_ = json.NewEncoder(w).Encode(model.Release{ //nolint:errcheck // test: encode ignored
 			TagName: "v1.0.0",
 			Name:    "Release 1.0",
 			HTMLURL: "https://github.com/test/repo/releases/tag/v1.0.0",
@@ -129,7 +129,7 @@ func TestCachedClient_GetLatestRelease_NoRelease_NotCached(t *testing.T) {
 	}
 
 	// Second call should still hit API (nil releases are not cached)
-	_, _ = client.GetLatestRelease(ctx, "test", "repo")
+	_, _ = client.GetLatestRelease(ctx, "test", "repo") //nolint:errcheck // test: result not needed
 	if got := atomic.LoadInt32(&apiCalls); got != 2 {
 		t.Errorf("API calls = %d, want 2 (nil releases should not be cached)", got)
 	}
@@ -143,7 +143,7 @@ func TestCachedClient_RepoExists_RedisDown_FallsBackToAPI(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&apiCalls, 1)
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id": 1}`))
+		_, _ = w.Write([]byte(`{"id": 1}`)) //nolint:errcheck // test: write ignored
 	}))
 	defer srv.Close()
 
@@ -151,8 +151,10 @@ func TestCachedClient_RepoExists_RedisDown_FallsBackToAPI(t *testing.T) {
 	base.baseURL = srv.URL
 
 	// Connect to a non-existent Redis — simulates Redis being down
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:0", MaxRetries: 0, PoolSize: 1, MinIdleConns: 0, DialTimeout: time.Millisecond})
-	defer rdb.Close()
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:0", MaxRetries: 0, PoolSize: 1, MinIdleConns: 0, DialTimeout: time.Millisecond,
+	})
+	defer rdb.Close() //nolint:errcheck // close error safe to ignore in test
 
 	cached := NewCachedClient(base, rdb, 5*time.Minute)
 
@@ -184,15 +186,18 @@ func TestCachedClient_RepoExists_RedisDown_FallsBackToAPI(t *testing.T) {
 func TestCachedClient_GetLatestRelease_RedisDown_FallsBackToAPI(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(model.Release{TagName: "v2.0.0"})
+		r := model.Release{TagName: "v2.0.0"}
+		_ = json.NewEncoder(w).Encode(r) //nolint:errcheck // test: encode ignored
 	}))
 	defer srv.Close()
 
 	base := NewClient("")
 	base.baseURL = srv.URL
 
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:0", MaxRetries: 0, PoolSize: 1, MinIdleConns: 0, DialTimeout: time.Millisecond})
-	defer rdb.Close()
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:0", MaxRetries: 0, PoolSize: 1, MinIdleConns: 0, DialTimeout: time.Millisecond,
+	})
+	defer rdb.Close() //nolint:errcheck // close error safe to ignore in test
 
 	cached := NewCachedClient(base, rdb, 5*time.Minute)
 
@@ -213,19 +218,19 @@ func TestCachedClient_RepoExists_TTLExpiry(t *testing.T) {
 	client, mr := setupCachedClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&apiCalls, 1)
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id": 1}`))
+		_, _ = w.Write([]byte(`{"id": 1}`)) //nolint:errcheck // test: write ignored
 	}))
 
 	ctx := context.Background()
 
 	// First call — populates cache
-	_, _ = client.RepoExists(ctx, "golang", "go")
+	_, _ = client.RepoExists(ctx, "golang", "go") //nolint:errcheck // TTL test: call count matters
 
 	// Fast-forward past TTL
 	mr.FastForward(6 * time.Minute)
 
 	// Should hit API again after TTL expiry
-	_, _ = client.RepoExists(ctx, "golang", "go")
+	_, _ = client.RepoExists(ctx, "golang", "go") //nolint:errcheck // TTL test: call count matters
 
 	if got := atomic.LoadInt32(&apiCalls); got != 2 {
 		t.Errorf("API calls = %d, want 2 (cache should expire after TTL)", got)

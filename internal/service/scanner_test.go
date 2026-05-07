@@ -1,20 +1,40 @@
+//nolint:testpackage // white-box tests that use mocks from mocks_test.go
 package service
 
 import (
 	"context"
 	"database/sql"
 	"errors"
+	"github-release-notifier/internal/model"
 	"io"
 	"log"
 	"testing"
 	"time"
-
-	"github-release-notifier/internal/model"
 )
 
 func TestMain(m *testing.M) {
 	log.SetOutput(io.Discard)
 	m.Run()
+}
+
+func mustNewScanner(
+	t *testing.T,
+	repos RepoStore, subs SubscriptionRepo, gh GitHubClient, mailer Mailer, interval time.Duration,
+) *Scanner {
+	t.Helper()
+	s, err := NewScanner(repos, subs, gh, mailer, interval)
+	if err != nil {
+		t.Fatalf("NewScanner: %v", err)
+	}
+	return s
+}
+
+func TestNewScanner_RejectsNonPositiveInterval(t *testing.T) {
+	for _, d := range []time.Duration{0, -time.Second} {
+		if _, err := NewScanner(nil, nil, nil, nil, d); err == nil {
+			t.Errorf("NewScanner(interval=%s) returned nil error, want non-nil", d)
+		}
+	}
 }
 
 func TestScanner_NewRelease_NotifiesSubscribers(t *testing.T) {
@@ -24,7 +44,7 @@ func TestScanner_NewRelease_NotifiesSubscribers(t *testing.T) {
 	repos := &mockRepoStore{
 		GetAllFn: func(_ context.Context) ([]model.TrackedRepository, error) {
 			return []model.TrackedRepository{
-				{ID: 1, Owner: "golang", Name: "go", LastSeenTag: sql.NullString{String: "v1.21", Valid: true}},
+				{ID: 1, Owner: "golang", Name: "go", LastSeenTag: sql.NullString{String: "v1.21", Valid: true}}, //nolint:revive // line exceeds limit due to test data
 			}, nil
 		},
 		UpdateLastSeenFn: func(_ context.Context, _ int64, tag string) error {
@@ -41,7 +61,10 @@ func TestScanner_NewRelease_NotifiesSubscribers(t *testing.T) {
 
 	gh := &mockGitHubClient{
 		GetLatestReleaseFn: func(_ context.Context, _, _ string) (*model.Release, error) {
-			return &model.Release{TagName: "v1.22", Name: "Go 1.22", HTMLURL: "https://github.com/golang/go/releases/tag/v1.22"}, nil
+			return &model.Release{
+				TagName: "v1.22", Name: "Go 1.22",
+				HTMLURL: "https://github.com/golang/go/releases/tag/v1.22",
+			}, nil
 		},
 	}
 
@@ -52,7 +75,7 @@ func TestScanner_NewRelease_NotifiesSubscribers(t *testing.T) {
 		},
 	}
 
-	scanner := NewScanner(repos, subs, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t,repos, subs, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -73,7 +96,7 @@ func TestScanner_SameTag_NoNotification(t *testing.T) {
 	repos := &mockRepoStore{
 		GetAllFn: func(_ context.Context) ([]model.TrackedRepository, error) {
 			return []model.TrackedRepository{
-				{ID: 1, Owner: "golang", Name: "go", LastSeenTag: sql.NullString{String: "v1.22", Valid: true}},
+				{ID: 1, Owner: "golang", Name: "go", LastSeenTag: sql.NullString{String: "v1.22", Valid: true}}, //nolint:revive // line exceeds limit due to test data
 			}, nil
 		},
 	}
@@ -91,7 +114,7 @@ func TestScanner_SameTag_NoNotification(t *testing.T) {
 		},
 	}
 
-	scanner := NewScanner(repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -128,10 +151,10 @@ func TestScanner_NullLastSeenTag_TreatsAsNew(t *testing.T) {
 	}
 
 	mailer := &mockMailer{
-		SendReleaseNotificationFn: func(_ context.Context, _, _ string, _ *model.Release) error { return nil },
+		SendReleaseNotificationFn: func(_ context.Context, _, _ string, _ *model.Release) error { return nil }, //nolint:revive // line exceeds limit due to test data
 	}
 
-	scanner := NewScanner(repos, subs, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t,repos, subs, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -161,7 +184,7 @@ func TestScanner_NoRelease_Skips(t *testing.T) {
 		},
 	}
 
-	scanner := NewScanner(repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
+	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -202,10 +225,10 @@ func TestScanner_GitHubError_ContinuesOtherRepos(t *testing.T) {
 	}
 
 	mailer := &mockMailer{
-		SendReleaseNotificationFn: func(_ context.Context, _, _ string, _ *model.Release) error { return nil },
+		SendReleaseNotificationFn: func(_ context.Context, _, _ string, _ *model.Release) error { return nil }, //nolint:revive // line exceeds limit due to test data
 	}
 
-	scanner := NewScanner(repos, subs, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t,repos, subs, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -220,7 +243,7 @@ func TestScanner_UpdateLastSeenFails_SkipsNotification(t *testing.T) {
 	repos := &mockRepoStore{
 		GetAllFn: func(_ context.Context) ([]model.TrackedRepository, error) {
 			return []model.TrackedRepository{
-				{ID: 1, Owner: "golang", Name: "go", LastSeenTag: sql.NullString{String: "v1.0", Valid: true}},
+				{ID: 1, Owner: "golang", Name: "go", LastSeenTag: sql.NullString{String: "v1.0", Valid: true}}, //nolint:revive // line exceeds limit due to test data
 			}, nil
 		},
 		UpdateLastSeenFn: func(_ context.Context, _ int64, _ string) error {
@@ -241,7 +264,7 @@ func TestScanner_UpdateLastSeenFails_SkipsNotification(t *testing.T) {
 		},
 	}
 
-	scanner := NewScanner(repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -275,7 +298,7 @@ func TestScanner_ContextCancelled_StopsProcessing(t *testing.T) {
 		},
 	}
 
-	scanner := NewScanner(repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
+	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
 
 	scanner.scan(ctx)
 

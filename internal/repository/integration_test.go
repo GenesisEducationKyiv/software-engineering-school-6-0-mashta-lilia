@@ -5,14 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
-	"log"
+	"github-release-notifier/internal/model"
+	"github-release-notifier/internal/repository"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github-release-notifier/internal/model"
-	"github-release-notifier/internal/repository"
 
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -48,47 +47,57 @@ func TestMain(m *testing.M) {
 		),
 	)
 	if err != nil {
-		log.Fatalf("failed to start postgres container: %v", err)
+		slog.Error("failed to start postgres container", "error", err)
+		os.Exit(1)
 	}
 
 	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		log.Fatalf("failed to get connection string: %v", err)
+		slog.Error("failed to get connection string", "error", err)
+		os.Exit(1)
 	}
 
 	testDB, err = sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatalf("failed to open database: %v", err)
+		slog.Error("failed to open database", "error", err)
+		os.Exit(1)
 	}
 
-	if err := testDB.Ping(); err != nil {
-		log.Fatalf("failed to ping database: %v", err)
+	if err := testDB.PingContext(ctx); err != nil {
+		slog.Error("failed to ping database", "error", err)
+		os.Exit(1)
 	}
 
 	// Run real migrations
 	driver, err := migratepg.WithInstance(testDB, &migratepg.Config{})
 	if err != nil {
-		log.Fatalf("failed to create migration driver: %v", err)
+		slog.Error("failed to create migration driver", "error", err)
+		os.Exit(1)
 	}
 
 	migrationsPath, err := filepath.Abs(filepath.Join("..", "..", "migrations"))
 	if err != nil {
-		log.Fatalf("failed to resolve migrations path: %v", err)
+		slog.Error("failed to resolve migrations path", "error", err)
+		os.Exit(1)
 	}
 
-	mig, err := migrate.NewWithDatabaseInstance("file://"+filepath.ToSlash(migrationsPath), "postgres", driver)
+	mig, err := migrate.NewWithDatabaseInstance(
+		"file://"+filepath.ToSlash(migrationsPath), "postgres", driver,
+	)
 	if err != nil {
-		log.Fatalf("failed to create migrator: %v", err)
+		slog.Error("failed to create migrator", "error", err)
+		os.Exit(1)
 	}
-	if err := mig.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("failed to run migrations: %v", err)
+	if err := mig.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		slog.Error("failed to run migrations", "error", err)
+		os.Exit(1)
 	}
 
 	code := m.Run()
 
-	testDB.Close()
+	testDB.Close() //nolint:errcheck,gosec // close error is safe to ignore before os.Exit
 	if err := pgContainer.Terminate(ctx); err != nil {
-		log.Printf("failed to terminate postgres container: %v", err)
+		slog.Warn("failed to terminate postgres container", "error", err)
 	}
 
 	os.Exit(code)
@@ -263,7 +272,8 @@ func TestIntegration_SubscriptionRepo_UpdateStatus_TriggersUpdatedAt(t *testing.
 	found, err := repo.GetByToken(ctx, "test-token-002")
 	require.NoError(t, err)
 	assert.Equal(t, model.StatusActive, found.Status)
-	assert.True(t, found.UpdatedAt.After(originalUpdatedAt), "updated_at trigger should advance the timestamp")
+	assert.True(t, found.UpdatedAt.After(originalUpdatedAt),
+		"updated_at trigger should advance the timestamp")
 }
 
 func TestIntegration_SubscriptionRepo_Exists(t *testing.T) {
@@ -447,7 +457,9 @@ func TestIntegration_CascadeDelete_RemovesSubscriptions(t *testing.T) {
 	require.NoError(t, subRepo.Create(ctx, sub))
 
 	// Delete the tracked repo — subscription should cascade delete
-	_, err := testDB.ExecContext(ctx, "DELETE FROM tracked_repositories WHERE owner = $1 AND name = $2", "golang", "go")
+	_, err := testDB.ExecContext(
+		ctx, "DELETE FROM tracked_repositories WHERE owner = $1 AND name = $2", "golang", "go",
+	)
 	require.NoError(t, err)
 
 	_, err = subRepo.GetByToken(ctx, "tok-cascade")

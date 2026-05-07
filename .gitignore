@@ -18,3 +18,7 @@ Thumbs.db
 # Test
 *.out
 coverage.html
+
+# ops config (local cache)
+.ops/
+.golangci.yaml

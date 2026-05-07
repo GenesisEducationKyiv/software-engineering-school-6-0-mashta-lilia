@@ -1,3 +1,4 @@
+//nolint:testpackage // white-box tests that share mocks within the package
 package github
 
 import (
@@ -19,7 +20,7 @@ func TestRepoExists_Found(t *testing.T) {
 			t.Error("missing Accept header")
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id": 1}`))
+		_, _ = w.Write([]byte(`{"id": 1}`)) //nolint:errcheck // test: write ignored
 	}))
 	defer srv.Close()
 
@@ -80,7 +81,7 @@ func TestGetLatestRelease_Success(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"tag_name":"v1.22.0","name":"Go 1.22","html_url":"https://github.com/golang/go/releases/tag/v1.22.0"}`))
+		_, _ = w.Write([]byte(`{"tag_name":"v1.22.0","name":"Go 1.22","html_url":"https://github.com/golang/go/releases/tag/v1.22.0"}`)) //nolint:errcheck,revive // test: write ignored, URL exceeds limit
 	}))
 	defer srv.Close()
 
@@ -131,7 +132,7 @@ func TestDoRequest_RateLimitRetry_RetryAfterHeader(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id": 1}`))
+		_, _ = w.Write([]byte(`{"id": 1}`)) //nolint:errcheck // test: write ignored
 	}))
 	defer srv.Close()
 
@@ -164,7 +165,7 @@ func TestDoRequest_RateLimitRetry_XRateLimitResetHeader(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id": 1}`))
+		_, _ = w.Write([]byte(`{"id": 1}`)) //nolint:errcheck // test: write ignored
 	}))
 	defer srv.Close()
 
@@ -218,7 +219,7 @@ func TestDoRequest_ContextCancelled_DuringRetry(t *testing.T) {
 
 	_, err := c.RepoExists(ctx, "owner", "repo")
 	if err == nil {
-		t.Fatal("expected error from cancelled context")
+		t.Fatal("expected error from canceled context")
 	}
 
 	got := atomic.LoadInt32(&attempts)

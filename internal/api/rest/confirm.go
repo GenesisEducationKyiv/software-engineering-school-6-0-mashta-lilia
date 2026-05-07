@@ -2,11 +2,10 @@ package rest
 
 import (
 	"errors"
+	"github-release-notifier/internal/service"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-
-	"github-release-notifier/internal/service"
 )
 
 func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {

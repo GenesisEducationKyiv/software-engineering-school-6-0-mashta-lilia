@@ -8,6 +8,12 @@ import (
 	"time"
 )
 
+const (
+	defaultSMTPPort     = 587
+	defaultScanInterval = 5 * time.Minute
+	defaultCacheTTL     = 10 * time.Minute
+)
+
 type Config struct {
 	ServerPort string
 	DBHost     string
@@ -55,14 +61,14 @@ func Load() *Config {
 		DBSSLMode:  envOrDefault("DB_SSLMODE", "disable"),
 
 		SMTPHost:     envOrDefault("SMTP_HOST", "localhost"),
-		SMTPPort:     envOrDefaultInt("SMTP_PORT", 587),
+		SMTPPort:     envOrDefaultInt("SMTP_PORT", defaultSMTPPort),
 		SMTPUser:     envOrDefault("SMTP_USER", ""),
 		SMTPPassword: envOrDefault("SMTP_PASSWORD", ""),
 		SMTPFrom:     envOrDefault("SMTP_FROM", "noreply@example.com"),
 
 		GitHubToken: envOrDefault("GITHUB_TOKEN", ""),
 
-		ScanInterval: envOrDefaultDuration("SCAN_INTERVAL", 5*time.Minute),
+		ScanInterval: envOrDefaultDuration("SCAN_INTERVAL", defaultScanInterval),
 		BaseURL:      envOrDefault("BASE_URL", "http://localhost:8080"),
 
 		APIKey: envOrDefault("API_KEY", ""),
@@ -70,7 +76,7 @@ func Load() *Config {
 		RedisAddr:     envOrDefault("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: envOrDefault("REDIS_PASSWORD", ""),
 		RedisDB:       envOrDefaultInt("REDIS_DB", 0),
-		RedisCacheTTL: envOrDefaultDuration("REDIS_CACHE_TTL", 10*time.Minute),
+		RedisCacheTTL: envOrDefaultDuration("REDIS_CACHE_TTL", defaultCacheTTL),
 
 		TrustedProxy: envOrDefault("TRUSTED_PROXY", "false") == "true",
 	}

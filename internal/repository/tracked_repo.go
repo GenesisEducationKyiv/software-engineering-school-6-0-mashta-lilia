@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
-
+	"fmt"
 	"github-release-notifier/internal/model"
 )
 
@@ -18,10 +18,10 @@ func NewTrackedRepoStore(db *sql.DB) *TrackedRepoStore {
 func (r *TrackedRepoStore) Upsert(ctx context.Context, owner, name string) (*model.TrackedRepository, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer func() {
-		_ = tx.Rollback()
+		_ = tx.Rollback() //nolint:errcheck // rollback error safe to ignore
 	}()
 
 	// INSERT if not exists, then always SELECT — avoids unnecessary row versioning.
@@ -32,7 +32,7 @@ func (r *TrackedRepoStore) Upsert(ctx context.Context, owner, name string) (*mod
 		ON CONFLICT (owner, name) DO NOTHING`
 
 	if _, err := tx.ExecContext(ctx, insertQuery, owner, name); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("inserting tracked repository: %w", err)
 	}
 
 	selectQuery := `
@@ -44,10 +44,13 @@ func (r *TrackedRepoStore) Upsert(ctx context.Context, owner, name string) (*mod
 	if err := tx.QueryRowContext(ctx, selectQuery, owner, name).Scan(
 		&repo.ID, &repo.Owner, &repo.Name, &repo.LastSeenTag, &repo.LastCheckedAt, &repo.CreatedAt,
 	); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("selecting tracked repository: %w", err)
 	}
 
-	return repo, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("committing transaction: %w", err)
+	}
+	return repo, nil
 }
 
 func (r *TrackedRepoStore) GetAll(ctx context.Context) ([]model.TrackedRepository, error) {
@@ -55,29 +58,38 @@ func (r *TrackedRepoStore) GetAll(ctx context.Context) ([]model.TrackedRepositor
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("querying tracked repositories: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows close error is safe to ignore
 
 	repos := make([]model.TrackedRepository, 0)
 	for rows.Next() {
 		var repo model.TrackedRepository
-		if err := rows.Scan(&repo.ID, &repo.Owner, &repo.Name, &repo.LastSeenTag, &repo.LastCheckedAt, &repo.CreatedAt); err != nil {
-			return nil, err
+		if err := rows.Scan(
+			&repo.ID, &repo.Owner, &repo.Name, &repo.LastSeenTag, &repo.LastCheckedAt, &repo.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scanning tracked repository row: %w", err)
 		}
 		repos = append(repos, repo)
 	}
-	return repos, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating tracked repository rows: %w", err)
+	}
+	return repos, nil
 }
 
 func (r *TrackedRepoStore) UpdateLastSeen(ctx context.Context, id int64, tag string) error {
 	query := `UPDATE tracked_repositories SET last_seen_tag = $1, last_checked_at = NOW() WHERE id = $2`
-	_, err := r.db.ExecContext(ctx, query, tag, id)
-	return err
+	if _, err := r.db.ExecContext(ctx, query, tag, id); err != nil {
+		return fmt.Errorf("updating last seen tag: %w", err)
+	}
+	return nil
 }
 
 func (r *TrackedRepoStore) UpdateLastChecked(ctx context.Context, id int64) error {
 	query := `UPDATE tracked_repositories SET last_checked_at = NOW() WHERE id = $1`
-	_, err := r.db.ExecContext(ctx, query, id)
-	return err
+	if _, err := r.db.ExecContext(ctx, query, id); err != nil {
+		return fmt.Errorf("updating last checked timestamp: %w", err)
+	}
+	return nil
 }

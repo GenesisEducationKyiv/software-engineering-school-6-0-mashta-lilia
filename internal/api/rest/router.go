@@ -2,16 +2,21 @@ package rest
 
 import (
 	"database/sql"
-	"net/http"
-
 	"github-release-notifier/internal/api/middleware"
+	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func NewRouter(h *Handler, db *sql.DB, apiKey string, subscribeLimiter *middleware.RateLimiter, swaggerPath string) *chi.Mux {
+func NewRouter(
+	h *Handler,
+	db *sql.DB,
+	apiKey string,
+	subscribeLimiter *middleware.RateLimiter,
+	swaggerPath string,
+) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimw.Logger)

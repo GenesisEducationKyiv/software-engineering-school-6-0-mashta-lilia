@@ -6,12 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
-	"net/mail"
-	"strings"
-
 	"github-release-notifier/internal/model"
 	"github-release-notifier/internal/repository"
+	"log/slog"
+	"net/mail"
+	"strings"
 )
 
 var (
@@ -31,7 +30,9 @@ type SubscriptionService struct {
 	mailer Mailer
 }
 
-func NewSubscriptionService(subs SubscriptionRepo, repos RepoStore, gh GitHubClient, m Mailer) *SubscriptionService {
+func NewSubscriptionService(
+	subs SubscriptionRepo, repos RepoStore, gh GitHubClient, m Mailer,
+) *SubscriptionService {
 	return &SubscriptionService{
 		subs:   subs,
 		repos:  repos,
@@ -95,9 +96,10 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repo string)
 		// slot and the user can retry. Without this, the orphaned pending row
 		// causes a permanent 409 Conflict on retry.
 		if rollbackErr := s.subs.UpdateStatus(ctx, sub.ID, model.StatusUnsubscribed); rollbackErr != nil {
-			log.Printf("failed to rollback subscription %d after email failure: %v", sub.ID, rollbackErr)
+			slog.Error("failed to rollback subscription after email failure",
+				"id", sub.ID, "error", rollbackErr)
 		}
-		return fmt.Errorf("%w: %v", ErrEmailSendFailed, err)
+		return fmt.Errorf("%w: %w", ErrEmailSendFailed, err)
 	}
 
 	return nil
@@ -134,7 +136,9 @@ func (s *SubscriptionService) Unsubscribe(ctx context.Context, token string) err
 	return s.subs.UpdateStatus(ctx, sub.ID, model.StatusUnsubscribed)
 }
 
-func (s *SubscriptionService) GetSubscriptions(ctx context.Context, email string) ([]model.Subscription, error) {
+func (s *SubscriptionService) GetSubscriptions(
+	ctx context.Context, email string,
+) ([]model.Subscription, error) {
 	normalized, err := normalizeEmail(email)
 	if err != nil {
 		return nil, ErrInvalidEmail
@@ -145,12 +149,12 @@ func (s *SubscriptionService) GetSubscriptions(ctx context.Context, email string
 func normalizeEmail(raw string) (string, error) {
 	addr, err := mail.ParseAddress(raw)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("parsing email address: %w", err)
 	}
 	return strings.ToLower(addr.Address), nil
 }
 
-func parseRepo(repo string) (string, string, error) {
+func parseRepo(repo string) (owner, name string, err error) {
 	owner, name, ok := strings.Cut(repo, "/")
 	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
 		return "", "", ErrInvalidRepo
@@ -159,9 +163,10 @@ func parseRepo(repo string) (string, string, error) {
 }
 
 func generateToken() (string, error) {
-	b := make([]byte, 32)
+	const tokenBytes = 32
+	b := make([]byte, tokenBytes)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		return "", fmt.Errorf("generating random token: %w", err)
 	}
 	return hex.EncodeToString(b), nil
 }

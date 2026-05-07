@@ -3,7 +3,7 @@ package middleware
 import (
 	"crypto/subtle"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -19,8 +19,10 @@ func APIKeyAuth(apiKey string) func(http.Handler) http.Handler {
 			if subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) != 1 {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
-				if err := json.NewEncoder(w).Encode(map[string]string{"error": "invalid or missing API key"}); err != nil {
-					log.Printf("failed to encode auth error response: %v", err)
+				if err := json.NewEncoder(w).Encode(
+					map[string]string{"error": "invalid or missing API key"},
+				); err != nil {
+					slog.Error("failed to encode auth error response", "error", err)
 				}
 				return
 			}

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-
 	"github-release-notifier/internal/model"
 )
 
@@ -25,9 +24,12 @@ func (r *SubscriptionRepo) Create(ctx context.Context, sub *model.Subscription) 
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, created_at, updated_at`
 
-	return r.db.QueryRowContext(ctx, query,
+	if err := r.db.QueryRowContext(ctx, query,
 		sub.Email, sub.RepoOwner, sub.RepoName, sub.Token, sub.Status,
-	).Scan(&sub.ID, &sub.CreatedAt, &sub.UpdatedAt)
+	).Scan(&sub.ID, &sub.CreatedAt, &sub.UpdatedAt); err != nil {
+		return fmt.Errorf("creating subscription: %w", err)
+	}
+	return nil
 }
 
 func (r *SubscriptionRepo) GetByToken(ctx context.Context, token string) (*model.Subscription, error) {
@@ -64,7 +66,7 @@ func (r *SubscriptionRepo) GetEmailsByRepo(ctx context.Context, owner, name stri
 	if err != nil {
 		return nil, fmt.Errorf("querying subscriber emails: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows close error is safe to ignore
 
 	emails := make([]string, 0)
 	for rows.Next() {
@@ -74,19 +76,24 @@ func (r *SubscriptionRepo) GetEmailsByRepo(ctx context.Context, owner, name stri
 		}
 		emails = append(emails, email)
 	}
-	return emails, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating subscriber emails: %w", err)
+	}
+	return emails, nil
 }
 
-func (r *SubscriptionRepo) UpdateStatus(ctx context.Context, id int64, status model.SubscriptionStatus) error {
+func (r *SubscriptionRepo) UpdateStatus(
+	ctx context.Context, id int64, status model.SubscriptionStatus,
+) error {
 	// updated_at is set by the database trigger
 	query := `UPDATE subscriptions SET status = $1 WHERE id = $2`
 	result, err := r.db.ExecContext(ctx, query, status, id)
 	if err != nil {
-		return err
+		return fmt.Errorf("updating subscription status: %w", err)
 	}
 	n, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("getting rows affected: %w", err)
 	}
 	if n == 0 {
 		return ErrNotFound
@@ -102,17 +109,23 @@ func (r *SubscriptionRepo) Exists(ctx context.Context, email, owner, name string
 		)`
 
 	var exists bool
-	err := r.db.QueryRowContext(ctx, query, email, owner, name, model.StatusUnsubscribed).Scan(&exists)
-	return exists, err
+	if err := r.db.QueryRowContext(
+		ctx, query, email, owner, name, model.StatusUnsubscribed,
+	).Scan(&exists); err != nil {
+		return false, fmt.Errorf("checking subscription existence: %w", err)
+	}
+	return exists, nil
 }
 
 // scanSubscriptions is a shared helper that eliminates the duplicated scan logic.
-func (r *SubscriptionRepo) scanSubscriptions(ctx context.Context, query string, args ...interface{}) ([]model.Subscription, error) {
+func (r *SubscriptionRepo) scanSubscriptions(
+	ctx context.Context, query string, args ...interface{},
+) ([]model.Subscription, error) {
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("querying subscriptions: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows close error is safe to ignore
 
 	subs := make([]model.Subscription, 0)
 	for rows.Next() {
@@ -125,5 +138,8 @@ func (r *SubscriptionRepo) scanSubscriptions(ctx context.Context, query string, 
 		}
 		subs = append(subs, sub)
 	}
-	return subs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating subscription rows: %w", err)
+	}
+	return subs, nil
 }
