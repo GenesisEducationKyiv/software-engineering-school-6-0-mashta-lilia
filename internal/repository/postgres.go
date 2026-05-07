@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"time"
 
 	// register the postgres driver with database/sql
@@ -24,6 +25,9 @@ func NewPostgresDB(databaseURL string) (*sql.DB, error) {
 	}
 
 	if err := db.PingContext(context.Background()); err != nil {
+		if cerr := db.Close(); cerr != nil {
+			slog.Error("failed to close database after ping failure", "error", cerr)
+		}
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 
