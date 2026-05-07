@@ -109,7 +109,7 @@ func (s *Scanner) scan(ctx context.Context) {
 
 		for _, email := range emails {
 			if err := s.mailer.SendReleaseNotification(ctx, email, repo.FullName(), release); err != nil {
-				slog.Error("scanner: failed to notify subscriber", "email", email, "error", err)
+				slog.Error("scanner: failed to notify subscriber", "repo", repo.FullName(), "error", err)
 			}
 		}
 	}
