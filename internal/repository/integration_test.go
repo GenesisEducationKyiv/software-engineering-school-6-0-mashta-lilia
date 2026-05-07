@@ -63,7 +63,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	if err := testDB.Ping(); err != nil {
+	if err := testDB.PingContext(ctx); err != nil {
 		slog.Error("failed to ping database", "error", err)
 		os.Exit(1)
 	}

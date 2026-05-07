@@ -62,10 +62,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating migrator: %w", err)
 	}
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("running migrations: %w", err)
+	if err := m.Up(); err != nil {
+		if !errors.Is(err, migrate.ErrNoChange) {
+			return fmt.Errorf("running migrations: %w", err)
+		}
+		slog.Info("migrations: no changes to apply")
+	} else {
+		slog.Info("migrations applied successfully")
 	}
-	slog.Info("migrations applied successfully")
 
 	// Dependencies
 	subRepo := repository.NewSubscriptionRepo(db)
