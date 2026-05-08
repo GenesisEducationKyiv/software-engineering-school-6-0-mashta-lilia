@@ -79,8 +79,8 @@ notifications are simply lost.
 * Bad, because under multi-instance deployment, two scanners hitting the
   same repo simultaneously could each see the old `last_seen_tag` and
   duplicate the work — the in-process mutex does not protect this. Out of
-  scope today (single-instance deployment); see
-  [ADR 0006](0006-synchronous-email-fan-out.md) future direction.
+  scope today (single-instance deployment); the natural fix is row-level
+  locking (`SELECT … FOR UPDATE SKIP LOCKED`) when we need it.
 
 ## Pros and Cons of the Options
 

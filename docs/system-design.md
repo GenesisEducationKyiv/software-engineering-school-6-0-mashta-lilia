@@ -53,7 +53,7 @@ small REST API.
 | NFR              | Target                                       | Notes                                                                                       |
 |------------------|----------------------------------------------|---------------------------------------------------------------------------------------------|
 | Availability     | Best-effort (single instance)                | Crashes are recovered by restart; no automated failover.                                    |
-| Detection latency | ≤ `SCAN_INTERVAL` + cache TTL (≤ 15 min default) | See [ADR 0002](adr/0002-polling-over-webhooks-for-github.md), [ADR 0004](adr/0004-redis-cache-aside-as-decorator.md). |
+| Detection latency | ≤ `SCAN_INTERVAL` + cache TTL (≤ 15 min default) | Polling-based scanner; Redis cache (10-min TTL) sits in front of the GitHub API. |
 | API latency p95  | < 300 ms for `POST /subscribe`               | Bounded by one GitHub API call (or cache hit) plus two Postgres writes.                     |
 | Email semantics  | At-most-once per release per subscriber      | See [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md).                         |
 | Scale ceiling    | ~400 tracked repos, ~10k subscribers         | At default scan interval; rate-limit-bound (see §6).                                        |
@@ -110,10 +110,12 @@ graph TB
 ```
 
 The dependency arrow points **inward**: `api → service → {repo, ghc, mail}`.
-The `service` layer defines the interfaces; the outer layers implement them.
-Caching is added as a decorator on `GitHubClient` without service changes
-(see [ADR 0001](adr/0001-clean-architecture-with-dependency-inversion.md),
-[ADR 0004](adr/0004-redis-cache-aside-as-decorator.md)).
+The `service` layer defines the interfaces; the outer layers implement them
+(see [ADR 0001](adr/0001-clean-architecture-with-dependency-inversion.md)).
+Redis caching is added as a **decorator** on `GitHubClient` — both the base
+client and `CachedClient` satisfy the same interface, so the service layer
+never knows whether a cache is in front. The cache is optional: any Redis
+error falls through to the GitHub API.
 
 ---
 
@@ -268,7 +270,8 @@ erDiagram
 - **Layer:** Redis, optional, cache-aside.
 - **Keys:** `gh:release:{owner}/{name}`.
 - **TTL:** 10 minutes (configurable via `REDIS_CACHE_TTL`).
-- **Negative results not cached** — see [ADR 0004](adr/0004-redis-cache-aside-as-decorator.md).
+- **Negative results not cached** — caching `nil` would mean missing the
+  first release for up to TTL. Only positive results go into the cache.
 - **Failure mode:** any Redis error is logged and falls through to a direct
   GitHub API call.
 
@@ -288,8 +291,8 @@ Back-of-the-envelope for a single-instance deployment:
   with the current indexes.
 - Email fan-out per release at 200 ms/SMTP round-trip: 1000 subscribers ≈
   200 s. Above this, the scanner mutex causes the next tick to be skipped.
-  Mitigation path: bounded worker pool — see
-  [ADR 0006](adr/0006-synchronous-email-fan-out.md) Future Direction.
+  Mitigation path when this becomes a bottleneck: bounded worker pool, then
+  outbox-pattern with row-level locking.
 
 ---
 
@@ -357,15 +360,20 @@ Back-of-the-envelope for a single-instance deployment:
 
 ## 10. Trade-offs and Alternatives Considered
 
-| Decision                        | Trade-off Accepted                                                          | Reference                                                                        |
-|---------------------------------|------------------------------------------------------------------------------|----------------------------------------------------------------------------------|
-| Polling over webhooks           | Up to `SCAN_INTERVAL` detection latency; rate-limit budget.                | [ADR 0002](adr/0002-polling-over-webhooks-for-github.md)                         |
-| Sequential email fan-out        | Long fan-out delays subsequent scans; no auto-retry on transient SMTP fail.| [ADR 0006](adr/0006-synchronous-email-fan-out.md)                                |
-| Persist-before-notify           | Some subscribers may miss a release on crash; never a duplicate.            | [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md)                   |
-| Direct SMTP, no transactional API | Deliverability tuning is on us; no bounce feedback loop.                  | [ADR 0005](adr/0005-direct-smtp-over-transactional-api.md)                       |
-| Cache-aside Redis (TTL only)    | Up to TTL extra latency; no proactive invalidation.                          | [ADR 0004](adr/0004-redis-cache-aside-as-decorator.md)                           |
-| In-memory rate limiter          | State lost on restart; not safe across multiple instances.                  | README §"Trade-offs"                                                             |
-| Layered + DI architecture       | Mild boilerplate for single-impl interfaces.                                 | [ADR 0001](adr/0001-clean-architecture-with-dependency-inversion.md)             |
+The full list of accepted trade-offs is below. Three of them have a dedicated
+ADR because the decision is non-obvious and a future reader could reasonably
+question it. The rest are tactical choices that match the project's scope.
+
+| Decision                          | Trade-off Accepted                                                          | Where to read more                                                              |
+|-----------------------------------|------------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| Layered + DI architecture         | Mild boilerplate for single-impl interfaces.                                 | [ADR 0001](adr/0001-clean-architecture-with-dependency-inversion.md)            |
+| Persist-before-notify             | Some subscribers may miss a release on crash; never a duplicate.             | [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md)                  |
+| Partial unique index              | Postgres-specific; encodes a state-dependent rule in DDL.                    | [ADR 0008](adr/0008-partial-unique-index-for-resubscription.md)                 |
+| Polling over webhooks             | Up to `SCAN_INTERVAL` detection latency; rate-limit budget.                  | This document, §3, §6.                                                          |
+| Sequential email fan-out          | Long fan-out delays subsequent scans; no auto-retry on transient SMTP fail.  | This document, §6.                                                              |
+| Cache-aside Redis (TTL only)      | Up to TTL extra latency; no proactive invalidation.                          | This document, §3.2, §5.2.                                                      |
+| Direct SMTP, no transactional API | Deliverability tuning is on us; no bounce feedback loop.                     | README §"Trade-offs".                                                           |
+| In-memory rate limiter            | State lost on restart; not safe across multiple instances.                   | README §"Trade-offs".                                                           |
 
 ---
 
@@ -375,16 +383,15 @@ Back-of-the-envelope for a single-instance deployment:
       instead of inserting a new one? Current behaviour creates a new row;
       the old `unsubscribed` row stays as history. Either is defensible.
 - [ ] At what tracked-repo count do we move the scanner to a bounded worker
-      pool? See [ADR 0006](adr/0006-synchronous-email-fan-out.md). Likely
-      well below the rate-limit ceiling.
+      pool? Likely well below the rate-limit ceiling (§6).
 - [ ] Do we need a `purge_unsubscribed_after` cleanup job? The
       `unsubscribed` rows currently grow without bound (see
       [ADR 0008](adr/0008-partial-unique-index-for-resubscription.md)).
 - [ ] Is the API-key-only admin endpoint sufficient, or do we want per-user
       auth for `GET /subscriptions`?
-- [ ] When (and how) do we add bounce / complaint handling? Path is
-      [ADR 0005](adr/0005-direct-smtp-over-transactional-api.md) Future
-      Direction (move to SaaS provider).
+- [ ] When (and how) do we add bounce / complaint handling? The natural path
+      is moving to a transactional email provider (SendGrid / Mailgun / SES)
+      behind the existing `Mailer` interface.
 
 ---
 

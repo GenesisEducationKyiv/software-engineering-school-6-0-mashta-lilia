@@ -66,7 +66,7 @@ declares the four contracts (`SubscriptionRepo`, `RepoStore`, `GitHubClient`,
   mocks (see `internal/service/scanner_test.go`). Zero database, zero network.
 * Good, because Redis caching was added as a decorator (`CachedClient` wraps
   `*Client`, both implementing `GitHubClient`) without touching service logic
-  — see [ADR 0004](0004-redis-cache-aside-as-decorator.md).
+  (see `internal/client/github/cache.go`).
 * Good, because the repository layer has its own integration tests using
   `testcontainers-go`, isolated from HTTP concerns.
 * Bad, because every new contract requires an interface declaration even when

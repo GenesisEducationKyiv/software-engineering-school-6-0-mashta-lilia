@@ -1,34 +1,43 @@
 # Architecture Decision Records
 
-This directory holds the Architecture Decision Records (ADRs) for
-`github-release-notifier`. Each ADR captures a single significant technical
-decision with its context, alternatives, and consequences as they were
-understood at the time of writing.
+This directory holds Architecture Decision Records (ADRs) for the small set of
+**non-obvious structural choices** in `github-release-notifier`. We deliberately
+do **not** record an ADR for every library or technology pick — those belong in
+the [System Design](../system-design.md) document or in the code itself.
 
-The format follows [MADR 3.0](https://adr.github.io/madr/). The process for
-proposing, accepting, and superseding ADRs is itself documented in
-[ADR 0000](0000-record-architecture-decisions.md).
+The format follows [MADR 3.0](https://adr.github.io/madr/).
 
 ## Index
 
-| #    | Status   | Title                                                                                  |
-|------|----------|----------------------------------------------------------------------------------------|
-| 0000 | Accepted | [Record Architecture Decisions](0000-record-architecture-decisions.md)                 |
-| 0001 | Accepted | [Layered Architecture with Dependency Inversion](0001-clean-architecture-with-dependency-inversion.md) |
-| 0002 | Accepted | [Poll GitHub for Releases Instead of Using Webhooks](0002-polling-over-webhooks-for-github.md) |
-| 0003 | Accepted | [PostgreSQL as the Primary Datastore](0003-postgresql-as-primary-datastore.md)         |
-| 0004 | Accepted | [Cache GitHub Responses with Redis Using a Decorator](0004-redis-cache-aside-as-decorator.md) |
-| 0005 | Accepted | [Send Email via Direct SMTP, Not a Transactional API](0005-direct-smtp-over-transactional-api.md) |
-| 0006 | Accepted | [Synchronous Email Fan-out from the Scanner Loop](0006-synchronous-email-fan-out.md)   |
-| 0007 | Accepted | [Persist `last_seen_tag` Before Sending Notifications](0007-persist-before-notify-for-at-most-once.md) |
-| 0008 | Accepted | [Partial Unique Index to Allow Re-subscription](0008-partial-unique-index-for-resubscription.md) |
+| #    | Status   | Title                                                                                  | Why an ADR                                       |
+|------|----------|----------------------------------------------------------------------------------------|--------------------------------------------------|
+| 0001 | Accepted | [Layered Architecture with Dependency Inversion](0001-clean-architecture-with-dependency-inversion.md) | Sets the dependency rule for the whole codebase. |
+| 0007 | Accepted | [Persist `last_seen_tag` Before Sending Notifications](0007-persist-before-notify-for-at-most-once.md) | Non-obvious correctness trade-off (at-most-once vs at-least-once). |
+| 0008 | Accepted | [Partial Unique Index to Allow Re-subscription](0008-partial-unique-index-for-resubscription.md) | Non-obvious data-model encoding of a state-dependent rule. |
 
-## How to Add a New ADR
+## When to Add a New ADR
 
-1. Copy the most recent ADR file as a template.
-2. Number it `NNNN` (next sequential, zero-padded to 4 digits).
-3. Set `Status: Proposed`, fill in Context / Drivers / Options / Outcome.
-4. Open a PR. After review, change `Status` to `Accepted` and update this
-   index.
-5. To revisit a decision: write a **new** ADR, mark the old one as
-   `Superseded by ADR-NNNN`, and update both files in the same PR.
+Reserve ADRs for decisions that future readers would otherwise be unable to
+explain by reading the code, in particular:
+
+- A genuinely **structural** change (e.g., introducing a strangler in front of
+  an old service, splitting a service in two, switching the persistence shape).
+- A non-obvious **correctness** trade-off where the alternative is defensible
+  and a reader would reasonably ask "why did they pick this side?".
+- A **data-model** decision that encodes business rules in schema where the
+  intent is not visible from the schema alone.
+
+Do **not** write an ADR for:
+
+- Library / framework picks (Chi vs Echo, `lib/pq` vs `pgx`, MailHog vs Mailtrap).
+- Adding a cache, a metric, or a retry — these belong in the System Design.
+- Tactical tuning (timeouts, pool sizes, batch sizes).
+
+## Workflow
+
+1. Open a PR introducing a new ADR file under `docs/adr/`.
+2. Status starts as `Proposed`.
+3. After review and merge, set status to `Accepted` and update the index above.
+4. To revisit a decision: write a **new** ADR with a higher number, set its
+   status to `Accepted`, and mark the old ADR's status `Superseded by ADR-NNNN`.
+   Never edit the rationale of the old ADR.

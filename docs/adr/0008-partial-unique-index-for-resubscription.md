@@ -110,7 +110,7 @@ that prevents creating a second active subscription on a duplicate request.
 ## Related
 
 * The composite FK `(repo_owner, repo_name) → tracked_repositories(owner, name)`
-  ensures every subscription points to a real tracked repo (see
-  [ADR 0003](0003-postgresql-as-primary-datastore.md)).
+  ensures every subscription points to a real tracked repo
+  (see `migrations/000001_init_schema.up.sql`).
 * The status state machine (`pending → active → unsubscribed`) is enforced
   by a `CHECK` constraint, not by application code.
