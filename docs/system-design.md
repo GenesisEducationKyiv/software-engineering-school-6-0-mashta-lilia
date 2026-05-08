@@ -45,8 +45,9 @@ small REST API.
   `X-API-Key`).
 - Users can **unsubscribe** via a tokenised link from any received email.
 - A user who has unsubscribed can later **re-subscribe** to the same repo.
-- A background scanner detects new releases on every tracked repo and emails
-  every active subscriber for that repo exactly once.
+- A background scanner detects new releases on every tracked repo and notifies
+  every active subscriber with **at-most-once** semantics — duplicates are
+  prevented; misses on crash are tolerated (see [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md)).
 
 ### Non-Functional Requirements
 
@@ -177,10 +178,11 @@ sequenceDiagram
     alt SMTP fails
         S->>DB: UPDATE status='unsubscribed'  (rollback)
         S-->>API: 502
+        API-->>U: 502 Bad Gateway
     else SMTP ok
         S-->>API: 200
+        API-->>U: 200 OK
     end
-    API-->>U: 200 OK
     Note over U,M: Email arrives with /confirm/{token} link
     U->>API: GET /confirm/{token}
     API->>S: Confirm(token)
