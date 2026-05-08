@@ -65,8 +65,11 @@ TTL — see [ADR 0004](0004-redis-cache-aside-as-decorator.md).
 * Good, because the service has zero public-ingress requirement in
   development — no ngrok / cloudflared tunnels.
 * Good, because crashes simply delay detection by one interval; webhooks
-  would silently lose events delivered during downtime (GitHub retries 3
-  times then gives up).
+  would silently lose events delivered during downtime (GitHub does not
+  automatically retry failed webhook deliveries—failed deliveries remain
+  failed until manually redelivered via UI, REST API, or scripts within a
+  3-day window; see
+  [GitHub webhook delivery documentation](https://docs.github.com/en/webhooks/using-webhooks/handling-webhook-deliveries)).
 * Bad, because detection latency is bounded below by `SCAN_INTERVAL`
   (5 min default). Subscribers see notifications up to 5 minutes after
   release publication.
@@ -84,7 +87,8 @@ TTL — see [ADR 0004](0004-redis-cache-aside-as-decorator.md).
 * + Tolerates downtime — the next scan catches up.
 * + No public ingress needed.
 * − Detection latency = up to `SCAN_INTERVAL`.
-* − Quadratic cost as tracked-repo count grows.
+* − Linear cost as tracked-repo count grows (one API call per repo per scan
+  interval).
 
 ### Webhooks
 

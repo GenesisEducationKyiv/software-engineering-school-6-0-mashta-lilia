@@ -322,8 +322,11 @@ Back-of-the-envelope for a single-instance deployment:
   responses (`json:"-"`); they only appear in confirmation/unsubscribe
   email links.
 - **Encryption in transit:** TLS terminated at the deployment edge (out of
-  scope for this binary). Application speaks plain HTTP and SMTP-with-AUTH
-  to the configured upstream.
+  scope for this binary). Application speaks plain HTTP to the edge.
+  SMTP connections must use encrypted transport (STARTTLS or SMTPS) with
+  certificate validation in production and non-local environments; plain
+  SMTP-with-AUTH is permitted only for local development with MailHog-like
+  test servers.
 - **SQL injection:** every query uses positional parameters
   (`$1, $2, …`). No string interpolation. Confirmed by
   `internal/repository/*.go`.

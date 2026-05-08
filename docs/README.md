@@ -20,6 +20,6 @@ This directory holds the architecture documentation for `github-release-notifier
 - Diagrams use **Mermaid** so they render natively in GitHub and stay
   diff-able alongside the prose.
 - ADRs follow [MADR 3.0](https://adr.github.io/madr/).
-- Each ADR's status (`Proposed`, `Accepted`, `Deprecated`, `Superseded`) is
-  the first line of the file. Superseded ADRs are kept in place — the
-  history matters.
+- Each ADR includes a "Status:" field after the title and date block,
+  showing one of `Proposed`, `Accepted`, `Deprecated`, or `Superseded`.
+  Superseded ADRs are kept in place — the history matters.
