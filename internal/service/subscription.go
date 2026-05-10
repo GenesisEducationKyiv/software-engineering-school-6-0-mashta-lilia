@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"github-release-notifier/internal/apperror"
@@ -28,16 +26,22 @@ type SubscriptionService struct {
 	repos  RepoStore
 	github GitHubClient
 	mailer Mailer
+	tokens TokenGenerator
 }
 
 func NewSubscriptionService(
-	subs SubscriptionRepo, repos RepoStore, gh GitHubClient, m Mailer,
+	subs SubscriptionRepo,
+	repos RepoStore,
+	gh GitHubClient,
+	m Mailer,
+	tokens TokenGenerator,
 ) *SubscriptionService {
 	return &SubscriptionService{
 		subs:   subs,
 		repos:  repos,
 		github: gh,
 		mailer: m,
+		tokens: tokens,
 	}
 }
 
@@ -112,7 +116,7 @@ func (s *SubscriptionService) ensureNoActiveSubscription(
 func (s *SubscriptionService) createPendingSubscription(
 	ctx context.Context, email, owner, name string,
 ) (*model.Subscription, error) {
-	token, err := generateToken()
+	token, err := s.tokens.Generate()
 	if err != nil {
 		return nil, fmt.Errorf("generating token: %w", err)
 	}
@@ -208,11 +212,3 @@ func parseRepo(repo string) (owner, name string, err error) {
 	return owner, name, nil
 }
 
-func generateToken() (string, error) {
-	const tokenBytes = 32
-	b := make([]byte, tokenBytes)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generating random token: %w", err)
-	}
-	return hex.EncodeToString(b), nil
-}

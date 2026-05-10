@@ -94,7 +94,8 @@ func run() error {
 	}
 
 	// Services
-	subService := service.NewSubscriptionService(subRepo, repoStore, ghClient, mail)
+	tokenGen := service.CryptoTokenGenerator{}
+	subService := service.NewSubscriptionService(subRepo, repoStore, ghClient, mail, tokenGen)
 	scanner, err := service.NewScanner(repoStore, subRepo, ghClient, mail, cfg.ScanInterval)
 	if err != nil {
 		return fmt.Errorf("creating scanner: %w", err)

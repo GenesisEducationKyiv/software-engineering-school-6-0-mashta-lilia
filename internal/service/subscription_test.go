@@ -16,7 +16,7 @@ func newTestSubscriptionService(
 	gh *mockGitHubClient,
 	mail *mockMailer,
 ) *SubscriptionService {
-	return NewSubscriptionService(subs, repos, gh, mail)
+	return NewSubscriptionService(subs, repos, gh, mail, CryptoTokenGenerator{})
 }
 
 const testEmail = "user@example.com"
