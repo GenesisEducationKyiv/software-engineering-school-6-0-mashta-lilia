@@ -77,7 +77,7 @@ func openAndMigrateDB(cfg *config.Config) (*sql.DB, error) {
 
 	migResult, err := repository.RunMigrations(db, "file://migrations")
 	if err != nil {
-		_ = db.Close() //nolint:errcheck // best-effort cleanup before returning original error
+		closeQuietly("database", db.Close)
 		return nil, err
 	}
 	if migResult.Applied {

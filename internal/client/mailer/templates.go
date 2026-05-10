@@ -42,6 +42,16 @@ func (t *TemplateBuilder) Confirmation(email, token, repo string) Message {
 }
 
 func (t *TemplateBuilder) ReleaseNotification(email, repo string, release *model.Release) Message {
+	// Defensive: scanner's contract is to skip nil releases before reaching
+	// us, but never trust it — silently degrade instead of panicking on a
+	// missing tag/name/url.
+	if release == nil {
+		return Message{
+			To:      email,
+			Subject: fmt.Sprintf("New release for %s", repo),
+			Body:    fmt.Sprintf("A new release has been published for %s.\n", repo),
+		}
+	}
 	return Message{
 		To:      email,
 		Subject: fmt.Sprintf("New release for %s: %s", repo, release.TagName),

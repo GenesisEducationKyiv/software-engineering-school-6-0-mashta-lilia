@@ -63,7 +63,10 @@ func sanitizeHeader(value string) string {
 func (m *SMTPMailer) deliver(ctx context.Context, msg Message) error {
 	sanitizedTo := sanitizeHeader(msg.To)
 	sanitizedFrom := sanitizeHeader(m.from)
-	encodedSubject := mime.QEncoding.Encode("utf-8", msg.Subject)
+	// Strip CR/LF from Subject before MIME-encoding. mime.QEncoding already
+	// escapes raw newlines, but pre-sanitizing keeps every header field
+	// flowing through the same defense (consistency with To/From).
+	encodedSubject := mime.QEncoding.Encode("utf-8", sanitizeHeader(msg.Subject))
 
 	const envelopeTemplate = "From: %s\r\nTo: %s\r\nSubject: %s\r\n" +
 		"MIME-Version: 1.0\r\nContent-Type: text/plain; charset=\"utf-8\"\r\n\r\n%s"
