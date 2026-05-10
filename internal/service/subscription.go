@@ -7,7 +7,10 @@ import (
 	"github-release-notifier/internal/apperror"
 	"github-release-notifier/internal/model"
 	"log/slog"
+	"time"
 )
+
+const rollbackTimeout = 5 * time.Second
 
 var (
 	ErrInvalidRepo          = errors.New("invalid repository format, expected owner/repo")
@@ -154,7 +157,15 @@ func (s *SubscriptionService) sendConfirmationOrRollback(
 	ctx context.Context, sub *model.Subscription, repo model.RepoRef,
 ) error {
 	if err := s.mailer.SendConfirmation(ctx, sub.Email, sub.Token, repo.String()); err != nil {
-		if rollbackErr := s.subs.UpdateStatus(ctx, sub.ID, model.StatusUnsubscribed); rollbackErr != nil {
+		// Rollback uses a fresh background context with its own deadline.
+		// If the request ctx was canceled (e.g., HTTP timeout during SMTP),
+		// reusing it here would also fail and leave a permanently-pending
+		// row that blocks the unique-index slot — exactly the case this
+		// rollback exists to prevent.
+		rollbackCtx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
+		defer cancel()
+		rollbackErr := s.subs.UpdateStatus(rollbackCtx, sub.ID, model.StatusUnsubscribed)
+		if rollbackErr != nil {
 			slog.Error("failed to rollback subscription after email failure",
 				"id", sub.ID, "error", rollbackErr)
 		}
