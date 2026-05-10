@@ -18,9 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -54,21 +51,14 @@ func run() error {
 	}()
 
 	// Migrations
-	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	migResult, err := repository.RunMigrations(db, "file://migrations")
 	if err != nil {
-		return fmt.Errorf("creating migration driver: %w", err)
+		return err
 	}
-	m, err := migrate.NewWithDatabaseInstance("file://migrations", "postgres", driver)
-	if err != nil {
-		return fmt.Errorf("creating migrator: %w", err)
-	}
-	if err := m.Up(); err != nil {
-		if !errors.Is(err, migrate.ErrNoChange) {
-			return fmt.Errorf("running migrations: %w", err)
-		}
-		slog.Info("migrations: no changes to apply")
-	} else {
+	if migResult.Applied {
 		slog.Info("migrations applied successfully")
+	} else {
+		slog.Info("migrations: no changes to apply")
 	}
 
 	// Dependencies
