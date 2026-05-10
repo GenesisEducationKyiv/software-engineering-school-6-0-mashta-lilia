@@ -1,8 +1,6 @@
 package rest
 
 import (
-	"errors"
-	"github-release-notifier/internal/service"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -15,15 +13,8 @@ func (h *Handler) Confirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.svc.Confirm(r.Context(), token)
-	if err != nil {
-		switch {
-		case errors.Is(err, service.ErrTokenNotFound),
-			errors.Is(err, service.ErrSubscriptionInactive):
-			respondError(w, http.StatusNotFound, "invalid or expired token")
-		default:
-			respondError(w, http.StatusInternalServerError, "internal server error")
-		}
+	if err := h.svc.Confirm(r.Context(), token); err != nil {
+		writeServiceError(w, err)
 		return
 	}
 

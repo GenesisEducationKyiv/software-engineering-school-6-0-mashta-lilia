@@ -1,8 +1,6 @@
 package rest
 
 import (
-	"errors"
-	"github-release-notifier/internal/service"
 	"net/http"
 )
 
@@ -15,11 +13,7 @@ func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 
 	subs, err := h.svc.GetSubscriptions(r.Context(), email)
 	if err != nil {
-		if errors.Is(err, service.ErrInvalidEmail) {
-			respondError(w, http.StatusBadRequest, "invalid email address")
-			return
-		}
-		respondError(w, http.StatusInternalServerError, "internal server error")
+		writeServiceError(w, err)
 		return
 	}
 

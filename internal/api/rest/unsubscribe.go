@@ -1,8 +1,6 @@
 package rest
 
 import (
-	"errors"
-	"github-release-notifier/internal/service"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -15,13 +13,8 @@ func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.svc.Unsubscribe(r.Context(), token)
-	if err != nil {
-		if errors.Is(err, service.ErrTokenNotFound) {
-			respondError(w, http.StatusNotFound, "invalid or expired token")
-			return
-		}
-		respondError(w, http.StatusInternalServerError, "internal server error")
+	if err := h.svc.Unsubscribe(r.Context(), token); err != nil {
+		writeServiceError(w, err)
 		return
 	}
 
