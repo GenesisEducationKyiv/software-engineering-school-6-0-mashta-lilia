@@ -5,8 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github-release-notifier/internal/apperror"
 	"github-release-notifier/internal/model"
-	"github-release-notifier/internal/repository"
 	"testing"
 )
 
@@ -294,7 +294,7 @@ func TestConfirm_TokenNotFound(t *testing.T) {
 	svc := newTestSubscriptionService(
 		&mockSubscriptionRepo{
 			GetByTokenFn: func(_ context.Context, _ string) (*model.Subscription, error) {
-				return nil, fmt.Errorf("subscription token: %w", repository.ErrNotFound)
+				return nil, fmt.Errorf("subscription token: %w", apperror.ErrNotFound)
 			},
 		},
 		&mockRepoStore{},
@@ -398,7 +398,7 @@ func TestUnsubscribe_TokenNotFound(t *testing.T) {
 	svc := newTestSubscriptionService(
 		&mockSubscriptionRepo{
 			GetByTokenFn: func(_ context.Context, _ string) (*model.Subscription, error) {
-				return nil, fmt.Errorf("subscription token: %w", repository.ErrNotFound)
+				return nil, fmt.Errorf("subscription token: %w", apperror.ErrNotFound)
 			},
 		},
 		&mockRepoStore{},

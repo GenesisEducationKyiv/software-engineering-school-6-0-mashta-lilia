@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github-release-notifier/internal/apperror"
 	"github-release-notifier/internal/model"
-	"github-release-notifier/internal/repository"
 	"log/slog"
 	"net/mail"
 	"strings"
@@ -41,18 +41,46 @@ func NewSubscriptionService(
 	}
 }
 
+// Subscribe orchestrates the subscribe lifecycle. Each step is delegated to a
+// focused helper so this method stays a readable outline of the flow.
 func (s *SubscriptionService) Subscribe(ctx context.Context, email, repo string) error {
-	normalized, err := normalizeEmail(email)
+	email, owner, name, err := parseSubscribeInput(email, repo)
 	if err != nil {
-		return ErrInvalidEmail
-	}
-	email = normalized
-
-	owner, name, err := parseRepo(repo)
-	if err != nil {
-		return ErrInvalidRepo
+		return err
 	}
 
+	if err := s.ensureRepoExistsOnGitHub(ctx, owner, name); err != nil {
+		return err
+	}
+
+	if err := s.ensureNoActiveSubscription(ctx, email, owner, name); err != nil {
+		return err
+	}
+
+	sub, err := s.createPendingSubscription(ctx, email, owner, name)
+	if err != nil {
+		return err
+	}
+
+	return s.sendConfirmationOrRollback(ctx, sub, repo)
+}
+
+// parseSubscribeInput validates and normalizes the raw user input.
+func parseSubscribeInput(email, repo string) (normalizedEmail, owner, name string, err error) {
+	normalizedEmail, err = normalizeEmail(email)
+	if err != nil {
+		return "", "", "", ErrInvalidEmail
+	}
+	owner, name, err = parseRepo(repo)
+	if err != nil {
+		return "", "", "", ErrInvalidRepo
+	}
+	return normalizedEmail, owner, name, nil
+}
+
+// ensureRepoExistsOnGitHub returns ErrRepoNotFound if the repo does not exist
+// on GitHub, or wraps the upstream error otherwise.
+func (s *SubscriptionService) ensureRepoExistsOnGitHub(ctx context.Context, owner, name string) error {
 	exists, err := s.github.RepoExists(ctx, owner, name)
 	if err != nil {
 		return fmt.Errorf("checking repo: %w", err)
@@ -60,7 +88,14 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repo string)
 	if !exists {
 		return ErrRepoNotFound
 	}
+	return nil
+}
 
+// ensureNoActiveSubscription returns ErrAlreadyExists if the email is already
+// subscribed (pending or active) to the same repo.
+func (s *SubscriptionService) ensureNoActiveSubscription(
+	ctx context.Context, email, owner, name string,
+) error {
 	already, err := s.subs.Exists(ctx, email, owner, name)
 	if err != nil {
 		return fmt.Errorf("checking existing subscription: %w", err)
@@ -68,15 +103,22 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repo string)
 	if already {
 		return ErrAlreadyExists
 	}
+	return nil
+}
 
+// createPendingSubscription upserts the FK target (tracked_repositories) and
+// then creates a pending subscription row. The order matters: the FK
+// constraint requires the tracked repo to exist first.
+func (s *SubscriptionService) createPendingSubscription(
+	ctx context.Context, email, owner, name string,
+) (*model.Subscription, error) {
 	token, err := generateToken()
 	if err != nil {
-		return fmt.Errorf("generating token: %w", err)
+		return nil, fmt.Errorf("generating token: %w", err)
 	}
 
-	// Upsert tracked repo BEFORE creating subscription (FK constraint)
 	if _, err := s.repos.Upsert(ctx, owner, name); err != nil {
-		return fmt.Errorf("upserting tracked repo: %w", err)
+		return nil, fmt.Errorf("upserting tracked repo: %w", err)
 	}
 
 	sub := &model.Subscription{
@@ -86,33 +128,37 @@ func (s *SubscriptionService) Subscribe(ctx context.Context, email, repo string)
 		Token:     token,
 		Status:    model.StatusPending,
 	}
-
 	if err := s.subs.Create(ctx, sub); err != nil {
-		return fmt.Errorf("creating subscription: %w", err)
+		return nil, fmt.Errorf("creating subscription: %w", err)
 	}
+	return sub, nil
+}
 
-	if err := s.mailer.SendConfirmation(ctx, email, token, repo); err != nil {
-		// Compensate: mark as unsubscribed so the partial unique index frees the
-		// slot and the user can retry. Without this, the orphaned pending row
-		// causes a permanent 409 Conflict on retry.
+// sendConfirmationOrRollback sends the confirmation email and, on failure,
+// rolls the subscription back to "unsubscribed" so the partial unique index
+// frees the slot and the user can retry without a permanent 409 Conflict.
+func (s *SubscriptionService) sendConfirmationOrRollback(
+	ctx context.Context, sub *model.Subscription, repo string,
+) error {
+	if err := s.mailer.SendConfirmation(ctx, sub.Email, sub.Token, repo); err != nil {
 		if rollbackErr := s.subs.UpdateStatus(ctx, sub.ID, model.StatusUnsubscribed); rollbackErr != nil {
 			slog.Error("failed to rollback subscription after email failure",
 				"id", sub.ID, "error", rollbackErr)
 		}
 		return fmt.Errorf("%w: %w", ErrEmailSendFailed, err)
 	}
-
 	return nil
 }
 
 func (s *SubscriptionService) Confirm(ctx context.Context, token string) error {
 	sub, err := s.subs.GetByToken(ctx, token)
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
+		if errors.Is(err, apperror.ErrNotFound) {
 			return ErrTokenNotFound
 		}
 		return fmt.Errorf("looking up token: %w", err)
 	}
+	
 	if sub.Status == model.StatusActive {
 		return nil // idempotent: already confirmed
 	}
@@ -125,7 +171,7 @@ func (s *SubscriptionService) Confirm(ctx context.Context, token string) error {
 func (s *SubscriptionService) Unsubscribe(ctx context.Context, token string) error {
 	sub, err := s.subs.GetByToken(ctx, token)
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
+		if errors.Is(err, apperror.ErrNotFound) {
 			return ErrTokenNotFound
 		}
 		return fmt.Errorf("looking up token: %w", err)
