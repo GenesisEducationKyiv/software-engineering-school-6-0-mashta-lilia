@@ -21,19 +21,28 @@ var (
 	ErrEmailSendFailed      = errors.New("failed to send email")
 )
 
+// subscriptionStore is the narrow composition SubscriptionService actually
+// uses — write + read access, but NOT the SubscriberLister role that belongs
+// to Scanner. Per ISP, the field type advertises only the methods we depend
+// on, not the full SubscriptionRepo union.
+type subscriptionStore interface {
+	SubscriptionWriter
+	SubscriptionReader
+}
+
 type SubscriptionService struct {
-	subs   SubscriptionRepo
-	repos  RepoStore
+	subs   subscriptionStore
+	repos  RepoUpserter
 	github GitHubClient
-	mailer Mailer
+	mailer ConfirmationSender
 	tokens TokenGenerator
 }
 
 func NewSubscriptionService(
-	subs SubscriptionRepo,
-	repos RepoStore,
+	subs subscriptionStore,
+	repos RepoUpserter,
 	gh GitHubClient,
-	m Mailer,
+	m ConfirmationSender,
 	tokens TokenGenerator,
 ) *SubscriptionService {
 	return &SubscriptionService{

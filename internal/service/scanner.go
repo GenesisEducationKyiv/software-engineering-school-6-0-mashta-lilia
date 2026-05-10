@@ -9,18 +9,27 @@ import (
 	"time"
 )
 
+// Scanner depends on the narrowest set of capabilities it actually needs:
+// it reads/updates tracked repos via RepoScanReader, lists subscribers via
+// SubscriberLister, and sends release notifications via ReleaseNotifier.
+// It has no access to subscription writes, repo upserts, or confirmation
+// emails — those are SubscriptionService's concern.
 type Scanner struct {
-	repos    RepoStore
-	subs     SubscriptionRepo
+	repos    RepoScanReader
+	subs     SubscriberLister
 	github   GitHubClient
-	mailer   Mailer
+	mailer   ReleaseNotifier
 	interval time.Duration
 	mu       sync.Mutex
 	running  bool
 }
 
 func NewScanner(
-	repos RepoStore, subs SubscriptionRepo, gh GitHubClient, mailer Mailer, interval time.Duration,
+	repos RepoScanReader,
+	subs SubscriberLister,
+	gh GitHubClient,
+	mailer ReleaseNotifier,
+	interval time.Duration,
 ) (*Scanner, error) {
 	if interval <= 0 {
 		return nil, fmt.Errorf("scanner interval must be > 0, got %s", interval)
