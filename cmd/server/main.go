@@ -101,8 +101,9 @@ func run() error {
 
 	// HTTP
 	handler := rest.NewHandler(subService)
+	healthChecker := service.NewDBHealthChecker(db)
 	subscribeLimiter := middleware.NewRateLimiter(rateLimitRequests, time.Minute, cfg.TrustedProxy)
-	router := rest.NewRouter(handler, db, cfg.APIKey, subscribeLimiter, "swagger.yaml")
+	router := rest.NewRouter(handler, healthChecker, cfg.APIKey, subscribeLimiter, "swagger.yaml")
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.ServerPort,
