@@ -102,6 +102,8 @@ func newRedisClient(cfg *config.Config) *redis.Client {
 // buildGitHubClient returns a service.GitHubClient. If Redis is reachable,
 // the returned client is wrapped in a cache-aside decorator; otherwise the
 // raw API client is returned (graceful degradation).
+//
+//nolint:ireturn // composition root: returns the abstraction by design.
 func buildGitHubClient(cfg *config.Config, rdb *redis.Client) service.GitHubClient {
 	base := github.NewClient(cfg.GitHubToken)
 	if err := rdb.Ping(context.Background()).Err(); err != nil {

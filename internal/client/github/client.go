@@ -113,4 +113,3 @@ func (c *Client) doRequest(ctx context.Context, rawURL string) (*http.Response, 
 	// Kept for compiler satisfaction.
 	return nil, errors.New("github rate limit exceeded")
 }
-

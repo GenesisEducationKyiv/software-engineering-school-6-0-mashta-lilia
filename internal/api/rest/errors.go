@@ -20,7 +20,10 @@ var serviceErrorMappings = []errorMapping{
 	{service.ErrInvalidEmail, http.StatusBadRequest, "invalid email address"},
 	{service.ErrRepoNotFound, http.StatusNotFound, "repository not found on GitHub"},
 	{service.ErrAlreadyExists, http.StatusConflict, "subscription already exists"},
-	{service.ErrEmailSendFailed, http.StatusServiceUnavailable, "failed to send confirmation email, please try again"},
+	{
+		service.ErrEmailSendFailed, http.StatusServiceUnavailable,
+		"failed to send confirmation email, please try again",
+	},
 	{service.ErrTokenNotFound, http.StatusNotFound, "invalid or expired token"},
 	{service.ErrSubscriptionInactive, http.StatusNotFound, "invalid or expired token"},
 }
