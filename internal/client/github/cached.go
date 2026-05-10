@@ -6,28 +6,26 @@ import (
 	"errors"
 	"fmt"
 	"github-release-notifier/internal/model"
+	"github-release-notifier/internal/service"
 	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
-// gitHubClient is the subset of functionality that CachedClient delegates to.
-// Defined locally to avoid coupling to the service-layer interface.
-type gitHubClient interface {
-	RepoExists(ctx context.Context, owner, name string) (bool, error)
-	GetLatestRelease(ctx context.Context, owner, name string) (*model.Release, error)
-}
-
-// CachedClient wraps a base GitHubClient with a Redis cache-aside layer.
-// If Redis is unavailable, it gracefully degrades to direct API calls.
+// CachedClient wraps a base service.GitHubClient with a Redis cache-aside
+// layer. If Redis is unavailable, it gracefully degrades to direct API calls.
+//
+// The wrapped contract is service.GitHubClient — there is intentionally no
+// duplicate local interface, so any future change to that contract surfaces
+// as a single compile error here instead of silently drifting.
 type CachedClient struct {
-	base  gitHubClient
+	base  service.GitHubClient
 	redis *redis.Client
 	ttl   time.Duration
 }
 
-func NewCachedClient(base gitHubClient, rdb *redis.Client, ttl time.Duration) *CachedClient {
+func NewCachedClient(base service.GitHubClient, rdb *redis.Client, ttl time.Duration) *CachedClient {
 	return &CachedClient{
 		base:  base,
 		redis: rdb,
