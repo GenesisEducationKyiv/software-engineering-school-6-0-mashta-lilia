@@ -65,10 +65,11 @@ func run() error {
 	subRepo := repository.NewSubscriptionRepo(db)
 	repoStore := repository.NewTrackedRepoStore(db)
 	baseGHClient := github.NewClient(cfg.GitHubToken)
+	mailTemplates := mailer.NewTemplateBuilder(cfg.BaseURL)
 	mail := mailer.NewSMTPMailer(
 		cfg.SMTPHost, cfg.SMTPPort,
 		cfg.SMTPUser, cfg.SMTPPassword,
-		cfg.SMTPFrom, cfg.BaseURL,
+		cfg.SMTPFrom, mailTemplates,
 	)
 
 	// Redis cache layer (graceful degradation if unavailable)
