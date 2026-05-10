@@ -270,7 +270,7 @@ erDiagram
 ### 5.2 Caching Strategy
 
 - **Layer:** Redis, optional, cache-aside.
-- **Keys:** `gh:release:{owner}/{name}`.
+- **Keys:** `github:repo_exists:{owner}/{name}` and `github:release:{owner}/{name}`.
 - **TTL:** 10 minutes (configurable via `REDIS_CACHE_TTL`).
 - **Negative results not cached** — caching `nil` would mean missing the
   first release for up to TTL. Only positive results go into the cache.
@@ -306,7 +306,7 @@ Back-of-the-envelope for a single-instance deployment:
 | Postgres unreachable mid-flight             | Per-query errors propagate; subscribe returns 5xx; scanner logs and continues next tick.    |
 | Redis unreachable                           | Cache decorator falls through to GitHub API; logs the error. No user-visible impact.        |
 | GitHub API 429                              | 3-tier retry: `Retry-After`, `X-RateLimit-Reset` (capped 120 s), exp. backoff (1/2/4 s).    |
-| GitHub API 5xx                              | Same retry chain, then surface error.                                                       |
+| GitHub API 5xx                              | Not retried — surfaced to caller. Only 429 triggers the retry chain (see row above).        |
 | SMTP unreachable on subscribe               | Subscription rolled back to `unsubscribed` so user can retry; no `pending` zombies.         |
 | SMTP unreachable on notification fan-out    | Per-recipient log entry; loop continues; missed recipient is **not** retried.               |
 | Process crash mid-fan-out                   | At-most-once: tag persisted, some recipients miss this release. [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md). |
