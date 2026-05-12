@@ -50,4 +50,3 @@ func serveFile(path string) http.HandlerFunc {
 		http.ServeFile(w, r, path)
 	}
 }
-
