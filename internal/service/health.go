@@ -11,16 +11,9 @@ import (
 // "unhealthy" instead of crashing the server.
 var errHealthCheckerMisconfigured = errors.New("health checker not configured")
 
-// HealthChecker reports the liveness of a downstream dependency. The HTTP
-// handler delegates to this so it never depends on *sql.DB or any other
-// concrete infrastructure type — keeping the controller thin and letting
-// the set of checked dependencies grow (Redis, GitHub, …) without touching
-// the router.
-type HealthChecker interface {
-	Check(ctx context.Context) error
-}
-
-// DBHealthChecker pings a database connection.
+// DBHealthChecker pings a database connection. It satisfies any
+// HealthChecker-shaped interface (e.g., rest.HealthChecker) via Go's
+// structural typing — service/ does not need to import rest/.
 type DBHealthChecker struct {
 	db *sql.DB
 }

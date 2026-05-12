@@ -2,7 +2,6 @@ package rest
 
 import (
 	"github-release-notifier/internal/api/middleware"
-	"github-release-notifier/internal/service"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -12,7 +11,7 @@ import (
 
 func NewRouter(
 	h *Handler,
-	health service.HealthChecker,
+	health HealthChecker,
 	apiKey string,
 	subscribeLimiter *middleware.RateLimiter,
 	swaggerPath string,
@@ -52,12 +51,3 @@ func serveFile(path string) http.HandlerFunc {
 	}
 }
 
-func healthHandler(health service.HealthChecker) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := health.Check(r.Context()); err != nil {
-			respondJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
-			return
-		}
-		respondJSON(w, http.StatusOK, map[string]string{"status": "healthy"})
-	}
-}
