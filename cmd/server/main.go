@@ -99,27 +99,25 @@ func newRedisClient(cfg *config.Config) *redis.Client {
 	})
 }
 
-// buildGitHubClient returns a service.GitHubClient. If Redis is reachable,
-// the returned client is wrapped in a cache-aside decorator; otherwise the
-// raw API client is returned (graceful degradation).
-//
-//nolint:ireturn // composition root: returns the abstraction by design.
-func buildGitHubClient(cfg *config.Config, rdb *redis.Client) service.GitHubClient {
-	base := github.NewClient(cfg.GitHubToken)
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		slog.Warn("redis unavailable, caching disabled", "error", err)
-		return base
-	}
-	slog.Info("redis connected, caching enabled")
-	return github.NewCachedClient(base, rdb, cfg.RedisCacheTTL)
-}
-
 // buildDependencies wires every concrete component into the app graph.
 // Adding a new dependency means editing one place, not the run() function.
 func buildDependencies(cfg *config.Config, db *sql.DB, rdb *redis.Client) *dependencies {
 	subRepo := repository.NewSubscriptionRepo(db)
 	repoStore := repository.NewTrackedRepoStore(db)
-	ghClient := buildGitHubClient(cfg, rdb)
+
+	// GitHub client: prefer Redis-cached, fall back to base on Ping failure.
+	// The interface variable lives here (not as a function return) so the
+	// composition root stays free of ireturn lint suppressions — assignment
+	// to an interface-typed local is fine, returning one from a helper is
+	// what the lint flags.
+	base := github.NewClient(cfg.GitHubToken)
+	var ghClient service.GitHubClient = base
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		slog.Warn("redis unavailable, caching disabled", "error", err)
+	} else {
+		slog.Info("redis connected, caching enabled")
+		ghClient = github.NewCachedClient(base, rdb, cfg.RedisCacheTTL)
+	}
 
 	mailTemplates := mailer.NewTemplateBuilder(cfg.BaseURL)
 	mail := mailer.NewSMTPMailer(
