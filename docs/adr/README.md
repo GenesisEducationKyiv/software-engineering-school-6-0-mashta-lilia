@@ -14,6 +14,7 @@ The format follows [MADR 3.0](https://adr.github.io/madr/).
 | 0001 | Accepted | [Layered Architecture with Dependency Inversion](0001-clean-architecture-with-dependency-inversion.md) | Sets the dependency rule for the whole codebase. |
 | 0007 | Accepted | [Persist `last_seen_tag` Before Sending Notifications](0007-persist-before-notify-for-at-most-once.md) | Non-obvious correctness trade-off (at-most-once vs at-least-once). |
 | 0008 | Accepted | [Partial Unique Index to Allow Re-subscription](0008-partial-unique-index-for-resubscription.md) | Non-obvious data-model encoding of a state-dependent rule. |
+| 0009 | Accepted | [Consumer-Side Interface Placement](0009-consumer-side-interface-placement.md) | Refines ADR-0001 with a precise rule for adapters and cross-layer contracts. |
 
 ## When to Add a New ADR
 
