@@ -12,22 +12,29 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// gitHubClient is the subset of functionality that CachedClient delegates to.
-// Defined locally to avoid coupling to the service-layer interface.
-type gitHubClient interface {
+// baseClient is the consumer-side contract: the methods CachedClient
+// delegates to on cache miss. Defining it locally keeps the github/
+// package self-contained — no upstream dependency on service/, consistent
+// with how SubscriptionUseCase is declared on the rest/ consumer side.
+//
+// Drift risk is bounded: the wiring in cmd/server/main.go assigns both
+// *Client and *CachedClient to a service.GitHubClient variable, so any
+// signature change in service.GitHubClient is caught at compile time
+// regardless of which interface CachedClient locally accepts.
+type baseClient interface {
 	RepoExists(ctx context.Context, owner, name string) (bool, error)
 	GetLatestRelease(ctx context.Context, owner, name string) (*model.Release, error)
 }
 
-// CachedClient wraps a base GitHubClient with a Redis cache-aside layer.
-// If Redis is unavailable, it gracefully degrades to direct API calls.
+// CachedClient wraps a base GitHub-shaped client with a Redis cache-aside
+// layer. If Redis is unavailable, it gracefully degrades to direct API calls.
 type CachedClient struct {
-	base  gitHubClient
+	base  baseClient
 	redis *redis.Client
 	ttl   time.Duration
 }
 
-func NewCachedClient(base gitHubClient, rdb *redis.Client, ttl time.Duration) *CachedClient {
+func NewCachedClient(base baseClient, rdb *redis.Client, ttl time.Duration) *CachedClient {
 	return &CachedClient{
 		base:  base,
 		redis: rdb,

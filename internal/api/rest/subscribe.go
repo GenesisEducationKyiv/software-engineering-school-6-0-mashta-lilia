@@ -2,8 +2,6 @@ package rest
 
 import (
 	"encoding/json"
-	"errors"
-	"github-release-notifier/internal/service"
 	"net/http"
 )
 
@@ -19,23 +17,8 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.svc.Subscribe(r.Context(), req.Email, req.Repo)
-	if err != nil {
-		switch {
-		case errors.Is(err, service.ErrInvalidRepo):
-			respondError(w, http.StatusBadRequest, "invalid repository format, expected owner/repo")
-		case errors.Is(err, service.ErrInvalidEmail):
-			respondError(w, http.StatusBadRequest, "invalid email address")
-		case errors.Is(err, service.ErrRepoNotFound):
-			respondError(w, http.StatusNotFound, "repository not found on GitHub")
-		case errors.Is(err, service.ErrAlreadyExists):
-			respondError(w, http.StatusConflict, "subscription already exists")
-		case errors.Is(err, service.ErrEmailSendFailed):
-			respondError(w, http.StatusServiceUnavailable,
-				"failed to send confirmation email, please try again")
-		default:
-			respondError(w, http.StatusInternalServerError, "internal server error")
-		}
+	if err := h.svc.Subscribe(r.Context(), req.Email, req.Repo); err != nil {
+		writeServiceError(w, err)
 		return
 	}
 

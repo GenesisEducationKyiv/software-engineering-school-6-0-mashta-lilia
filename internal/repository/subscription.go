@@ -5,10 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github-release-notifier/internal/apperror"
 	"github-release-notifier/internal/model"
 )
-
-var ErrNotFound = errors.New("not found")
 
 type SubscriptionRepo struct {
 	db *sql.DB
@@ -43,7 +42,7 @@ func (r *SubscriptionRepo) GetByToken(ctx context.Context, token string) (*model
 		&sub.Token, &sub.Status, &sub.CreatedAt, &sub.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("subscription token: %w", ErrNotFound)
+		return nil, fmt.Errorf("subscription token: %w", apperror.ErrNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("querying subscription by token: %w", err)
@@ -96,7 +95,7 @@ func (r *SubscriptionRepo) UpdateStatus(
 		return fmt.Errorf("getting rows affected: %w", err)
 	}
 	if n == 0 {
-		return ErrNotFound
+		return apperror.ErrNotFound
 	}
 	return nil
 }

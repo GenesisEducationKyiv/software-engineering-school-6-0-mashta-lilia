@@ -1,7 +1,6 @@
 package rest
 
 import (
-	"database/sql"
 	"github-release-notifier/internal/api/middleware"
 	"net/http"
 
@@ -12,7 +11,7 @@ import (
 
 func NewRouter(
 	h *Handler,
-	db *sql.DB,
+	health HealthChecker,
 	apiKey string,
 	subscribeLimiter *middleware.RateLimiter,
 	swaggerPath string,
@@ -25,7 +24,7 @@ func NewRouter(
 	r.Use(middleware.Metrics)
 
 	r.Get("/", root)
-	r.Get("/health", healthCheck(db))
+	r.Get("/health", healthHandler(health))
 	r.Get("/swagger.yaml", serveFile(swaggerPath))
 	r.Handle("/metrics", promhttp.Handler())
 
@@ -49,15 +48,5 @@ func root(w http.ResponseWriter, _ *http.Request) {
 func serveFile(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, path)
-	}
-}
-
-func healthCheck(db *sql.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := db.PingContext(r.Context()); err != nil {
-			respondJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
-			return
-		}
-		respondJSON(w, http.StatusOK, map[string]string{"status": "healthy"})
 	}
 }

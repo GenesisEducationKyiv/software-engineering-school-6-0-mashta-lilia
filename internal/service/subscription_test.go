@@ -5,8 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github-release-notifier/internal/apperror"
 	"github-release-notifier/internal/model"
-	"github-release-notifier/internal/repository"
+	"strings"
 	"testing"
 )
 
@@ -16,10 +17,13 @@ func newTestSubscriptionService(
 	gh *mockGitHubClient,
 	mail *mockMailer,
 ) *SubscriptionService {
-	return NewSubscriptionService(subs, repos, gh, mail)
+	return NewSubscriptionService(subs, repos, gh, mail, fixedTokenGenerator{Token: testToken})
 }
 
-const testEmail = "user@example.com"
+const (
+	testEmail = "user@example.com"
+	testToken = "test-token-deterministic"
+)
 
 // --- Subscribe Tests ---
 
@@ -70,14 +74,14 @@ func TestSubscribe_Success(t *testing.T) {
 	if createdSub.Status != model.StatusPending {
 		t.Errorf("status = %q, want %q", createdSub.Status, model.StatusPending)
 	}
-	if createdSub.Token == "" {
-		t.Error("expected token to be generated")
+	if createdSub.Token != testToken {
+		t.Errorf("token = %q, want %q (from injected generator)", createdSub.Token, testToken)
 	}
 	if sentEmail != testEmail {
 		t.Errorf("confirmation email sent to %q, want %q", sentEmail, testEmail)
 	}
-	if sentToken != createdSub.Token {
-		t.Error("confirmation token mismatch")
+	if sentToken != testToken {
+		t.Errorf("confirmation token = %q, want %q (must match DB row)", sentToken, testToken)
 	}
 	if sentRepo != "golang/go" {
 		t.Errorf("confirmation repo = %q, want %q", sentRepo, "golang/go")
@@ -170,6 +174,32 @@ func TestSubscribe_GitHubAPIError(t *testing.T) {
 	}
 	if errors.Is(err, ErrRepoNotFound) {
 		t.Error("should not wrap GitHub API error as ErrRepoNotFound")
+	}
+}
+
+func TestSubscribe_TokenGeneratorFailure_Propagates(t *testing.T) {
+	// With a stubbed generator we can deterministically exercise the
+	// failure branch of token generation, which is unreachable when the
+	// real CryptoTokenGenerator is wired in (rand.Read effectively never
+	// fails in tests).
+	svc := NewSubscriptionService(
+		&mockSubscriptionRepo{
+			ExistsFn: func(_ context.Context, _, _, _ string) (bool, error) { return false, nil },
+		},
+		&mockRepoStore{},
+		&mockGitHubClient{
+			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
+		},
+		&mockMailer{},
+		fixedTokenGenerator{Err: errors.New("entropy source unavailable")},
+	)
+
+	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
+	if err == nil {
+		t.Fatal("expected token generator error to propagate")
+	}
+	if !strings.Contains(err.Error(), "generating token") {
+		t.Errorf("error = %q, want it to mention token generation", err.Error())
 	}
 }
 
@@ -294,7 +324,7 @@ func TestConfirm_TokenNotFound(t *testing.T) {
 	svc := newTestSubscriptionService(
 		&mockSubscriptionRepo{
 			GetByTokenFn: func(_ context.Context, _ string) (*model.Subscription, error) {
-				return nil, fmt.Errorf("subscription token: %w", repository.ErrNotFound)
+				return nil, fmt.Errorf("subscription token: %w", apperror.ErrNotFound)
 			},
 		},
 		&mockRepoStore{},
@@ -398,7 +428,7 @@ func TestUnsubscribe_TokenNotFound(t *testing.T) {
 	svc := newTestSubscriptionService(
 		&mockSubscriptionRepo{
 			GetByTokenFn: func(_ context.Context, _ string) (*model.Subscription, error) {
-				return nil, fmt.Errorf("subscription token: %w", repository.ErrNotFound)
+				return nil, fmt.Errorf("subscription token: %w", apperror.ErrNotFound)
 			},
 		},
 		&mockRepoStore{},

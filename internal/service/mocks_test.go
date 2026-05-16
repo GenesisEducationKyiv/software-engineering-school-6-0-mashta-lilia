@@ -139,3 +139,15 @@ func (m *mockMailer) SendReleaseNotification(
 	}
 	return m.SendReleaseNotificationFn(ctx, email, repo, release)
 }
+
+// fixedTokenGenerator is a deterministic TokenGenerator for tests. It lets
+// callers assert on the exact token persisted to the DB and simulate
+// generator failures without touching crypto/rand.
+type fixedTokenGenerator struct {
+	Token string
+	Err   error
+}
+
+func (g fixedTokenGenerator) Generate() (string, error) {
+	return g.Token, g.Err
+}

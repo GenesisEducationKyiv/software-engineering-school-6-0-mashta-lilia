@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
+	"github-release-notifier/internal/apperror"
 	"github-release-notifier/internal/model"
 	"github-release-notifier/internal/repository"
 	"log/slog"
@@ -239,7 +240,7 @@ func TestIntegration_SubscriptionRepo_GetByToken_NotFound(t *testing.T) {
 
 	_, err := repo.GetByToken(ctx, "nonexistent-token")
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, repository.ErrNotFound))
+	assert.True(t, errors.Is(err, apperror.ErrNotFound))
 }
 
 func TestIntegration_SubscriptionRepo_UpdateStatus_TriggersUpdatedAt(t *testing.T) {
@@ -464,5 +465,5 @@ func TestIntegration_CascadeDelete_RemovesSubscriptions(t *testing.T) {
 
 	_, err = subRepo.GetByToken(ctx, "tok-cascade")
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, repository.ErrNotFound), "subscription should be cascade-deleted")
+	assert.True(t, errors.Is(err, apperror.ErrNotFound), "subscription should be cascade-deleted")
 }

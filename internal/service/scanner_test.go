@@ -75,7 +75,7 @@ func TestScanner_NewRelease_NotifiesSubscribers(t *testing.T) {
 		},
 	}
 
-	scanner := mustNewScanner(t,repos, subs, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t, repos, subs, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -114,7 +114,7 @@ func TestScanner_SameTag_NoNotification(t *testing.T) {
 		},
 	}
 
-	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t, repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -154,7 +154,7 @@ func TestScanner_NullLastSeenTag_TreatsAsNew(t *testing.T) {
 		SendReleaseNotificationFn: func(_ context.Context, _, _ string, _ *model.Release) error { return nil }, //nolint:revive // line exceeds limit due to test data
 	}
 
-	scanner := mustNewScanner(t,repos, subs, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t, repos, subs, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -184,7 +184,7 @@ func TestScanner_NoRelease_Skips(t *testing.T) {
 		},
 	}
 
-	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
+	scanner := mustNewScanner(t, repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -228,7 +228,7 @@ func TestScanner_GitHubError_ContinuesOtherRepos(t *testing.T) {
 		SendReleaseNotificationFn: func(_ context.Context, _, _ string, _ *model.Release) error { return nil }, //nolint:revive // line exceeds limit due to test data
 	}
 
-	scanner := mustNewScanner(t,repos, subs, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t, repos, subs, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -264,7 +264,7 @@ func TestScanner_UpdateLastSeenFails_SkipsNotification(t *testing.T) {
 		},
 	}
 
-	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
+	scanner := mustNewScanner(t, repos, &mockSubscriptionRepo{}, gh, mailer, time.Hour)
 
 	scanner.scan(context.Background())
 
@@ -298,7 +298,7 @@ func TestScanner_ContextCancelled_StopsProcessing(t *testing.T) {
 		},
 	}
 
-	scanner := mustNewScanner(t,repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
+	scanner := mustNewScanner(t, repos, &mockSubscriptionRepo{}, gh, &mockMailer{}, time.Hour)
 
 	scanner.scan(ctx)
 
