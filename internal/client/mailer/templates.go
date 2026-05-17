@@ -2,23 +2,15 @@ package mailer
 
 import (
 	"fmt"
-	"github-release-notifier/internal/model"
+	"github-release-notifier/internal/release"
 )
 
-// Message is a fully composed email — subject, body, and recipient — ready
-// to hand to a transport. Keeping it as a plain value object lets us test
-// templating without ever touching SMTP, and lets the SMTP transport ignore
-// where the content came from.
 type Message struct {
 	To      string
 	Subject string
 	Body    string
 }
 
-// TemplateBuilder turns domain inputs (an email + a token + a repo, or a
-// release event) into a Message. This responsibility used to live inside
-// SMTPMailer, which mixed templating with transport — a SRP violation and
-// inappropriate coupling between mailer and BaseURL routing.
 type TemplateBuilder struct {
 	baseURL string
 }
@@ -41,11 +33,9 @@ func (t *TemplateBuilder) Confirmation(email, token, repo string) Message {
 	}
 }
 
-func (t *TemplateBuilder) ReleaseNotification(email, repo string, release *model.Release) Message {
-	// Defensive: scanner's contract is to skip nil releases before reaching
-	// us, but never trust it — silently degrade instead of panicking on a
-	// missing tag/name/url.
-	if release == nil {
+func (t *TemplateBuilder) ReleaseNotification(email, repo string, rel *release.Release) Message {
+	// rel may be nil — degrade gracefully rather than panic.
+	if rel == nil {
 		return Message{
 			To:      email,
 			Subject: fmt.Sprintf("New release for %s", repo),
@@ -54,13 +44,13 @@ func (t *TemplateBuilder) ReleaseNotification(email, repo string, release *model
 	}
 	return Message{
 		To:      email,
-		Subject: fmt.Sprintf("New release for %s: %s", repo, release.TagName),
+		Subject: fmt.Sprintf("New release for %s: %s", repo, rel.TagName),
 		Body: fmt.Sprintf(
 			"A new release has been published for %s!\n\n"+
 				"Version: %s\n"+
 				"Name: %s\n"+
 				"URL: %s\n",
-			repo, release.TagName, release.Name, release.HTMLURL,
+			repo, rel.TagName, rel.Name, rel.HTMLURL,
 		),
 	}
 }

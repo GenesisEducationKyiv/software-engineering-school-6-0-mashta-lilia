@@ -3,17 +3,13 @@ package mailer
 import (
 	"context"
 	"fmt"
-	"github-release-notifier/internal/model"
+	"github-release-notifier/internal/release"
 	"mime"
 	"net"
 	"net/smtp"
 	"strings"
 )
 
-// SMTPMailer is a thin transport over net/smtp. It does NOT know how to
-// build email content — that responsibility belongs to TemplateBuilder.
-// SMTPMailer composes a builder and only adds delivery semantics: dialing,
-// auth, MIME envelope, header sanitization.
 type SMTPMailer struct {
 	host      string
 	port      int
@@ -23,9 +19,6 @@ type SMTPMailer struct {
 	templates *TemplateBuilder
 }
 
-// NewSMTPMailer wires a transport with the templates it should render.
-// baseURL no longer leaks into the transport — it lives where it semantically
-// belongs (the template builder, since URLs are content, not transport).
 func NewSMTPMailer(
 	host string, port int, user, password, from string, templates *TemplateBuilder,
 ) *SMTPMailer {
@@ -44,9 +37,9 @@ func (m *SMTPMailer) SendConfirmation(ctx context.Context, email, token, repo st
 }
 
 func (m *SMTPMailer) SendReleaseNotification(
-	ctx context.Context, email, repo string, release *model.Release,
+	ctx context.Context, email, repo string, rel *release.Release,
 ) error {
-	return m.deliver(ctx, m.templates.ReleaseNotification(email, repo, release))
+	return m.deliver(ctx, m.templates.ReleaseNotification(email, repo, rel))
 }
 
 func sanitizeHeader(value string) string {
@@ -54,18 +47,9 @@ func sanitizeHeader(value string) string {
 	return r.Replace(value)
 }
 
-// deliver sends a pre-built Message via SMTP. It is the only place in the
-// package that talks to the wire.
-//
-// Unlike smtp.SendMail, this implementation respects context cancellation at
-// the dial phase (via net.DialContext) and at the send phase (via connection
-// deadline), preventing goroutine leaks when the caller's context is canceled.
 func (m *SMTPMailer) deliver(ctx context.Context, msg Message) error {
 	sanitizedTo := sanitizeHeader(msg.To)
 	sanitizedFrom := sanitizeHeader(m.from)
-	// Strip CR/LF from Subject before MIME-encoding. mime.QEncoding already
-	// escapes raw newlines, but pre-sanitizing keeps every header field
-	// flowing through the same defense (consistency with To/From).
 	encodedSubject := mime.QEncoding.Encode("utf-8", sanitizeHeader(msg.Subject))
 
 	const envelopeTemplate = "From: %s\r\nTo: %s\r\nSubject: %s\r\n" +

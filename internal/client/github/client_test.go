@@ -195,7 +195,7 @@ func TestDoRequest_RateLimitExhausted(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error after exhausting retries")
 	}
-	expected := "github rate limit exceeded after 3 retries"
+	expected := "GitHub rate limit exceeded after 3 retries"
 	if err.Error() != expected {
 		t.Errorf("error = %q, want %q", err.Error(), expected)
 	}

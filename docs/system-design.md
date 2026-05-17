@@ -334,7 +334,7 @@ Back-of-the-envelope for a single-instance deployment:
   test servers.
 - **SQL injection:** every query uses positional parameters
   (`$1, $2, …`). No string interpolation. Confirmed by
-  `internal/repository/*.go`.
+  `internal/storage/*.go`.
 - **Path traversal in GitHub URLs:** owner and repo segments pass through
   `url.PathEscape` before interpolation.
 - **PII in logs:** subscriber emails are never written to error logs in the

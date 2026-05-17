@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github-release-notifier/internal/model"
+	"github-release-notifier/internal/release"
 	"net/http"
 	"net/url"
 	"time"
@@ -20,7 +20,7 @@ type Client struct {
 	httpClient *http.Client
 	token      string
 	baseURL    string
-	retry      RetryStrategy
+	retry      HeaderAwareRetry
 }
 
 func NewClient(token string) *Client {
@@ -49,7 +49,7 @@ func (c *Client) RepoExists(ctx context.Context, owner, name string) (bool, erro
 	return false, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 }
 
-func (c *Client) GetLatestRelease(ctx context.Context, owner, name string) (*model.Release, error) {
+func (c *Client) GetLatestRelease(ctx context.Context, owner, name string) (*release.Release, error) {
 	releaseURL := fmt.Sprintf(
 		"%s/repos/%s/%s/releases/latest",
 		c.baseURL, url.PathEscape(owner), url.PathEscape(name),
@@ -67,11 +67,11 @@ func (c *Client) GetLatestRelease(ctx context.Context, owner, name string) (*mod
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var release model.Release
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+	var rel release.Release
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
 		return nil, fmt.Errorf("decoding release: %w", err)
 	}
-	return &release, nil
+	return &rel, nil
 }
 
 func (c *Client) doRequest(ctx context.Context, rawURL string) (*http.Response, error) {
@@ -98,7 +98,7 @@ func (c *Client) doRequest(ctx context.Context, rawURL string) (*http.Response, 
 		resp.Body.Close() //nolint:errcheck,gosec // discarding 429 response body before retry
 
 		if attempt == maxRetries {
-			return nil, fmt.Errorf("github rate limit exceeded after %d retries", maxRetries)
+			return nil, fmt.Errorf("GitHub rate limit exceeded after %d retries", maxRetries)
 		}
 
 		wait := c.retry.NextWait(resp.Header, attempt)
@@ -109,7 +109,5 @@ func (c *Client) doRequest(ctx context.Context, rawURL string) (*http.Response, 
 		}
 	}
 
-	// Unreachable: the loop always returns via attempt == maxRetries or a non-429 status.
-	// Kept for compiler satisfaction.
-	return nil, errors.New("github rate limit exceeded")
+	return nil, errors.New("GitHub rate limit exceeded")
 }

@@ -37,21 +37,28 @@ docker compose down
 ### Why This Structure
 
 ```
-cmd/server/main.go        -- Entry point: wiring, migrations, graceful shutdown
+main/main.go                       -- 5-line entrypoint that calls app.Run
 internal/
-  config/                  -- Parse env vars once at startup, inject everywhere
-  model/                   -- Domain types (Subscription, TrackedRepository, Release)
-  service/                 -- Business logic + background scanner
-    interfaces.go          -- Contracts the service depends on (not implements)
-  repository/              -- PostgreSQL data access (parameterized queries only)
-  client/github/           -- GitHub REST API client + Redis cache decorator
-  client/mailer/           -- SMTP client with header injection prevention
-  api/rest/                -- HTTP handlers, router, JSON response helpers
-  api/middleware/           -- API key auth, per-IP rate limiting
-migrations/                -- SQL schema (auto-applied via golang-migrate)
+  app/                              -- Bootstrap: wiring, migrations, HTTP, graceful shutdown
+  config/                           -- Parse env vars once at startup
+  subscription/                     -- Subscription domain: Service, Subscription, errors
+  release/                          -- Release domain: Poller, Release, TrackedRepository
+  email/                            -- email.Address value object
+  repo/                             -- repo.Ref value object
+  token/                            -- token.Generator (crypto/rand → hex)
+  platform/health/                  -- health.DBChecker
+  repository/                       -- PostgreSQL data access (parameterized queries only)
+  client/github/                    -- GitHub REST API client + Redis cache decorator
+  client/mailer/                    -- SMTP client + email templates
+  api/rest/                         -- chi router
+    subscription/                   -- subscribe/confirm/unsubscribe/list handlers
+    health/                         -- /health handler
+    middleware/                     -- API-key auth, per-IP rate limiting, metrics
+migrations/                         -- SQL schema (auto-applied via golang-migrate)
+tests/repository/                   -- Integration tests (testcontainers, real Postgres)
 ```
 
-The project follows **clean architecture** with dependency inversion: the `service` package defines interfaces (`GitHubClient`, `Mailer`, `SubscriptionRepo`, `RepoStore`), and the outer layers (`repository`, `client`, `api`) provide implementations. This means the business logic has zero knowledge of HTTP, SQL, or Redis -- it only speaks to interfaces.
+The project follows **clean architecture** with consumer-side interface placement (see [ADR 0009](docs/adr/0009-consumer-side-interface-placement.md)): each domain package declares the small unexported interfaces it actually uses. Outer layers (`repository`, `client`, `api`) provide implementations and satisfy those interfaces via Go's structural typing. Business logic has zero knowledge of HTTP, SQL, or Redis.
 
 **Why this matters**: Every dependency can be swapped or mocked independently. The entire service layer is tested with pure in-memory mocks, and the repository layer is tested against a real database. No test touches both concerns at once.
 
@@ -287,18 +294,25 @@ cp .env.example .env
 
 ```
 .
-├── cmd/server/main.go           # Wiring, migrations, graceful shutdown
+├── main/main.go                 # 5-line entrypoint
 ├── internal/
-│   ├── api/
-│   │   ├── middleware/          # API key auth, rate limiter, Prometheus metrics
-│   │   └── rest/                # HTTP handlers, router, JSON helpers
+│   ├── app/                     # Bootstrap: wiring, migrations, HTTP, shutdown
+│   ├── api/rest/
+│   │   ├── subscription/        # subscribe / confirm / unsubscribe / list handlers
+│   │   ├── health/              # /health handler
+│   │   └── middleware/          # API key auth, rate limiter, Prometheus metrics
 │   ├── client/
 │   │   ├── github/              # GitHub API client + Redis cache decorator
-│   │   └── mailer/              # SMTP client with header sanitization
-│   ├── config/                  # Environment-based config (parsed once at startup)
-│   ├── model/                   # Domain types
-│   ├── repository/              # PostgreSQL data access layer
-│   └── service/                 # Business logic, interfaces, background scanner
+│   │   └── mailer/              # SMTP transport + email templates
+│   ├── config/                  # Environment-based config
+│   ├── subscription/            # Subscription domain (Service + types + errors)
+│   ├── release/                 # Release domain (Poller + Release/TrackedRepository)
+│   ├── email/                   # email.Address value object
+│   ├── repo/                    # repo.Ref value object
+│   ├── token/                   # token.Generator
+│   ├── platform/health/         # health.DBChecker
+│   └── repository/              # PostgreSQL data access layer
+├── tests/repository/            # Integration tests (testcontainers + real Postgres)
 ├── migrations/                  # SQL schema (auto-applied on startup)
 ├── docker-compose.yml           # PostgreSQL 16 + Redis 7 + app
 ├── Dockerfile                   # Multi-stage build (Alpine)

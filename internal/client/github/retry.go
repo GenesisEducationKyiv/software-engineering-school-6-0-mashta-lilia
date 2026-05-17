@@ -8,19 +8,9 @@ import (
 
 const maxBackoffBitShift = 62
 
-// RetryStrategy decides how long the client should wait before retrying a
-// 429 Too Many Requests response. Extracting this as an interface means the
-// retry policy is open for extension (jitter, circuit breaker, custom
-// upstream caps) without modifying Client itself — Open/Closed in practice.
-type RetryStrategy interface {
-	NextWait(headers http.Header, attempt int) time.Duration
-}
-
-// HeaderAwareRetry is the default GitHub-aware strategy:
-//  1. Retry-After header (seconds) — explicit instruction from the server.
-//  2. X-RateLimit-Reset header (Unix timestamp) — capped at 120s to avoid
-//     long stalls from clock skew.
-//  3. Exponential backoff (1s, 2s, 4s, …) — fallback when no headers help.
+// HeaderAwareRetry decides how long to wait before retrying a 429 response:
+// Retry-After first, then X-RateLimit-Reset (capped at 120s for clock-skew
+// safety), then exponential backoff.
 type HeaderAwareRetry struct{}
 
 func (HeaderAwareRetry) NextWait(headers http.Header, attempt int) time.Duration {
