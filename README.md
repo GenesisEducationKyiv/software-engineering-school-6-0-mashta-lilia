@@ -45,9 +45,11 @@ internal/
   release/                          -- Release domain: Poller, Release, TrackedRepository
   email/                            -- email.Address value object
   repo/                             -- repo.Ref value object
-  token/                            -- token.Generator (crypto/rand → hex)
   platform/health/                  -- health.DBChecker
-  repository/                       -- PostgreSQL data access (parameterized queries only)
+  platform/logger/                  -- slog setup
+  platform/postgres/                -- *sql.DB factory + golang-migrate runner
+  platform/token/                   -- token.Generator (crypto/rand → hex)
+  storage/                          -- PostgreSQL data access (parameterized queries only)
   client/github/                    -- GitHub REST API client + Redis cache decorator
   client/mailer/                    -- SMTP client + email templates
   api/rest/                         -- chi router
@@ -55,10 +57,10 @@ internal/
     health/                         -- /health handler
     middleware/                     -- API-key auth, per-IP rate limiting, metrics
 migrations/                         -- SQL schema (auto-applied via golang-migrate)
-tests/repository/                   -- Integration tests (testcontainers, real Postgres)
+tests/storage/                      -- Integration tests (testcontainers, real Postgres)
 ```
 
-The project follows **clean architecture** with consumer-side interface placement (see [ADR 0009](docs/adr/0009-consumer-side-interface-placement.md)): each domain package declares the small unexported interfaces it actually uses. Outer layers (`repository`, `client`, `api`) provide implementations and satisfy those interfaces via Go's structural typing. Business logic has zero knowledge of HTTP, SQL, or Redis.
+The project follows **clean architecture** with consumer-side interface placement (see [ADR 0009](docs/adr/0009-consumer-side-interface-placement.md)): each domain package declares the small unexported interfaces it actually uses. Outer layers (`storage`, `client`, `api`) provide implementations and satisfy those interfaces via Go's structural typing. Business logic has zero knowledge of HTTP, SQL, or Redis.
 
 **Why this matters**: Every dependency can be swapped or mocked independently. The entire service layer is tested with pure in-memory mocks, and the repository layer is tested against a real database. No test touches both concerns at once.
 
@@ -309,10 +311,9 @@ cp .env.example .env
 │   ├── release/                 # Release domain (Poller + Release/TrackedRepository)
 │   ├── email/                   # email.Address value object
 │   ├── repo/                    # repo.Ref value object
-│   ├── token/                   # token.Generator
-│   ├── platform/health/         # health.DBChecker
-│   └── repository/              # PostgreSQL data access layer
-├── tests/repository/            # Integration tests (testcontainers + real Postgres)
+│   ├── platform/                # health.DBChecker, slog, postgres, token.Generator
+│   └── storage/                 # PostgreSQL data access layer
+├── tests/storage/               # Integration tests (testcontainers + real Postgres)
 ├── migrations/                  # SQL schema (auto-applied on startup)
 ├── docker-compose.yml           # PostgreSQL 16 + Redis 7 + app
 ├── Dockerfile                   # Multi-stage build (Alpine)

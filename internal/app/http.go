@@ -7,9 +7,6 @@ import (
 	"github-release-notifier/internal/config"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 )
 
@@ -32,7 +29,7 @@ func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies) 
 	pollerCtx, cancelPoller := context.WithCancel(ctx)
 	defer cancelPoller()
 	// Deferred so the rate-limiter goroutine is stopped on server-error
-	// exits, not just the SIGINT path.
+	// exits, not just the shutdown path.
 	defer deps.subscribeLimiter.Stop()
 
 	go deps.poller.Start(pollerCtx)
@@ -45,14 +42,12 @@ func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies) 
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(quit)
-
+	// Block until the server fails or the parent context is canceled.
+	// The parent owns signal handling via signal.NotifyContext in main.
 	select {
 	case err := <-serverErr:
 		return fmt.Errorf("server error: %w", err)
-	case <-quit:
+	case <-ctx.Done():
 	}
 
 	slog.Info("Shutting down")

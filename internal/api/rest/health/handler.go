@@ -12,6 +12,12 @@ type checker interface {
 }
 
 func Handler(c checker) http.HandlerFunc {
+	if c == nil {
+		// Misconfigured wiring — fail closed instead of panicking on the first request.
+		return func(w http.ResponseWriter, _ *http.Request) {
+			respond(w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
+		}
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := c.Check(r.Context()); err != nil {
 			respond(w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})

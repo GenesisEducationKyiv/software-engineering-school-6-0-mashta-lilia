@@ -18,7 +18,7 @@ type Address struct {
 func NewAddress(raw string) (Address, error) {
 	addr, err := mail.ParseAddress(raw)
 	if err != nil {
-		return Address{}, fmt.Errorf("%w: %v", ErrInvalid, err)
+		return Address{}, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 	return Address{addr: strings.ToLower(addr.Address)}, nil
 }

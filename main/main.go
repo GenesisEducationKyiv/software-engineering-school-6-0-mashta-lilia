@@ -7,6 +7,8 @@ import (
 	"github-release-notifier/internal/config"
 	"github-release-notifier/internal/platform/logger"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
@@ -16,7 +18,10 @@ func main() {
 	}
 	l := logger.New(cfg.LogLevel)
 
-	if err := app.New(cfg, l).Run(context.Background()); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if err := app.New(cfg, l).Run(ctx); err != nil {
 		l.Error("App stopped unexpectedly", "err", fmt.Errorf("app: run: %w", err))
 		os.Exit(1)
 	}

@@ -20,7 +20,12 @@ func (a *App) Run(ctx context.Context) error {
 	// calls in subscription/, release/, etc. honor the configured level.
 	slog.SetDefault(a.logger)
 
-	db, err := openAndMigrateDB(a.cfg)
+	if a.cfg.DBSSLMode == "disable" {
+		slog.Warn("DB_SSLMODE=disable — Postgres credentials and PII " +
+			"will travel in cleartext; set to require/verify-full in production")
+	}
+
+	db, err := openAndMigrateDB(ctx, a.cfg)
 	if err != nil {
 		return err
 	}

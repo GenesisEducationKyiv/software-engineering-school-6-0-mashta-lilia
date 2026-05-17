@@ -27,9 +27,10 @@ func NewRouter(
 ) *chi.Mux {
 	r := chi.NewRouter()
 
-	r.Use(chimw.Logger)
-	r.Use(chimw.Recoverer)
 	r.Use(chimw.RequestID)
+	r.Use(middleware.AccessLog)
+	r.Use(chimw.Recoverer)
+	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.Metrics)
 
 	r.Get("/", root)

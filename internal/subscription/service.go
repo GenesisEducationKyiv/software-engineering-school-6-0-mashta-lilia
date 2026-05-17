@@ -111,10 +111,11 @@ func (s *Service) sendConfirmationOrRollback(
 	ctx context.Context, sub *Subscription, ref repo.Ref,
 ) error {
 	if err := s.mailer.SendConfirmation(ctx, sub.Email, sub.Token, ref.String()); err != nil {
-		// Fresh ctx for rollback: caller's may be canceled (HTTP timeout
-		// during SMTP), and a stuck pending row blocks the partial unique
-		// index from accepting a retry.
-		rollbackCtx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
+		// Detach cancellation so rollback survives an HTTP timeout / client
+		// disconnect — a stuck pending row would block the partial unique
+		// index from accepting a retry. WithoutCancel keeps the request's
+		// trace IDs and logger; the timeout caps a hung DB.
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 		defer cancel()
 		if rbErr := s.subs.UpdateStatus(rollbackCtx, sub.ID, StatusUnsubscribed); rbErr != nil {
 			slog.Error("Failed to rollback subscription after email failure",

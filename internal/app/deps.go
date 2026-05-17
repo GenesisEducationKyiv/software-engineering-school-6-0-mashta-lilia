@@ -52,11 +52,14 @@ func buildDependencies(
 	ghClient := selectGitHubClient(ctx, base, rdb, cfg.RedisCacheTTL)
 
 	mailTemplates := mailer.NewTemplateBuilder(cfg.BaseURL)
-	mail := mailer.NewSMTPMailer(
+	mail, err := mailer.NewSMTPMailer(
 		cfg.SMTPHost, cfg.SMTPPort,
 		cfg.SMTPUser, cfg.SMTPPassword,
 		cfg.SMTPFrom, mailTemplates,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("creating mailer: %w", err)
+	}
 
 	tokenGen := token.New()
 	subService := subscription.NewService(subRepo, repoStore, ghClient, mail, tokenGen)
@@ -71,10 +74,9 @@ func buildDependencies(
 	subscribeLimiter := middleware.NewRateLimiter(rateLimitRequests, time.Minute, cfg.TrustedProxy)
 
 	if cfg.APIKey == "" {
-		// APIKey middleware bypasses auth on empty key — /api/subscriptions
-		// becomes a public PII endpoint. Surface loudly so a misconfigured
-		// prod deploy is impossible to miss.
-		slog.Warn("API_KEY is not set — /api/subscriptions is unauthenticated")
+		// Middleware fails closed on empty key (always 401). Warn loudly so a
+		// misconfigured deploy doesn't silently 401 every admin request.
+		slog.Warn("API_KEY is not set — /api/subscriptions will reject all requests with 401")
 	}
 	router := rest.NewRouter(handler, healthChecker, cfg.APIKey, subscribeLimiter, "swagger.yaml")
 

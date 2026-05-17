@@ -85,7 +85,7 @@ func NewFromEnv() (*Config, error) {
 		DBUser:     envOrDefault("DB_USER", "postgres"),
 		DBPassword: envOrDefault("DB_PASSWORD", "postgres"),
 		DBName:     envOrDefault("DB_NAME", "release_notifier"),
-		DBSSLMode:  envOrDefault("DB_SSLMODE", "disable"),
+		DBSSLMode:  envOrDefault("DB_SSLMODE", "require"),
 
 		SMTPHost:     envOrDefault("SMTP_HOST", "localhost"),
 		SMTPPort:     smtpPort,

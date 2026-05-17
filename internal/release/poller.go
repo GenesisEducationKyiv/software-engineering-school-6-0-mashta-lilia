@@ -2,6 +2,7 @@ package release
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -17,6 +18,7 @@ type Poller struct {
 	log      *slog.Logger
 	scanLock sync.Mutex
 	done     chan struct{}
+	doneOnce sync.Once
 }
 
 func NewPoller(
@@ -28,6 +30,18 @@ func NewPoller(
 ) (*Poller, error) {
 	if interval <= 0 {
 		return nil, fmt.Errorf("poller interval must be > 0, got %s", interval)
+	}
+	if repos == nil {
+		return nil, errors.New("poller: repos store is nil")
+	}
+	if subs == nil {
+		return nil, errors.New("poller: subscriber store is nil")
+	}
+	if gh == nil {
+		return nil, errors.New("poller: github client is nil")
+	}
+	if mailer == nil {
+		return nil, errors.New("poller: mailer is nil")
 	}
 	return &Poller{
 		repos:    repos,
@@ -45,7 +59,7 @@ func NewPoller(
 func (p *Poller) Done() <-chan struct{} { return p.done }
 
 func (p *Poller) Start(ctx context.Context) {
-	defer close(p.done)
+	defer p.doneOnce.Do(func() { close(p.done) })
 
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()

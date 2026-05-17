@@ -2,6 +2,8 @@ package mailer
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"github-release-notifier/internal/release"
 	"mime"
@@ -21,7 +23,10 @@ type SMTPMailer struct {
 
 func NewSMTPMailer(
 	host string, port int, user, password, from string, templates *TemplateBuilder,
-) *SMTPMailer {
+) (*SMTPMailer, error) {
+	if templates == nil {
+		return nil, errors.New("mailer: templates is nil")
+	}
 	return &SMTPMailer{
 		host:      host,
 		port:      port,
@@ -29,7 +34,7 @@ func NewSMTPMailer(
 		password:  password,
 		from:      from,
 		templates: templates,
-	}
+	}, nil
 }
 
 func (m *SMTPMailer) SendConfirmation(ctx context.Context, email, token, repo string) error {
@@ -73,6 +78,19 @@ func (m *SMTPMailer) deliver(ctx context.Context, msg Message) error {
 		return fmt.Errorf("creating SMTP client: %w", err)
 	}
 	defer client.Close() //nolint:errcheck // SMTP client close error is safe to ignore
+
+	// Upgrade to TLS before sending PLAIN credentials. Refuse to authenticate
+	// over plaintext: smtp.PlainAuth would otherwise leak username/password
+	// to any passive observer between us and the relay.
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		tlsCfg := &tls.Config{ServerName: m.host, MinVersion: tls.VersionTLS12}
+		if err := client.StartTLS(tlsCfg); err != nil {
+			return fmt.Errorf("SMTP STARTTLS: %w", err)
+		}
+	} else if m.user != "" {
+		return errors.New(
+			"SMTP: server does not support STARTTLS; refusing to send credentials over plaintext")
+	}
 
 	if m.user != "" {
 		if err := client.Auth(smtp.PlainAuth("", m.user, m.password, m.host)); err != nil {

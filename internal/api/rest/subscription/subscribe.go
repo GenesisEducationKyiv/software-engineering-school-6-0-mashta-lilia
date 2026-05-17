@@ -5,14 +5,25 @@ import (
 	"net/http"
 )
 
+// maxSubscribeBodyBytes caps the JSON request body to defend against
+// memory-exhaustion via a multi-GB payload. Subscribe only needs email + repo.
+const maxSubscribeBodyBytes = 1 << 20 // 1 MiB
+
 type subscribeRequest struct {
 	Email string `json:"email"`
 	Repo  string `json:"repo"`
 }
 
 func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxSubscribeBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
 	var req subscribeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := dec.Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if dec.More() {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

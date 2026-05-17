@@ -21,7 +21,7 @@ codebase benefits from.
 ## Considered Options
 
 * Option 1: **Layered architecture with dependency inversion** — `service/`
-  defines interfaces; `repository/`, `client/`, `api/` provide implementations.
+  defines interfaces; `storage/`, `client/`, `api/` provide implementations.
 * Option 2: Direct calls — handlers call repositories, repositories call DB,
   no interfaces. Rejected: service tests would require a real DB or full
   `*sql.DB` mocks; adding caching would mean modifying call sites.
@@ -47,13 +47,13 @@ internal/
   token/             ← token.Generator (crypto/rand → hex)
   platform/health/   ← health.DBChecker
   app/               ← bootstrap (was cmd/server/main.go)
-  repository/        ← PostgreSQL adapter
+  storage/           ← PostgreSQL adapter
   client/github/     ← GitHub HTTP client (+ Redis-cached decorator)
   client/mailer/     ← SMTP transport + email templates
   api/rest/          ← chi router + subscription/, health/, middleware/ sub-pkgs
 ```
 
-The dependency arrow points **inward**: outer layers (`api`, `repository`,
+The dependency arrow points **inward**: outer layers (`api`, `storage`,
 `client`) import the domain packages (`subscription`, `release`), never the
 reverse. Each consumer declares the small unexported interface it needs;
 production wiring in `internal/app/deps.go` satisfies them with concrete
