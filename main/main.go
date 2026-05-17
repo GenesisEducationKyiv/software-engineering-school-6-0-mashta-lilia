@@ -12,6 +12,11 @@ import (
 )
 
 func main() {
+	// Wrap so `defer stop()` runs before os.Exit (gocritic: exitAfterDefer).
+	os.Exit(run())
+}
+
+func run() int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
 		panic(fmt.Errorf("config: %w", err))
@@ -23,6 +28,7 @@ func main() {
 
 	if err := app.New(cfg, l).Run(ctx); err != nil {
 		l.Error("App stopped unexpectedly", "err", fmt.Errorf("app: run: %w", err))
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
