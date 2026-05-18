@@ -2,8 +2,10 @@ package mailer
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
-	"github-release-notifier/internal/model"
+	"github-release-notifier/internal/release"
 	"mime"
 	"net"
 	"net/smtp"
@@ -11,51 +13,53 @@ import (
 )
 
 type SMTPMailer struct {
-	host     string
-	port     int
-	user     string
-	password string
-	from     string
-	baseURL  string
+	host      string
+	port      int
+	user      string
+	password  string
+	from      string
+	templates *TemplateBuilder
 }
 
-func NewSMTPMailer(host string, port int, user, password, from, baseURL string) *SMTPMailer {
-	return &SMTPMailer{
-		host:     host,
-		port:     port,
-		user:     user,
-		password: password,
-		from:     from,
-		baseURL:  baseURL,
+func NewSMTPMailer(
+	host string, port int, user, password, from string, templates *TemplateBuilder,
+) (*SMTPMailer, error) {
+	if templates == nil {
+		return nil, errors.New("mailer: templates is nil")
 	}
+	return &SMTPMailer{
+		host:      host,
+		port:      port,
+		user:      user,
+		password:  password,
+		from:      from,
+		templates: templates,
+	}, nil
 }
 
 func (m *SMTPMailer) SendConfirmation(ctx context.Context, email, token, repo string) error {
-	subject := fmt.Sprintf("Confirm your subscription to %s releases", repo)
-	confirmURL := fmt.Sprintf("%s/api/confirm/%s", m.baseURL, token)
-	body := fmt.Sprintf(
-		"You have subscribed to release notifications for %s.\n\n"+
-			"Please confirm your subscription by clicking the link below:\n%s\n\n"+
-			"If you did not request this, you can ignore this email.",
-		repo, confirmURL,
-	)
-
-	return m.sendWithContext(ctx, email, subject, body)
+	templates, err := m.templateBuilder()
+	if err != nil {
+		return err
+	}
+	return m.deliver(ctx, templates.Confirmation(email, token, repo))
 }
 
 func (m *SMTPMailer) SendReleaseNotification(
-	ctx context.Context, email, repo string, release *model.Release,
+	ctx context.Context, email, repo string, rel *release.Release,
 ) error {
-	subject := fmt.Sprintf("New release for %s: %s", repo, release.TagName)
-	body := fmt.Sprintf(
-		"A new release has been published for %s!\n\n"+
-			"Version: %s\n"+
-			"Name: %s\n"+
-			"URL: %s\n",
-		repo, release.TagName, release.Name, release.HTMLURL,
-	)
+	templates, err := m.templateBuilder()
+	if err != nil {
+		return err
+	}
+	return m.deliver(ctx, templates.ReleaseNotification(email, repo, rel))
+}
 
-	return m.sendWithContext(ctx, email, subject, body)
+func (m *SMTPMailer) templateBuilder() (*TemplateBuilder, error) {
+	if m == nil || m.templates == nil {
+		return nil, errors.New("mailer: templates is nil")
+	}
+	return m.templates, nil
 }
 
 func sanitizeHeader(value string) string {
@@ -63,18 +67,14 @@ func sanitizeHeader(value string) string {
 	return r.Replace(value)
 }
 
-// sendWithContext sends an email using a context-aware TCP connection.
-// Unlike smtp.SendMail, this implementation respects context cancellation at
-// the dial phase (via net.DialContext) and at the send phase (via connection
-// deadline), preventing goroutine leaks when the caller's context is canceled.
-func (m *SMTPMailer) sendWithContext(ctx context.Context, to, subject, body string) error {
-	sanitizedTo := sanitizeHeader(to)
+func (m *SMTPMailer) deliver(ctx context.Context, msg Message) error {
+	sanitizedTo := sanitizeHeader(msg.To)
 	sanitizedFrom := sanitizeHeader(m.from)
-	encodedSubject := mime.QEncoding.Encode("utf-8", subject)
+	encodedSubject := mime.QEncoding.Encode("utf-8", sanitizeHeader(msg.Subject))
 
-	const msgTemplate = "From: %s\r\nTo: %s\r\nSubject: %s\r\n" +
+	const envelopeTemplate = "From: %s\r\nTo: %s\r\nSubject: %s\r\n" +
 		"MIME-Version: 1.0\r\nContent-Type: text/plain; charset=\"utf-8\"\r\n\r\n%s"
-	msg := fmt.Sprintf(msgTemplate, sanitizedFrom, sanitizedTo, encodedSubject, body)
+	envelope := fmt.Sprintf(envelopeTemplate, sanitizedFrom, sanitizedTo, encodedSubject, msg.Body)
 
 	addr := fmt.Sprintf("%s:%d", m.host, m.port)
 
@@ -94,6 +94,19 @@ func (m *SMTPMailer) sendWithContext(ctx context.Context, to, subject, body stri
 	}
 	defer client.Close() //nolint:errcheck // SMTP client close error is safe to ignore
 
+	// Upgrade to TLS before sending PLAIN credentials. Refuse to authenticate
+	// over plaintext: smtp.PlainAuth would otherwise leak username/password
+	// to any passive observer between us and the relay.
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		tlsCfg := &tls.Config{ServerName: m.host, MinVersion: tls.VersionTLS12}
+		if err := client.StartTLS(tlsCfg); err != nil {
+			return fmt.Errorf("SMTP STARTTLS: %w", err)
+		}
+	} else if m.user != "" {
+		return errors.New(
+			"SMTP: server does not support STARTTLS; refusing to send credentials over plaintext")
+	}
+
 	if m.user != "" {
 		if err := client.Auth(smtp.PlainAuth("", m.user, m.password, m.host)); err != nil {
 			return fmt.Errorf("SMTP auth: %w", err)
@@ -111,7 +124,7 @@ func (m *SMTPMailer) sendWithContext(ctx context.Context, to, subject, body stri
 	if err != nil {
 		return fmt.Errorf("SMTP DATA: %w", err)
 	}
-	if _, err := w.Write([]byte(msg)); err != nil {
+	if _, err := w.Write([]byte(envelope)); err != nil {
 		return fmt.Errorf("writing email body: %w", err)
 	}
 	if err := w.Close(); err != nil {

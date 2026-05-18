@@ -1,10 +1,10 @@
 .PHONY: run build test test-integration lint docker-up docker-down migrate-up migrate-down
 
 run:
-	go run ./cmd/server
+	go run ./main
 
 build:
-	go build -o bin/server ./cmd/server
+	go build -o bin/server ./main
 
 test:
 	go test -short ./... -v -count=1

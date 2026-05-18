@@ -4,12 +4,13 @@ package github
 import (
 	"context"
 	"encoding/json"
-	"github-release-notifier/internal/model"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github-release-notifier/internal/release"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -78,7 +79,7 @@ func TestCachedClient_GetLatestRelease_CacheHit(t *testing.T) {
 		atomic.AddInt32(&apiCalls, 1)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(model.Release{ //nolint:errcheck // test: encode ignored
+		_ = json.NewEncoder(w).Encode(release.Release{ //nolint:errcheck // test: encode ignored
 			TagName: "v1.0.0",
 			Name:    "Release 1.0",
 			HTMLURL: "https://github.com/test/repo/releases/tag/v1.0.0",
@@ -186,7 +187,7 @@ func TestCachedClient_RepoExists_RedisDown_FallsBackToAPI(t *testing.T) {
 func TestCachedClient_GetLatestRelease_RedisDown_FallsBackToAPI(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		r := model.Release{TagName: "v2.0.0"}
+		r := release.Release{TagName: "v2.0.0"}
 		_ = json.NewEncoder(w).Encode(r) //nolint:errcheck // test: encode ignored
 	}))
 	defer srv.Close()

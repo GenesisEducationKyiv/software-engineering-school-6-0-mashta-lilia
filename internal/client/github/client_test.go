@@ -195,7 +195,7 @@ func TestDoRequest_RateLimitExhausted(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error after exhausting retries")
 	}
-	expected := "github rate limit exceeded after 3 retries"
+	expected := "GitHub rate limit exceeded after 3 retries"
 	if err.Error() != expected {
 		t.Errorf("error = %q, want %q", err.Error(), expected)
 	}
@@ -232,7 +232,7 @@ func TestParseRateLimitWait_RetryAfterHeader(t *testing.T) {
 	h := http.Header{}
 	h.Set("Retry-After", "5")
 
-	wait := parseRateLimitWait(h, 0)
+	wait := HeaderAwareRetry{}.NextWait(h, 0)
 	if wait != 5*time.Second {
 		t.Errorf("wait = %v, want 5s", wait)
 	}
@@ -243,7 +243,7 @@ func TestParseRateLimitWait_XRateLimitResetHeader(t *testing.T) {
 	resetTime := time.Now().Add(10 * time.Second).Unix()
 	h.Set("X-RateLimit-Reset", fmt.Sprintf("%d", resetTime))
 
-	wait := parseRateLimitWait(h, 0)
+	wait := HeaderAwareRetry{}.NextWait(h, 0)
 	if wait < 8*time.Second || wait > 12*time.Second {
 		t.Errorf("wait = %v, want ~10s", wait)
 	}
@@ -262,7 +262,7 @@ func TestParseRateLimitWait_NoHeaders_ExponentialBackoff(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := parseRateLimitWait(h, tt.attempt)
+		got := HeaderAwareRetry{}.NextWait(h, tt.attempt)
 		if got != tt.want {
 			t.Errorf("attempt %d: wait = %v, want %v", tt.attempt, got, tt.want)
 		}
@@ -274,7 +274,7 @@ func TestParseRateLimitWait_XRateLimitReset_TooFarInFuture(t *testing.T) {
 	resetTime := time.Now().Add(5 * time.Minute).Unix()
 	h.Set("X-RateLimit-Reset", fmt.Sprintf("%d", resetTime))
 
-	wait := parseRateLimitWait(h, 1)
+	wait := HeaderAwareRetry{}.NextWait(h, 1)
 	// Should fall back to exponential backoff (2s for attempt 1) since 5min > 120s cap
 	if wait != 2*time.Second {
 		t.Errorf("wait = %v, want 2s (exponential backoff for attempt 1)", wait)
