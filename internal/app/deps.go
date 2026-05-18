@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"github-release-notifier/internal/api/rest"
 	"github-release-notifier/internal/api/rest/middleware"
@@ -32,6 +33,7 @@ type dependencies struct {
 	router           http.Handler
 	poller           *release.Poller
 	subscribeLimiter *middleware.RateLimiter
+	closers          []func() error
 }
 
 func newRedisClient(cfg *config.Config) *redis.Client {
@@ -45,8 +47,22 @@ func newRedisClient(cfg *config.Config) *redis.Client {
 func buildDependencies(
 	ctx context.Context, cfg *config.Config, db *sql.DB, rdb *redis.Client,
 ) (*dependencies, error) {
-	subRepo := storage.NewSubscriptionRepo(db)
-	repoStore := storage.NewTrackedRepoStore(db)
+	subRepo, err := storage.NewSubscriptionRepoWithContext(ctx, db)
+	if err != nil {
+		return nil, fmt.Errorf("creating subscription repo: %w", err)
+	}
+	repoStore, err := storage.NewTrackedRepoStoreWithContext(ctx, db)
+	if err != nil {
+		closeQuietly("subscription repo", subRepo.Close)
+		return nil, fmt.Errorf("creating tracked repo store: %w", err)
+	}
+	storageReady := false
+	defer func() {
+		if !storageReady {
+			closeQuietly("subscription repo", subRepo.Close)
+			closeQuietly("tracked repo store", repoStore.Close)
+		}
+	}()
 
 	base := github.NewClient(cfg.GitHubToken)
 	ghClient := selectGitHubClient(ctx, base, rdb, cfg.RedisCacheTTL)
@@ -80,11 +96,24 @@ func buildDependencies(
 	}
 	router := rest.NewRouter(handler, healthChecker, cfg.APIKey, subscribeLimiter, "swagger.yaml")
 
+	storageReady = true
 	return &dependencies{
 		router:           router,
 		poller:           poller,
 		subscribeLimiter: subscribeLimiter,
+		closers:          []func() error{subRepo.Close, repoStore.Close},
 	}, nil
+}
+
+func (d *dependencies) Close() error {
+	if d == nil {
+		return nil
+	}
+	var err error
+	for _, closeFn := range d.closers {
+		err = errors.Join(err, closeFn())
+	}
+	return err
 }
 
 type githubClient interface {

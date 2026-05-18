@@ -1,6 +1,6 @@
 # GitHub Release Notification API
 
-> A Go service that lets users subscribe to email notifications about new GitHub repository releases. Implements a full subscription lifecycle (subscribe, confirm via email, unsubscribe) with a background scanner that polls for new releases and notifies subscribers.
+> A Go service that lets users subscribe to email notifications about new GitHub repository releases. Implements a full subscription lifecycle (subscribe, confirm via email, unsubscribe) with a background poller that checks for new releases and notifies subscribers.
 
 Built with Go, PostgreSQL, Redis, Chi, and SMTP.
 
@@ -37,7 +37,7 @@ docker compose down
 ### Why This Structure
 
 ```
-main/main.go                       -- 5-line entrypoint that calls app.Run
+main/main.go                       -- Thin entrypoint that loads config and calls app.Run
 internal/
   app/                              -- Bootstrap: wiring, migrations, HTTP, graceful shutdown
   config/                           -- Parse env vars once at startup
@@ -62,7 +62,7 @@ tests/storage/                      -- Integration tests (testcontainers, real P
 
 The project follows **clean architecture** with consumer-side interface placement (see [ADR 0009](docs/adr/0009-consumer-side-interface-placement.md)): each domain package declares the small unexported interfaces it actually uses. Outer layers (`storage`, `client`, `api`) provide implementations and satisfy those interfaces via Go's structural typing. Business logic has zero knowledge of HTTP, SQL, or Redis.
 
-**Why this matters**: Every dependency can be swapped or mocked independently. The entire service layer is tested with pure in-memory mocks, and the repository layer is tested against a real database. No test touches both concerns at once.
+**Why this matters**: Every dependency can be swapped or mocked independently. The domain packages are tested with pure in-memory mocks, and the storage layer is tested against a real database. No test touches both concerns at once.
 
 ### Subscription Lifecycle
 
@@ -88,16 +88,16 @@ User                    API                     Service                  DB     
 
 **Why rollback on email failure?** The database has a partial unique index `WHERE status != 'unsubscribed'` that prevents duplicate active/pending subscriptions for the same email+repo. If the confirmation email fails, the subscription remains in `pending` status, and the user gets a permanent `409 Conflict` on retry. The compensation rollback sets the status to `unsubscribed`, freeing the index slot so the user can try again.
 
-### Background Scanner Logic
+### Background Poller Logic
 
 ```
 Every SCAN_INTERVAL (default 5m):
-  1. Lock mutex (skip if previous scan still running)
+  1. Lock mutex (skip if previous poll still running)
   2. SELECT * FROM tracked_repositories
   3. For each repo:
      a. GET /repos/{owner}/{name}/releases/latest from GitHub (or Redis cache)
      b. Compare release.tag_name with repo.last_seen_tag
-     c. If same tag or no release: skip
+     c. If same tag or no release: update last_checked_at and skip
      d. If new tag:
         i.   UPDATE last_seen_tag = new_tag  (persist FIRST)
         ii.  SELECT emails WHERE repo = this AND status = 'active'
@@ -105,9 +105,9 @@ Every SCAN_INTERVAL (default 5m):
   4. Unlock mutex
 ```
 
-**Why persist-before-notify?** If the app crashes after sending 50 of 100 emails but before updating `last_seen_tag`, the next scan will re-detect the same release and send all 100 emails again -- resulting in 50 duplicates. By updating the tag first, we guarantee at-most-once detection. The trade-off is that if the app crashes between persisting the tag and sending emails, some users miss the notification. This is acceptable: a missed notification is far less harmful than repeated spam.
+**Why persist-before-notify?** If the app crashes after sending 50 of 100 emails but before updating `last_seen_tag`, the next poll will re-detect the same release and send all 100 emails again -- resulting in 50 duplicates. By updating the tag first, we guarantee at-most-once detection. The trade-off is that if the app crashes between persisting the tag and sending emails, some users miss the notification. This is acceptable: a missed notification is far less harmful than repeated spam.
 
-**Why a mutex?** If a scan takes longer than `SCAN_INTERVAL` (e.g., many repos or slow SMTP), the ticker will fire again. Without the mutex, two scans could run concurrently and send duplicate notifications for the same release. The mutex ensures only one scan runs at a time; the overlapping tick is skipped with a log message.
+**Why a mutex?** If a poll takes longer than `SCAN_INTERVAL` (e.g., many repos or slow SMTP), the ticker will fire again. Without the mutex, two polls could run concurrently and send duplicate notifications for the same release. The mutex ensures only one poll runs at a time; the overlapping tick is skipped with a log message.
 
 ### Rate Limit Handling (GitHub API)
 
@@ -129,7 +129,7 @@ Service --> GitHubClient interface
             base *Client (actual HTTP calls)
 ```
 
-`CachedClient` wraps the base `*Client` and satisfies the same `GitHubClient` interface. The service layer doesn't know caching exists -- it calls the same `RepoExists()` and `GetLatestRelease()` methods.
+`CachedClient` wraps the base `*Client` and satisfies the same GitHub-facing interfaces. The domain packages don't know caching exists -- they call the same `RepoExists()` and `GetLatestRelease()` methods.
 
 **Cache-aside flow**: Check Redis -> on miss, call GitHub API -> store in Redis -> return. On Redis error (connection lost, timeout), log the error and fall through to the API. The system never fails due to Redis being unavailable.
 
@@ -175,11 +175,11 @@ The `/metrics` endpoint exposes three metrics following the RED method (Rate, Er
 
 | Decision | Trade-off | Rationale |
 |----------|-----------|-----------|
-| `log.Printf` over structured logging | Less queryable in production log aggregators | Keeps dependencies minimal; adequate for the scope of this project |
-| Sequential email sending in scanner | Slow for repos with many subscribers | Simpler to reason about; a worker pool would be the next improvement |
+| Structured logging with `log/slog` | Text output is simpler than a full JSON logging pipeline | Standard library logging keeps dependencies low while preserving useful fields. |
+| Sequential email sending in poller | Slow for repos with many subscribers | Simpler to reason about; a worker pool would be the next improvement |
 | In-memory rate limiter | Lost on restart; doesn't work across multiple instances | No external dependency; sufficient for single-instance deployment |
-| Go 1.25 in `go.mod` | Unreleased Go version | Forced by transitive dependency (`go.opentelemetry.io/otel@v1.43.0`). The Dockerfile uses `golang:1.25-alpine` to match |
-| First scan sends notifications for existing releases | Users may get a notification for a release that was already published | Treating the first detection as "new" is simpler than adding a separate "first seen" flag; the alternative risks silently missing real new releases |
+| Go 1.24 module target | Docker and local builds should use Go 1.24+ | Matches `go.mod`; the Dockerfile uses `golang:1.24-alpine`. |
+| First poll sends notifications for existing releases | Users may get a notification for a release that was already published | Treating the first detection as "new" is simpler than adding a separate "first seen" flag; the alternative risks silently missing real new releases |
 
 ## API Endpoints
 
@@ -228,7 +228,7 @@ Full API specification: [`swagger.yaml`](swagger.yaml)
 
 ## Testing
 
-### Unit Tests (49 tests)
+### Unit Tests
 
 ```bash
 make test
@@ -243,7 +243,7 @@ Runs with `-short` flag, skipping integration tests. No external dependencies re
 | SMTP rollback | Subscription is rolled back when email delivery fails, returning `ErrEmailSendFailed` |
 | GitHub client | Rate-limit retry logic (Retry-After, X-RateLimit-Reset, exponential backoff), context cancellation |
 | Redis cache | Cache hit/miss, TTL expiry (via `miniredis` fast-forward), nil not cached, graceful degradation when Redis is down |
-| Scanner | New release detection, duplicate prevention, persist-before-notify ordering, context cancellation |
+| Release poller | New release detection, duplicate prevention, persist-before-notify ordering, context cancellation |
 
 ### Integration Tests (12 tests)
 
@@ -277,6 +277,7 @@ cp .env.example .env
 | `DB_USER` | `postgres` | PostgreSQL user |
 | `DB_PASSWORD` | `postgres` | PostgreSQL password |
 | `DB_NAME` | `release_notifier` | Database name |
+| `DB_SSLMODE` | `require` | PostgreSQL SSL mode (`disable` in local Docker Compose) |
 | `GITHUB_TOKEN` | -- | GitHub personal access token (optional, increases rate limit) |
 | `SMTP_HOST` | `localhost` | SMTP server host |
 | `SMTP_PORT` | `587` | SMTP server port |
@@ -291,12 +292,13 @@ cp .env.example .env
 | `REDIS_DB` | `0` | Redis database number |
 | `REDIS_CACHE_TTL` | `10m` | Cache TTL for GitHub API responses |
 | `TRUSTED_PROXY` | `false` | Set to `true` if running behind a reverse proxy to trust `X-Forwarded-For` |
+| `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, or `error` |
 
 ## Project Structure
 
 ```
 .
-├── main/main.go                 # 5-line entrypoint
+├── main/main.go                 # Thin entrypoint
 ├── internal/
 │   ├── app/                     # Bootstrap: wiring, migrations, HTTP, shutdown
 │   ├── api/rest/

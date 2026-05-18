@@ -38,13 +38,28 @@ func NewSMTPMailer(
 }
 
 func (m *SMTPMailer) SendConfirmation(ctx context.Context, email, token, repo string) error {
-	return m.deliver(ctx, m.templates.Confirmation(email, token, repo))
+	templates, err := m.templateBuilder()
+	if err != nil {
+		return err
+	}
+	return m.deliver(ctx, templates.Confirmation(email, token, repo))
 }
 
 func (m *SMTPMailer) SendReleaseNotification(
 	ctx context.Context, email, repo string, rel *release.Release,
 ) error {
-	return m.deliver(ctx, m.templates.ReleaseNotification(email, repo, rel))
+	templates, err := m.templateBuilder()
+	if err != nil {
+		return err
+	}
+	return m.deliver(ctx, templates.ReleaseNotification(email, repo, rel))
+}
+
+func (m *SMTPMailer) templateBuilder() (*TemplateBuilder, error) {
+	if m == nil || m.templates == nil {
+		return nil, errors.New("mailer: templates is nil")
+	}
+	return m.templates, nil
 }
 
 func sanitizeHeader(value string) string {

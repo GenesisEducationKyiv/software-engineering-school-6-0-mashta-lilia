@@ -23,15 +23,17 @@ Entry point lives at `main/main.go`. The body does only:
 
 ```go
 cfg, err := config.NewFromEnv()
-if err != nil { panic(fmt.Errorf("config: %w", err)) }
+if err != nil {
+    fmt.Fprintf(os.Stderr, "config: %v\n", err)
+    return 1
+}
 l := logger.New(cfg.LogLevel)
 app.New(cfg, l).Run(ctx)
 ```
 
 No business logic. The "starve main" principle from the rulebook is honored via
-layout, not via the rulebook's chosen folder name. The former `config.Must`
-helper was inlined here so the panic visibly originates at the app entry rather
-than inside a foundational package (see [ADR-0011](0011-platform-returns-root-cause-errors.md)).
+layout, not via the rulebook's chosen folder name. Config errors are reported
+to stderr and return a non-zero exit code without a panic stack trace.
 
 ## Consequences
 

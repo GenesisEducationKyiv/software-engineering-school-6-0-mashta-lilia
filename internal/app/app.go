@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"github-release-notifier/internal/config"
 	"log/slog"
 )
@@ -16,6 +17,19 @@ func New(cfg *config.Config, l *slog.Logger) *App {
 }
 
 func (a *App) Run(ctx context.Context) error {
+	if a == nil {
+		return errors.New("app: nil receiver")
+	}
+	if ctx == nil {
+		return errors.New("app: nil context")
+	}
+	if a.cfg == nil {
+		return errors.New("app: nil config")
+	}
+	if a.logger == nil {
+		return errors.New("app: nil logger")
+	}
+
 	// Install the injected logger as slog default so package-level slog.*
 	// calls in subscription/, release/, etc. honor the configured level.
 	slog.SetDefault(a.logger)
@@ -38,6 +52,7 @@ func (a *App) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer closeQuietly("dependencies", deps.Close)
 
 	return runHTTPServer(ctx, a.cfg, deps)
 }

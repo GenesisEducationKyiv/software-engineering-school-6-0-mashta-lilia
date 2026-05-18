@@ -17,7 +17,7 @@ func NewDBChecker(db *sql.DB) *DBChecker {
 }
 
 func (h *DBChecker) Check(ctx context.Context) error {
-	if h.db == nil {
+	if h == nil || h.db == nil {
 		return errMisconfigured
 	}
 	return h.db.PingContext(ctx)

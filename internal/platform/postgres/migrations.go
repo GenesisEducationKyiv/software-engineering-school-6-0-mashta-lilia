@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"errors"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -17,11 +18,43 @@ type MigrationResult struct {
 // m.Close() shuts down its own pool without affecting the app's, and no
 // migrator-held connection lingers for the life of the process.
 func RunMigrations(databaseURL, sourceURL string) (MigrationResult, error) {
+	return RunMigrationsWithContext(context.Background(), databaseURL, sourceURL)
+}
+
+func RunMigrationsWithContext(
+	ctx context.Context, databaseURL, sourceURL string,
+) (result MigrationResult, retErr error) {
+	if ctx == nil {
+		return MigrationResult{}, errors.New("postgres migrations: nil context")
+	}
+
 	m, err := migrate.New(sourceURL, databaseURL)
 	if err != nil {
 		return MigrationResult{}, err
 	}
-	defer func() { _, _ = m.Close() }() //nolint:errcheck // best-effort close; pool is short-lived
+	defer func() {
+		srcErr, dbErr := m.Close()
+		if closeErr := errors.Join(srcErr, dbErr); closeErr != nil {
+			retErr = errors.Join(retErr, closeErr)
+		}
+	}()
+
+	if err := ctx.Err(); err != nil {
+		return MigrationResult{}, err
+	}
+
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			select {
+			case m.GracefulStop <- true:
+			case <-done:
+			}
+		case <-done:
+		}
+	}()
 
 	if err := m.Up(); err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {

@@ -19,7 +19,8 @@ func main() {
 func run() int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
-		panic(fmt.Errorf("config: %w", err))
+		fmt.Fprintf(os.Stderr, "config: %v\n", err)
+		return 1
 	}
 	l := logger.New(cfg.LogLevel)
 

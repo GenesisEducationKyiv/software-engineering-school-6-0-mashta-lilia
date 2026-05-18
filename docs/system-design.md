@@ -9,7 +9,7 @@ Author: Project Author | Date: 2026-05-08 | Status: Approved
 A backend service that lets users subscribe by email to be notified when a
 public GitHub repository publishes a new release. The service runs the full
 subscription lifecycle (subscribe → email confirmation → active → unsubscribe)
-and a background scanner that polls tracked repositories on an interval and
+and a background poller that checks tracked repositories on an interval and
 fans out notifications to active subscribers.
 
 **Business value.** Open-source consumers want to learn about new releases of
@@ -45,7 +45,7 @@ small REST API.
   `X-API-Key`).
 - Users can **unsubscribe** via a tokenised link from any received email.
 - A user who has unsubscribed can later **re-subscribe** to the same repo.
-- A background scanner detects new releases on every tracked repo and notifies
+- A background poller detects new releases on every tracked repo and notifies
   every active subscriber with **at-most-once** semantics — duplicates are
   prevented; misses on crash are tolerated (see [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md)).
 
@@ -54,7 +54,7 @@ small REST API.
 | NFR              | Target                                       | Notes                                                                                       |
 |------------------|----------------------------------------------|---------------------------------------------------------------------------------------------|
 | Availability     | Best-effort (single instance)                | Crashes are recovered by restart; no automated failover.                                    |
-| Detection latency | ≤ `SCAN_INTERVAL` + cache TTL (≤ 15 min default) | Polling-based scanner; Redis cache (10-min TTL) sits in front of the GitHub API. |
+| Detection latency | <= `SCAN_INTERVAL` + cache TTL (<= 15 min default) | `release.Poller` checks tracked repos; Redis cache (10-min TTL) sits in front of the GitHub API. |
 | API latency p95  | < 300 ms for `POST /subscribe`               | Bounded by one GitHub API call (or cache hit) plus two Postgres writes.                     |
 | Email semantics  | At-most-once per release per subscriber      | See [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md).                         |
 | Scale ceiling    | ~400 tracked repos, ~10k subscribers         | At default scan interval; rate-limit-bound (see §6).                                        |
@@ -88,15 +88,15 @@ graph LR
 graph TB
     subgraph Service["github-release-notifier (single Go binary)"]
         API["api/rest<br/>(Chi router, middleware)"]
-        Service["service<br/>(Subscription, Scanner)"]
-        Repo["repository<br/>(Postgres queries)"]
+        Domains["domain packages<br/>(subscription, release)"]
+        Repo["storage<br/>(Postgres queries)"]
         GHC["client/github<br/>(HTTP + Cache decorator)"]
         Mail["client/mailer<br/>(SMTP)"]
 
-        API --> Service
-        Service --> Repo
-        Service --> GHC
-        Service --> Mail
+        API --> Domains
+        Domains --> Repo
+        Domains --> GHC
+        Domains --> Mail
     end
 
     DB[("PostgreSQL<br/>subscriptions,<br/>tracked_repositories")]
@@ -110,11 +110,11 @@ graph TB
     Mail --> SMTPSrv
 ```
 
-The dependency arrow points **inward**: `api → service → {repo, ghc, mail}`.
-The `service` layer defines the interfaces; the outer layers implement them
+The dependency arrow points **inward**: `api -> domain -> adapters`.
+The domain packages define the interfaces they consume; the outer layers implement them
 (see [ADR 0001](adr/0001-clean-architecture-with-dependency-inversion.md)).
 Redis caching is added as a **decorator** on `GitHubClient` — both the base
-client and `CachedClient` satisfy the same interface, so the service layer
+client and `CachedClient` satisfy the same interface, so the domain layer
 never knows whether a cache is in front. The cache is optional: any Redis
 error falls through to the GitHub API.
 
@@ -126,8 +126,8 @@ error falls through to the GitHub API.
 |-----------------|------------------------------------------------------|-----------------------------|
 | API router      | Routing, rate limiting, API-key auth, metrics       | `go-chi/chi/v5` + custom mw |
 | Subscription svc| Validate repo, upsert tracked repo, create sub, send confirmation, status transitions | Go (pure) |
-| Scanner         | Poll tracked repos on a ticker, fan out emails       | Go + `time.Ticker`          |
-| Repository      | Parameterised SQL against `subscriptions` and `tracked_repositories` | `database/sql` + `lib/pq` |
+| Release poller  | Poll tracked repos on a ticker, fan out emails       | Go + `time.Ticker`          |
+| Storage adapter | Parameterised SQL against `subscriptions` and `tracked_repositories` | `database/sql` + `lib/pq` |
 | GitHub client   | `GET /repos/.../releases/latest` with retry/backoff  | `net/http` + custom retries |
 | Cache decorator | Cache-aside Redis layer over GitHub client           | `redis/go-redis/v9`         |
 | Mailer          | Send confirmation and notification emails            | `net/smtp`                  |
@@ -177,8 +177,8 @@ sequenceDiagram
     S->>M: SendConfirmation(email, token)
     alt SMTP fails
         S->>DB: UPDATE status='unsubscribed'  (rollback)
-        S-->>API: 502
-        API-->>U: 502 Bad Gateway
+        S-->>API: 503
+        API-->>U: 503 Service Unavailable
     else SMTP ok
         S-->>API: 200
         API-->>U: 200 OK
@@ -191,36 +191,36 @@ sequenceDiagram
     API-->>U: 200 OK
 ```
 
-### 4.3 Scanner Sequence
+### 4.3 Poller Sequence
 
 ```mermaid
 sequenceDiagram
     participant T as Ticker
-    participant Sc as Scanner
+    participant P as Poller
     participant DB as Postgres
     participant GH as GitHub Client (cached)
     participant M as Mailer
 
-    T->>Sc: tick
-    Sc->>Sc: TryLock (skip if running)
-    Sc->>DB: SELECT * FROM tracked_repositories
-    DB-->>Sc: [repos]
+    T->>P: tick
+    P->>P: TryLock (skip if running)
+    P->>DB: SELECT * FROM tracked_repositories
+    DB-->>P: [repos]
     loop for each repo
-        Sc->>GH: GetLatestRelease(owner, name)
-        GH-->>Sc: release or nil
+        P->>GH: GetLatestRelease(owner, name)
+        GH-->>P: release or nil
         alt new tag
-            Sc->>DB: UPDATE last_seen_tag (PERSIST FIRST)
-            Sc->>DB: SELECT emails WHERE repo=? AND status='active'
-            DB-->>Sc: [emails]
+            P->>DB: UPDATE last_seen_tag (PERSIST FIRST)
+            P->>DB: SELECT emails WHERE repo=? AND status='active'
+            DB-->>P: [emails]
             loop for each email
-                Sc->>M: SendReleaseNotification
+                P->>M: SendReleaseNotification
                 Note right of M: per-recipient errors logged,<br/>do not abort batch
             end
         else same tag or nil
-            Sc->>Sc: skip
+            P->>DB: UPDATE last_checked_at
         end
     end
-    Sc->>Sc: Unlock
+    P->>P: Unlock
 ```
 
 Why persist before notify: see [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md).
@@ -262,7 +262,7 @@ erDiagram
 | `UNIQUE(token)` on subscriptions            | Tokens are globally unique.                                |
 | `CHECK status IN (pending, active, unsubscribed)` | Status state machine enforced in DB.                  |
 | Partial UQ `idx_subscriptions_email_repo_active` | One non-terminal sub per (email, repo). [ADR 0008](adr/0008-partial-unique-index-for-resubscription.md). |
-| Partial idx `idx_subscriptions_repo_status` | Scanner lookup of active subscribers per repo.             |
+| Partial idx `idx_subscriptions_repo_status` | Poller lookup of active subscribers per repo.              |
 | Partial idx `idx_subscriptions_email_status`| Admin lookup of a user's active subscriptions.             |
 | FK `subscriptions(repo_owner, repo_name) → tracked_repositories(owner, name) ON DELETE CASCADE` | Referential integrity; orphan cleanup. |
 | Trigger `trg_subscriptions_updated_at`      | Server-side `updated_at = NOW()` on every UPDATE.          |
@@ -292,7 +292,7 @@ Back-of-the-envelope for a single-instance deployment:
   subscriber rows in `subscriptions` is well within Postgres comfort zone
   with the current indexes.
 - Email fan-out per release at 200 ms/SMTP round-trip: 1000 subscribers ≈
-  200 s. Above this, the scanner mutex causes the next tick to be skipped.
+  200 s. Above this, the poller mutex causes the next tick to be skipped.
   Mitigation path when this becomes a bottleneck: bounded worker pool, then
   outbox-pattern with row-level locking.
 
@@ -303,7 +303,7 @@ Back-of-the-envelope for a single-instance deployment:
 | Failure Scenario                            | Mitigation                                                                                  |
 |---------------------------------------------|---------------------------------------------------------------------------------------------|
 | Postgres unreachable at boot                | `PingContext` fails fast; binary exits; orchestrator restarts.                              |
-| Postgres unreachable mid-flight             | Per-query errors propagate; subscribe returns 5xx; scanner logs and continues next tick.    |
+| Postgres unreachable mid-flight             | Per-query errors propagate; subscribe returns 5xx; poller logs and continues next tick.     |
 | Redis unreachable                           | Cache decorator falls through to GitHub API; logs the error. No user-visible impact.        |
 | GitHub API 429                              | 3-tier retry: `Retry-After`, `X-RateLimit-Reset` (capped 120 s), exp. backoff (1/2/4 s).    |
 | GitHub API 5xx                              | Not retried — surfaced to caller. Only 429 triggers the retry chain (see row above).        |
@@ -311,7 +311,7 @@ Back-of-the-envelope for a single-instance deployment:
 | SMTP unreachable on notification fan-out    | Per-recipient log entry; loop continues; missed recipient is **not** retried.               |
 | Process crash mid-fan-out                   | At-most-once: tag persisted, some recipients miss this release. [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md). |
 | Race: two concurrent subscribes (same email+repo) | Partial unique index blocks the second INSERT atomically.                              |
-| Race: two scanner ticks overlap             | Mutex on the scanner causes the second tick to be skipped with a log entry.                 |
+| Race: two poller ticks overlap              | Mutex on the poller causes the second tick to be skipped with a log entry.                  |
 | Token brute-force                           | 256-bit entropy from `crypto/rand`; not feasible.                                           |
 | Header injection in email                   | `\r` and `\n` stripped from header values in the SMTP mailer.                               |
 | API-key timing attack                       | `crypto/subtle.ConstantTimeCompare`.                                                        |
@@ -338,7 +338,7 @@ Back-of-the-envelope for a single-instance deployment:
 - **Path traversal in GitHub URLs:** owner and repo segments pass through
   `url.PathEscape` before interpolation.
 - **PII in logs:** subscriber emails are never written to error logs in the
-  scanner fan-out — repo identifier is logged instead.
+  poller fan-out; repo identifier is logged instead.
 - **Threat model not addressed:** abusive subscribers spamming `POST
   /subscribe` to send confirmation emails to victims. Mitigated partially
   by per-IP rate limiting; not by email-level rate limiting.
@@ -348,7 +348,7 @@ Back-of-the-envelope for a single-instance deployment:
 ## 9. Observability
 
 - **Logs:** structured with `log/slog`. Levels: error for failed external
-  calls, info for successful state transitions and scanner ticks.
+  calls, info for successful state transitions and poller ticks.
 - **Metrics:** Prometheus on `/metrics`:
     - `http_requests_total{method,path,status}` — RED rate + errors.
     - `http_request_duration_seconds{method,path}` — RED duration histogram.
@@ -384,7 +384,7 @@ question it. The rest are tactical choices that match the project's scope.
 - [ ] Should re-subscription after unsubscribe **revive** the original row
       instead of inserting a new one? Current behaviour creates a new row;
       the old `unsubscribed` row stays as history. Either is defensible.
-- [ ] At what tracked-repo count do we move the scanner to a bounded worker
+- [ ] At what tracked-repo count do we move the poller to a bounded worker
       pool? Likely well below the rate-limit ceiling (§6).
 - [ ] Do we need a `purge_unsubscribed_after` cleanup job? The
       `unsubscribed` rows currently grow without bound (see
@@ -399,7 +399,7 @@ question it. The rest are tactical choices that match the project's scope.
 
 ## 12. Glossary
 
-- **At-most-once detection** — given the same release, the scanner produces
+- **At-most-once detection** - given the same release, the poller produces
   notifications **at most one time**. Crashes can drop them; never duplicate.
 - **Cache-aside** — the application checks the cache first; on miss, it
   reads the source of truth and stores the result. Distinct from

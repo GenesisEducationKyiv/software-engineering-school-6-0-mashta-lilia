@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -88,12 +89,17 @@ func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
 
 func TestPoller_SameTag_NoNotification(t *testing.T) {
 	notifyCalled := false
+	var checkedID int64
 
 	repos := &mockRepoScanReader{
 		GetAllFn: func(_ context.Context) ([]TrackedRepository, error) {
 			return []TrackedRepository{
 				{ID: 1, Owner: "golang", Name: "go", LastSeenTag: sql.NullString{String: "v1.22", Valid: true}},
 			}, nil
+		},
+		UpdateLastCheckedFn: func(_ context.Context, id int64) error {
+			checkedID = id
+			return nil
 		},
 	}
 	gh := &mockGitHubReleaseClient{
@@ -113,6 +119,9 @@ func TestPoller_SameTag_NoNotification(t *testing.T) {
 
 	if notifyCalled {
 		t.Error("should not notify when tag hasn't changed")
+	}
+	if checkedID != 1 {
+		t.Errorf("checked ID = %d, want 1", checkedID)
 	}
 }
 
@@ -154,6 +163,7 @@ func TestPoller_NullLastSeenTag_TreatsAsNew(t *testing.T) {
 
 func TestPoller_NoRelease_Skips(t *testing.T) {
 	updateCalled := false
+	checkedCalled := false
 
 	repos := &mockRepoScanReader{
 		GetAllFn: func(_ context.Context) ([]TrackedRepository, error) {
@@ -161,6 +171,13 @@ func TestPoller_NoRelease_Skips(t *testing.T) {
 		},
 		UpdateLastSeenFn: func(_ context.Context, _ int64, _ string) error {
 			updateCalled = true
+			return nil
+		},
+		UpdateLastCheckedFn: func(_ context.Context, id int64) error {
+			if id != 1 {
+				t.Errorf("checked ID = %d, want 1", id)
+			}
+			checkedCalled = true
 			return nil
 		},
 	}
@@ -175,6 +192,9 @@ func TestPoller_NoRelease_Skips(t *testing.T) {
 
 	if updateCalled {
 		t.Error("should not update tag when no release exists")
+	}
+	if !checkedCalled {
+		t.Error("should update last_checked_at when no release exists")
 	}
 }
 
@@ -262,6 +282,7 @@ func TestPoller_ContextCancelled_StopsProcessing(t *testing.T) {
 				{ID: 3, Owner: "c", Name: "repo"},
 			}, nil
 		},
+		UpdateLastCheckedFn: func(_ context.Context, _ int64) error { return nil },
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -281,5 +302,52 @@ func TestPoller_ContextCancelled_StopsProcessing(t *testing.T) {
 
 	if processedCount > 2 {
 		t.Errorf("processed %d repos after cancel, expected early exit", processedCount)
+	}
+}
+
+func TestPoller_OverlappingScanSkipped(t *testing.T) {
+	firstScanStarted := make(chan struct{})
+	releaseFirstScan := make(chan struct{})
+	firstScanDone := make(chan struct{})
+	secondScanDone := make(chan struct{})
+	var getAllCalls atomic.Int32
+
+	repos := &mockRepoScanReader{
+		GetAllFn: func(_ context.Context) ([]TrackedRepository, error) {
+			if getAllCalls.Add(1) == 1 {
+				close(firstScanStarted)
+				<-releaseFirstScan
+			}
+			return nil, nil
+		},
+	}
+	poller := mustNewPoller(
+		t, repos, &mockSubscriberLister{}, &mockGitHubReleaseClient{}, &mockReleaseNotifier{}, time.Hour,
+	)
+
+	go func() {
+		defer close(firstScanDone)
+		poller.scan(context.Background())
+	}()
+
+	<-firstScanStarted
+	go func() {
+		defer close(secondScanDone)
+		poller.scan(context.Background())
+	}()
+
+	select {
+	case <-secondScanDone:
+	case <-time.After(100 * time.Millisecond):
+		close(releaseFirstScan)
+		<-firstScanDone
+		t.Fatal("overlapping scan did not return promptly")
+	}
+
+	close(releaseFirstScan)
+	<-firstScanDone
+
+	if got := getAllCalls.Load(); got != 1 {
+		t.Errorf("GetAll calls = %d, want 1", got)
 	}
 }

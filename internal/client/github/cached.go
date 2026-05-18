@@ -98,6 +98,9 @@ func (c *CachedClient) GetLatestRelease(ctx context.Context, owner, name string)
 			redisCacheErrors.WithLabelValues("set_release").Inc()
 			slog.Debug("Redis SET failed for release", "err", setErr)
 		}
+	} else {
+		redisCacheErrors.WithLabelValues("marshal_release").Inc()
+		slog.Debug("Redis release JSON marshal failed", "err", marshalErr)
 	}
 
 	return rel, nil

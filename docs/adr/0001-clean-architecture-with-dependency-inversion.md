@@ -20,8 +20,9 @@ codebase benefits from.
 
 ## Considered Options
 
-* Option 1: **Layered architecture with dependency inversion** — `service/`
-  defines interfaces; `storage/`, `client/`, `api/` provide implementations.
+* Option 1: **Layered architecture with dependency inversion** — domain
+  packages define the interfaces they consume; `storage/`, `client/`, `api/`
+  provide implementations.
 * Option 2: Direct calls — handlers call repositories, repositories call DB,
   no interfaces. Rejected: service tests would require a real DB or full
   `*sql.DB` mocks; adding caching would mean modifying call sites.
@@ -44,7 +45,7 @@ internal/
   release/           ← Release domain: Poller, Release + TrackedRepository types
   email/             ← email.Address value object
   repo/              ← repo.Ref value object
-  token/             ← token.Generator (crypto/rand → hex)
+  platform/token/    <- token.Generator (crypto/rand -> hex)
   platform/health/   ← health.DBChecker
   app/               ← bootstrap (was cmd/server/main.go)
   storage/           ← PostgreSQL adapter
@@ -67,7 +68,7 @@ adapter types via Go's structural typing
 * Good, because Redis caching was added as a decorator (`CachedClient` wraps
   `*Client`, both satisfying the consumer-side `githubClient` interface in
   `internal/app/deps.go`) without touching domain logic.
-* Good, because the repository layer has its own integration tests using
+* Good, because the storage layer has its own integration tests using
   `testcontainers-go`, isolated from HTTP concerns.
 * Bad, because every new contract requires an interface declaration even with
   one implementation today, and for trivial CRUD the indirection adds friction

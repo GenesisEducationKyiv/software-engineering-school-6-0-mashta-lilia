@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github-release-notifier/internal/email"
 	"github-release-notifier/internal/repo"
-	"log/slog"
 	"time"
 )
 
@@ -118,8 +117,10 @@ func (s *Service) sendConfirmationOrRollback(
 		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 		defer cancel()
 		if rbErr := s.subs.UpdateStatus(rollbackCtx, sub.ID, StatusUnsubscribed); rbErr != nil {
-			slog.Error("Failed to rollback subscription after email failure",
-				"id", sub.ID, "err", rbErr)
+			return errors.Join(
+				fmt.Errorf("%w: %w", ErrEmailSendFailed, err),
+				fmt.Errorf("rollback after email failure: %w", rbErr),
+			)
 		}
 		return fmt.Errorf("%w: %w", ErrEmailSendFailed, err)
 	}

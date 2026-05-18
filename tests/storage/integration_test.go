@@ -76,7 +76,9 @@ func runTests(m *testing.M) int {
 		return 1
 	}
 	defer func() {
-		_ = testDB.Close() //nolint:errcheck // best-effort close
+		if err := testDB.Close(); err != nil {
+			slog.Warn("Failed to close test database", "err", err)
+		}
 	}()
 
 	if err := testDB.PingContext(ctx); err != nil {

@@ -14,13 +14,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-type HealthChecker interface {
+type healthChecker interface {
 	Check(ctx context.Context) error
 }
 
 func NewRouter(
 	h *subscription.Handler,
-	hc HealthChecker,
+	hc healthChecker,
 	apiKey string,
 	subscribeLimiter *middleware.RateLimiter,
 	swaggerPath string,

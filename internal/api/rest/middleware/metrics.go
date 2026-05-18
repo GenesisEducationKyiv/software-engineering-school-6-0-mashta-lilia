@@ -36,6 +36,8 @@ var (
 	)
 )
 
+const unmatchedRoute = "unmatched_route"
+
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -71,7 +73,7 @@ func Metrics(next http.Handler) http.Handler {
 		// cardinality on dynamic segments like /api/confirm/{token}.
 		path := chi.RouteContext(r.Context()).RoutePattern()
 		if path == "" {
-			path = r.URL.Path
+			path = unmatchedRoute
 		}
 
 		httpRequestsTotal.WithLabelValues(r.Method, path, strconv.Itoa(rec.status)).Inc()

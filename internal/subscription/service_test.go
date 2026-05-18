@@ -116,19 +116,40 @@ func TestSubscribe_RepoNotFound(t *testing.T) {
 }
 
 func TestSubscribe_AlreadyExists(t *testing.T) {
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			ExistsFn: func(_ context.Context, _, _, _ string) (bool, error) { return true, nil },
-		},
-		&mockRepoUpserter{},
-		&mockGitHubChecker{
-			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
-		},
-		&mockConfirmationSender{},
-	)
-	if err := svc.Subscribe(context.Background(), testEmail, "golang/go"); !errors.Is(err, ErrAlreadyExists) {
-		t.Errorf("got %v, want ErrAlreadyExists", err)
-	}
+	t.Run("pre-check detects duplicate", func(t *testing.T) {
+		svc := newTestService(
+			&mockSubscriptionRepo{
+				ExistsFn: func(_ context.Context, _, _, _ string) (bool, error) { return true, nil },
+			},
+			&mockRepoUpserter{},
+			&mockGitHubChecker{
+				RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
+			},
+			&mockConfirmationSender{},
+		)
+		if err := svc.Subscribe(context.Background(), testEmail, "golang/go"); !errors.Is(err, ErrAlreadyExists) {
+			t.Errorf("got %v, want ErrAlreadyExists", err)
+		}
+	})
+
+	t.Run("create detects concurrent duplicate", func(t *testing.T) {
+		svc := newTestService(
+			&mockSubscriptionRepo{
+				ExistsFn: func(_ context.Context, _, _, _ string) (bool, error) { return false, nil },
+				CreateFn: func(_ context.Context, _ *Subscription) error { return ErrAlreadyExists },
+			},
+			&mockRepoUpserter{
+				UpsertFn: func(_ context.Context, _, _ string) error { return nil },
+			},
+			&mockGitHubChecker{
+				RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
+			},
+			&mockConfirmationSender{},
+		)
+		if err := svc.Subscribe(context.Background(), testEmail, "golang/go"); !errors.Is(err, ErrAlreadyExists) {
+			t.Errorf("got %v, want ErrAlreadyExists", err)
+		}
+	})
 }
 
 func TestSubscribe_GitHubAPIError(t *testing.T) {

@@ -77,6 +77,10 @@ func NewFromEnv() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	trustedProxy, err := envBool("TRUSTED_PROXY", false)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Config{
 		ServerPort: envOrDefault("SERVER_PORT", "8080"),
@@ -105,7 +109,7 @@ func NewFromEnv() (*Config, error) {
 		RedisDB:       redisDB,
 		RedisCacheTTL: cacheTTL,
 
-		TrustedProxy: envOrDefault("TRUSTED_PROXY", "false") == "true",
+		TrustedProxy: trustedProxy,
 
 		LogLevel: logLevel,
 	}, nil
@@ -140,6 +144,18 @@ func envDuration(key string, fallback time.Duration) (time.Duration, error) {
 		return 0, fmt.Errorf("env %s: %w", key, err)
 	}
 	return d, nil
+}
+
+func envBool(key string, fallback bool) (bool, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("env %s: %w", key, err)
+	}
+	return b, nil
 }
 
 func parseLogLevel(raw string) (slog.Level, error) {

@@ -21,16 +21,16 @@ contributors had no way to predict where a *new* interface should go.
 
 > An interface belongs in the package that **calls** its methods.
 > When the consumer is a package containing several types that share the same
-> dependency (e.g., both `Service` and `Scanner` in `release/` use the same
+> dependency (e.g., multiple types in `release/` use the same
 > GitHub client), the package as a whole is the consumer and the interface
 > lives at package scope. When the consumer is a single
 > wrapper/adapter (e.g., `CachedClient` decorating a GitHub client), the
 > adapter declares its own local interface and does not import the upstream
 > package.
 
-Every consumer-side interface is **unexported** unless it must cross a package
-boundary. The one exception is `rest.HealthChecker`, which the composition
-root in `internal/app/deps.go` needs to satisfy when calling `rest.NewRouter`.
+Every consumer-side interface is **unexported**. Go's structural typing lets
+the composition root pass a concrete value across package boundaries without
+exporting the interface that consumes it.
 
 Current placement after the package split:
 
@@ -40,7 +40,7 @@ Current placement after the package split:
 | `repoScanReader`, `subscriberLister`, `githubReleaseClient`, `releaseNotifier` | `internal/release/interfaces.go` | `release.Poller` |
 | `subscriptionService` | `internal/api/rest/subscription/handler.go` | `subscription.Handler` |
 | `checker` | `internal/api/rest/health/handler.go` | `health.Handler` |
-| `HealthChecker` | `internal/api/rest/router.go` | `rest.NewRouter` |
+| `healthChecker` | `internal/api/rest/router.go` | `rest.NewRouter` |
 | `baseClient` | `internal/client/github/cached.go` | `github.CachedClient` |
 | `githubClient` | `internal/app/deps.go` | composition root |
 

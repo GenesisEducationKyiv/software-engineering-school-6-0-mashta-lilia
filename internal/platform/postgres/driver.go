@@ -18,12 +18,20 @@ const (
 )
 
 func New(databaseURL string) (*sql.DB, error) {
+	return NewWithContext(context.Background(), databaseURL)
+}
+
+func NewWithContext(ctx context.Context, databaseURL string) (*sql.DB, error) {
+	if ctx == nil {
+		return nil, errors.New("postgres: nil context")
+	}
+
 	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		return nil, err
 	}
 
-	pingCtx, cancel := context.WithTimeout(context.Background(), dbPingTimeout)
+	pingCtx, cancel := context.WithTimeout(ctx, dbPingTimeout)
 	defer cancel()
 	if err := db.PingContext(pingCtx); err != nil {
 		// Join so callers see both the ping failure and any close error

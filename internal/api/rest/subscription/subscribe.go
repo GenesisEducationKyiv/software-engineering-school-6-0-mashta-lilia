@@ -2,6 +2,8 @@ package subscription
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 )
 
@@ -23,7 +25,9 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if dec.More() {
+
+	var extra interface{}
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

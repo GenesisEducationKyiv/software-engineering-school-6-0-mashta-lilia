@@ -46,6 +46,8 @@ func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies) 
 	// The parent owns signal handling via signal.NotifyContext in main.
 	select {
 	case err := <-serverErr:
+		cancelPoller()
+		waitForPoller(deps)
 		return fmt.Errorf("server error: %w", err)
 	case <-ctx.Done():
 	}
@@ -60,13 +62,23 @@ func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies) 
 		return fmt.Errorf("server shutdown: %w", err)
 	}
 
+	waitForPollerWithContext(shutdownCtx, deps)
+	slog.Info("Server stopped")
+	return nil
+}
+
+func waitForPoller(deps *dependencies) {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	waitForPollerWithContext(ctx, deps)
+}
+
+func waitForPollerWithContext(ctx context.Context, deps *dependencies) {
 	// Wait for the poller goroutine to drain its in-flight scan; otherwise
 	// the process can exit while a Postgres write or SMTP send is in flight.
 	select {
 	case <-deps.poller.Done():
-	case <-shutdownCtx.Done():
+	case <-ctx.Done():
 		slog.Warn("Poller did not stop within shutdown timeout")
 	}
-	slog.Info("Server stopped")
-	return nil
 }

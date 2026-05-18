@@ -107,13 +107,12 @@ func (p *Poller) scanRepository(ctx context.Context, repo TrackedRepository) {
 		return
 	}
 	if rel == nil {
+		p.updateLastChecked(ctx, repo)
 		return
 	}
 
 	if repo.LastSeenTag.Valid && rel.TagName == repo.LastSeenTag.String {
-		if err := p.repos.UpdateLastChecked(ctx, repo.ID); err != nil {
-			p.log.Error("Failed to update last_checked_at", "repo", repo.FullName(), "err", err)
-		}
+		p.updateLastChecked(ctx, repo)
 		return
 	}
 
@@ -126,6 +125,12 @@ func (p *Poller) scanRepository(ctx context.Context, repo TrackedRepository) {
 	}
 
 	p.notifySubscribers(ctx, repo, rel)
+}
+
+func (p *Poller) updateLastChecked(ctx context.Context, repo TrackedRepository) {
+	if err := p.repos.UpdateLastChecked(ctx, repo.ID); err != nil {
+		p.log.Error("Failed to update last_checked_at", "repo", repo.FullName(), "err", err)
+	}
 }
 
 func (p *Poller) notifySubscribers(ctx context.Context, repo TrackedRepository, rel *Release) {

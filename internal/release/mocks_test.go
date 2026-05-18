@@ -24,10 +24,10 @@ func (m *mockRepoScanReader) UpdateLastSeen(ctx context.Context, id int64, tag s
 }
 
 func (m *mockRepoScanReader) UpdateLastChecked(ctx context.Context, id int64) error {
-	if m.UpdateLastCheckedFn != nil {
-		return m.UpdateLastCheckedFn(ctx, id)
+	if m.UpdateLastCheckedFn == nil {
+		panic("mockRepoScanReader.UpdateLastChecked called but not configured")
 	}
-	return nil
+	return m.UpdateLastCheckedFn(ctx, id)
 }
 
 type mockSubscriberLister struct {

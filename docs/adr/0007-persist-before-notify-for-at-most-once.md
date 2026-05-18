@@ -6,10 +6,10 @@ Deciders: Project Author
 
 ## Context and Problem Statement
 
-When the scanner detects a new release, it must do two things:
+When the release poller detects a new release, it must do two things:
 
 1. **Persist** the new tag in `tracked_repositories.last_seen_tag` so the
-   release is not detected again on the next scan.
+   release is not detected again on the next poll.
 2. **Notify** all active subscribers via email.
 
 These two operations are not part of a single transaction (one is a Postgres
@@ -44,19 +44,20 @@ Implementation (`internal/release/poller.go`):
 
 ```go
 // 1. Update last_seen_tag FIRST
-if err := s.repos.UpdateLastSeen(ctx, repo.ID, release.TagName); err != nil {
-    slog.Error(...); continue
+if err := p.repos.UpdateLastSeen(ctx, repo.ID, release.TagName); err != nil {
+    p.log.Error(...)
+    return
 }
 
 // 2. THEN fan out emails (failures are logged, do not roll back the update)
 for _, email := range emails {
-    if err := s.mailer.SendReleaseNotification(...); err != nil {
-        slog.Error(...)
+    if err := p.mailer.SendReleaseNotification(...); err != nil {
+        p.log.Error(...)
     }
 }
 ```
 
-If the process crashes between steps 1 and 2, on the next scan the new tag is
+If the process crashes between steps 1 and 2, on the next poll the new tag is
 already stored — the release is not detected again, and unsent notifications
 are simply lost. Manual recovery (force re-detection by rewinding
 `last_seen_tag`) is an ops runbook item, not a code path; see the operator
@@ -72,7 +73,7 @@ notes alongside the poller deployment docs.
   per-recipient logged) and can be re-driven manually if catastrophic.
 * Bad, because users on a partial-fan-out crash silently miss that release; no
   automatic recovery exists.
-* Bad, because under multi-instance deployment, two scanners hitting the same
+* Bad, because under multi-instance deployment, two pollers hitting the same
   repo could each see the old `last_seen_tag` and duplicate work — the
   in-process mutex does not protect this. Out of scope today (single-instance
   deployment); the natural fix is row-level locking
