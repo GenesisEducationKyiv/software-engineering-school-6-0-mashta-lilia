@@ -274,9 +274,32 @@ func TestParseRateLimitWait_XRateLimitReset_TooFarInFuture(t *testing.T) {
 	resetTime := time.Now().Add(5 * time.Minute).Unix()
 	h.Set("X-RateLimit-Reset", fmt.Sprintf("%d", resetTime))
 
+	// Reset > 120s should be capped at maxResetWait, not fall through to
+	// exponential — the server's signal stays meaningful while caller
+	// latency stays bounded.
 	wait := HeaderAwareRetry{}.NextWait(h, 1)
-	// Should fall back to exponential backoff (2s for attempt 1) since 5min > 120s cap
-	if wait != 2*time.Second {
-		t.Errorf("wait = %v, want 2s (exponential backoff for attempt 1)", wait)
+	if wait != maxResetWait {
+		t.Errorf("wait = %v, want %v (capped at maxResetWait)", wait, maxResetWait)
+	}
+}
+
+func TestParseRateLimitWait_ExponentialBackoff_BoundedAtMax(t *testing.T) {
+	h := http.Header{}
+
+	// Attempts beyond maxBackoffAttempt stay clamped to 4s — guards
+	// against future increases of maxRetries producing minute-long sleeps.
+	for _, attempt := range []int{3, 5, 10, 62} {
+		got := HeaderAwareRetry{}.NextWait(h, attempt)
+		if got != 4*time.Second {
+			t.Errorf("attempt %d: wait = %v, want 4s", attempt, got)
+		}
+	}
+}
+
+func TestParseRateLimitWait_NegativeAttempt_TreatsAsZero(t *testing.T) {
+	h := http.Header{}
+	got := HeaderAwareRetry{}.NextWait(h, -1)
+	if got != 1*time.Second {
+		t.Errorf("negative attempt: wait = %v, want 1s", got)
 	}
 }
