@@ -270,6 +270,64 @@ func TestSubscribe_SMTPFailure_RollsBackSubscription(t *testing.T) {
 	}
 }
 
+func TestSubscribe_SMTPFailure_RollbackFailure_JoinedError(t *testing.T) {
+	smtpErr := errors.New("smtp down")
+	rollbackErr := errors.New("db unavailable")
+
+	var rolledBackID int64
+	var rolledBackStatus Status
+
+	svc := newTestService(
+		&mockSubscriptionRepo{
+			ExistsFn: func(_ context.Context, _, _, _ string) (bool, error) { return false, nil },
+			CreateFn: func(_ context.Context, sub *Subscription) error {
+				sub.ID = 99
+				return nil
+			},
+			UpdateStatusFn: func(_ context.Context, id int64, status Status) error {
+				rolledBackID = id
+				rolledBackStatus = status
+				return rollbackErr
+			},
+		},
+		&mockRepoUpserter{
+			UpsertFn: func(_ context.Context, _, _ string) error { return nil },
+		},
+		&mockGitHubChecker{
+			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
+		},
+		&mockConfirmationSender{
+			SendConfirmationFn: func(_ context.Context, _, _, _ string) error { return smtpErr },
+		},
+	)
+
+	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
+	if err == nil {
+		t.Fatal("expected joined error from SMTP+rollback failure")
+	}
+	// errors.Join must surface both legs: the domain sentinel and the
+	// rollback failure context. Callers map ErrEmailSendFailed to a 5xx;
+	// the rollback leg is what tells operators the row is stuck pending.
+	if !errors.Is(err, ErrEmailSendFailed) {
+		t.Errorf("expected ErrEmailSendFailed in joined error, got: %v", err)
+	}
+	if !errors.Is(err, smtpErr) {
+		t.Errorf("expected underlying SMTP error preserved, got: %v", err)
+	}
+	if !errors.Is(err, rollbackErr) {
+		t.Errorf("expected underlying rollback error preserved, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "rollback after email failure") {
+		t.Errorf("expected rollback context in error message, got: %v", err)
+	}
+	if rolledBackID != 99 {
+		t.Errorf("rollback was still attempted on ID = %d, want 99", rolledBackID)
+	}
+	if rolledBackStatus != StatusUnsubscribed {
+		t.Errorf("rollback status = %q, want %q", rolledBackStatus, StatusUnsubscribed)
+	}
+}
+
 // --- Confirm Tests ---
 
 func TestConfirm_Success(t *testing.T) {
