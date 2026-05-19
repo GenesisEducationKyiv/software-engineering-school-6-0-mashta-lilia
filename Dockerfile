@@ -10,7 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /server ./main
 
 FROM alpine:3.19
 
-RUN apk --no-cache add ca-certificates \
+RUN apk --no-cache add ca-certificates wget \
     && addgroup -S app && adduser -S app -G app
 WORKDIR /app
 
@@ -20,5 +20,8 @@ COPY --chown=app:app swagger.yaml ./
 
 USER app
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:8080/health || exit 1
 
 CMD ["./server"]
