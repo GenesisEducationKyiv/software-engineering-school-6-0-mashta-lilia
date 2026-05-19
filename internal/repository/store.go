@@ -1,33 +1,32 @@
-package storage
+package repository
 
 import (
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"github-release-notifier/internal/release"
 	"sync"
 )
 
 const (
-	trackedRepoUpsertQuery = `
+	upsertQuery = `
 		INSERT INTO tracked_repositories (owner, name)
 		VALUES ($1, $2)
 		ON CONFLICT (owner, name) DO NOTHING`
 
-	trackedRepoGetAllQuery = `
+	getAllQuery = `
 		SELECT id, owner, name, last_seen_tag, last_checked_at, created_at
 		FROM tracked_repositories
 		ORDER BY id`
 
-	trackedRepoUpdateLastSeenQuery = `
+	updateLastSeenQuery = `
 		UPDATE tracked_repositories SET last_seen_tag = $1, last_checked_at = NOW() WHERE id = $2`
 
-	trackedRepoUpdateLastCheckedQuery = `
+	updateLastCheckedQuery = `
 		UPDATE tracked_repositories SET last_checked_at = NOW() WHERE id = $1`
 )
 
-type TrackedRepoStore struct {
+type Store struct {
 	db                    *sql.DB
 	prepareMu             sync.Mutex
 	prepared              bool
@@ -37,101 +36,101 @@ type TrackedRepoStore struct {
 	stmtUpdateLastChecked *sql.Stmt
 }
 
-func NewTrackedRepoStore(db *sql.DB) *TrackedRepoStore {
-	return &TrackedRepoStore{db: db}
+func NewStore(db *sql.DB) *Store {
+	return &Store{db: db}
 }
 
-func NewTrackedRepoStoreWithContext(ctx context.Context, db *sql.DB) (*TrackedRepoStore, error) {
+func NewStoreWithContext(ctx context.Context, db *sql.DB) (*Store, error) {
 	if ctx == nil {
-		return nil, errors.New("tracked repo store: nil context")
+		return nil, errors.New("repository store: nil context")
 	}
 	if db == nil {
-		return nil, errors.New("tracked repo store: nil db")
+		return nil, errors.New("repository store: nil db")
 	}
 
-	store := &TrackedRepoStore{db: db}
+	store := &Store{db: db}
 	if err := store.ensurePrepared(ctx); err != nil {
 		return nil, errors.Join(err, store.Close())
 	}
 	return store, nil
 }
 
-func (r *TrackedRepoStore) ensurePrepared(ctx context.Context) error {
-	if r == nil {
-		return errors.New("tracked repo store: nil receiver")
+func (s *Store) ensurePrepared(ctx context.Context) error {
+	if s == nil {
+		return errors.New("repository store: nil receiver")
 	}
 	if ctx == nil {
-		return errors.New("tracked repo store: nil context")
+		return errors.New("repository store: nil context")
 	}
-	if r.db == nil {
-		return errors.New("tracked repo store: nil db")
+	if s.db == nil {
+		return errors.New("repository store: nil db")
 	}
 
-	r.prepareMu.Lock()
-	defer r.prepareMu.Unlock()
-	if r.prepared {
+	s.prepareMu.Lock()
+	defer s.prepareMu.Unlock()
+	if s.prepared {
 		return nil
 	}
-	if err := r.prepare(ctx); err != nil {
+	if err := s.prepare(ctx); err != nil {
 		return err
 	}
-	r.prepared = true
+	s.prepared = true
 	return nil
 }
 
-func (r *TrackedRepoStore) prepare(ctx context.Context) error {
+func (s *Store) prepare(ctx context.Context) error {
 	var err error
-	if r.stmtUpsert, err = r.db.PrepareContext(ctx, trackedRepoUpsertQuery); err != nil {
+	if s.stmtUpsert, err = s.db.PrepareContext(ctx, upsertQuery); err != nil {
 		return fmt.Errorf("preparing tracked repo upsert: %w", err)
 	}
-	if r.stmtGetAll, err = r.db.PrepareContext(ctx, trackedRepoGetAllQuery); err != nil {
+	if s.stmtGetAll, err = s.db.PrepareContext(ctx, getAllQuery); err != nil {
 		return fmt.Errorf("preparing tracked repo get all: %w", err)
 	}
-	if r.stmtUpdateLastSeen, err = r.db.PrepareContext(ctx, trackedRepoUpdateLastSeenQuery); err != nil {
+	if s.stmtUpdateLastSeen, err = s.db.PrepareContext(ctx, updateLastSeenQuery); err != nil {
 		return fmt.Errorf("preparing tracked repo update last seen: %w", err)
 	}
-	r.stmtUpdateLastChecked, err = r.db.PrepareContext(ctx, trackedRepoUpdateLastCheckedQuery)
+	s.stmtUpdateLastChecked, err = s.db.PrepareContext(ctx, updateLastCheckedQuery)
 	if err != nil {
 		return fmt.Errorf("preparing tracked repo update last checked: %w", err)
 	}
 	return nil
 }
 
-func (r *TrackedRepoStore) Close() error {
-	if r == nil {
+func (s *Store) Close() error {
+	if s == nil {
 		return nil
 	}
 	return errors.Join(
-		closeStmt("tracked repo upsert", r.stmtUpsert),
-		closeStmt("tracked repo get all", r.stmtGetAll),
-		closeStmt("tracked repo update last seen", r.stmtUpdateLastSeen),
-		closeStmt("tracked repo update last checked", r.stmtUpdateLastChecked),
+		closeStmt("tracked repo upsert", s.stmtUpsert),
+		closeStmt("tracked repo get all", s.stmtGetAll),
+		closeStmt("tracked repo update last seen", s.stmtUpdateLastSeen),
+		closeStmt("tracked repo update last checked", s.stmtUpdateLastChecked),
 	)
 }
 
-func (r *TrackedRepoStore) Upsert(ctx context.Context, owner, name string) error {
-	if err := r.ensurePrepared(ctx); err != nil {
+func (s *Store) Upsert(ctx context.Context, owner, name string) error {
+	if err := s.ensurePrepared(ctx); err != nil {
 		return err
 	}
-	if _, err := r.stmtUpsert.ExecContext(ctx, owner, name); err != nil {
+	if _, err := s.stmtUpsert.ExecContext(ctx, owner, name); err != nil {
 		return fmt.Errorf("inserting tracked repository: %w", err)
 	}
 	return nil
 }
 
-func (r *TrackedRepoStore) GetAll(ctx context.Context) ([]release.TrackedRepository, error) {
-	if err := r.ensurePrepared(ctx); err != nil {
+func (s *Store) GetAll(ctx context.Context) ([]Repository, error) {
+	if err := s.ensurePrepared(ctx); err != nil {
 		return nil, err
 	}
-	rows, err := r.stmtGetAll.QueryContext(ctx)
+	rows, err := s.stmtGetAll.QueryContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("querying tracked repositories: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck // rows close error is safe to ignore
 
-	repos := make([]release.TrackedRepository, 0)
+	repos := make([]Repository, 0)
 	for rows.Next() {
-		var repo release.TrackedRepository
+		var repo Repository
 		if err := rows.Scan(
 			&repo.ID, &repo.Owner, &repo.Name, &repo.LastSeenTag, &repo.LastCheckedAt, &repo.CreatedAt,
 		); err != nil {
@@ -145,22 +144,22 @@ func (r *TrackedRepoStore) GetAll(ctx context.Context) ([]release.TrackedReposit
 	return repos, nil
 }
 
-func (r *TrackedRepoStore) UpdateLastSeen(ctx context.Context, id int64, tag string) error {
-	if err := r.ensurePrepared(ctx); err != nil {
+func (s *Store) UpdateLastSeen(ctx context.Context, id int64, tag string) error {
+	if err := s.ensurePrepared(ctx); err != nil {
 		return err
 	}
-	result, err := r.stmtUpdateLastSeen.ExecContext(ctx, tag, id)
+	result, err := s.stmtUpdateLastSeen.ExecContext(ctx, tag, id)
 	if err != nil {
 		return fmt.Errorf("updating last seen tag: %w", err)
 	}
 	return requireRowsUpdated(result, "updating last seen tag", id)
 }
 
-func (r *TrackedRepoStore) UpdateLastChecked(ctx context.Context, id int64) error {
-	if err := r.ensurePrepared(ctx); err != nil {
+func (s *Store) UpdateLastChecked(ctx context.Context, id int64) error {
+	if err := s.ensurePrepared(ctx); err != nil {
 		return err
 	}
-	result, err := r.stmtUpdateLastChecked.ExecContext(ctx, id)
+	result, err := s.stmtUpdateLastChecked.ExecContext(ctx, id)
 	if err != nil {
 		return fmt.Errorf("updating last checked timestamp: %w", err)
 	}

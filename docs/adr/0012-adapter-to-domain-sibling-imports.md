@@ -1,8 +1,18 @@
 # ADR 0012: Adapter→domain sibling imports permitted (carve-out from rulebook §5)
 
 Date: 2026-05-17
-Status: Accepted
+Status: Superseded by vertical slicing (2026-05-19)
 Deciders: Project Author
+
+> **2026-05-19 update.** PR #5 review pushed back on the mechanism-grouped
+> `internal/storage/` package: the reviewer asked that repos live inside
+> their domain packages instead. We adopted that:
+> `internal/storage/subscription.go` became `internal/subscription/repo.go`;
+> `internal/storage/tracked_repo.go` became `internal/repository/store.go`
+> alongside `repository.Repository` (was `release.TrackedRepository`) and
+> `repository.Ref` (was `repo.Ref`). The clients still import release for
+> `release.Release` — that one cross-sibling type signature import is
+> the only remnant of the carve-out below.
 
 ## Context
 

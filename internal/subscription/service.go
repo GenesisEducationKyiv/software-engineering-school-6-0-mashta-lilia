@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github-release-notifier/internal/email"
-	"github-release-notifier/internal/repo"
+	"github-release-notifier/internal/repository"
 	"time"
 )
 
@@ -47,19 +47,19 @@ func (s *Service) Subscribe(ctx context.Context, rawEmail, rawRepo string) error
 	return s.sendConfirmationOrRollback(ctx, sub, ref)
 }
 
-func parseSubscribeInput(rawEmail, rawRepo string) (email.Address, repo.Ref, error) {
+func parseSubscribeInput(rawEmail, rawRepo string) (email.Address, repository.Ref, error) {
 	addr, err := email.NewAddress(rawEmail)
 	if err != nil {
-		return email.Address{}, repo.Ref{}, ErrInvalidEmail
+		return email.Address{}, repository.Ref{}, ErrInvalidEmail
 	}
-	ref, err := repo.ParseRef(rawRepo)
+	ref, err := repository.ParseRef(rawRepo)
 	if err != nil {
-		return email.Address{}, repo.Ref{}, ErrInvalidRepo
+		return email.Address{}, repository.Ref{}, ErrInvalidRepo
 	}
 	return addr, ref, nil
 }
 
-func (s *Service) ensureRepoExistsOnGitHub(ctx context.Context, ref repo.Ref) error {
+func (s *Service) ensureRepoExistsOnGitHub(ctx context.Context, ref repository.Ref) error {
 	exists, err := s.github.RepoExists(ctx, ref.Owner, ref.Name)
 	if err != nil {
 		return fmt.Errorf("checking repo: %w", err)
@@ -71,7 +71,7 @@ func (s *Service) ensureRepoExistsOnGitHub(ctx context.Context, ref repo.Ref) er
 }
 
 func (s *Service) ensureNoActiveSubscription(
-	ctx context.Context, addr email.Address, ref repo.Ref,
+	ctx context.Context, addr email.Address, ref repository.Ref,
 ) error {
 	already, err := s.subs.Exists(ctx, addr.String(), ref.Owner, ref.Name)
 	if err != nil {
@@ -84,7 +84,7 @@ func (s *Service) ensureNoActiveSubscription(
 }
 
 func (s *Service) createPendingSubscription(
-	ctx context.Context, addr email.Address, ref repo.Ref,
+	ctx context.Context, addr email.Address, ref repository.Ref,
 ) (*Subscription, error) {
 	token, err := s.tokens.Generate()
 	if err != nil {
@@ -107,7 +107,7 @@ func (s *Service) createPendingSubscription(
 }
 
 func (s *Service) sendConfirmationOrRollback(
-	ctx context.Context, sub *Subscription, ref repo.Ref,
+	ctx context.Context, sub *Subscription, ref repository.Ref,
 ) error {
 	if err := s.mailer.SendConfirmation(ctx, sub.Email, sub.Token, ref.String()); err != nil {
 		// Detach cancellation so rollback survives an HTTP timeout / client

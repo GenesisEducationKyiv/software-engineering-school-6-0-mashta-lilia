@@ -1,15 +1,19 @@
 //nolint:testpackage // white-box tests use unexported interfaces
 package release
 
-import "context"
+import (
+	"context"
+
+	"github-release-notifier/internal/repository"
+)
 
 type mockRepoScanReader struct {
-	GetAllFn            func(ctx context.Context) ([]TrackedRepository, error)
+	GetAllFn            func(ctx context.Context) ([]repository.Repository, error)
 	UpdateLastSeenFn    func(ctx context.Context, id int64, tag string) error
 	UpdateLastCheckedFn func(ctx context.Context, id int64) error
 }
 
-func (m *mockRepoScanReader) GetAll(ctx context.Context) ([]TrackedRepository, error) {
+func (m *mockRepoScanReader) GetAll(ctx context.Context) ([]repository.Repository, error) {
 	if m.GetAllFn == nil {
 		panic("mockRepoScanReader.GetAll called but not configured")
 	}

@@ -1,4 +1,4 @@
-package storage_test
+package repository_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github-release-notifier/internal/storage"
+	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/subscription"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -92,7 +92,7 @@ func runTests(m *testing.M) int {
 		return 1
 	}
 
-	// Tests live under tests/storage, migrations are at the repo root.
+	// Tests live under tests/repository, migrations are at the repo root.
 	migrationsPath, err := filepath.Abs(filepath.Join("..", "..", "migrations"))
 	if err != nil {
 		slog.Error("Failed to resolve migrations path", "err", err)
@@ -120,15 +120,15 @@ func truncateTables(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// --- TrackedRepoStore Integration Tests ---
+// --- repository.Store Integration Tests ---
 
-func TestIntegration_TrackedRepoStore_Upsert(t *testing.T) {
+func TestIntegration_Store_Upsert(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	truncateTables(t)
 
-	store := storage.NewTrackedRepoStore(testDB)
+	store := repository.NewStore(testDB)
 	ctx := context.Background()
 
 	require.NoError(t, store.Upsert(ctx, "golang", "go"))
@@ -150,13 +150,13 @@ func TestIntegration_TrackedRepoStore_Upsert(t *testing.T) {
 	assert.Equal(t, repo.ID, repos2[0].ID, "upsert should preserve the row's ID")
 }
 
-func TestIntegration_TrackedRepoStore_UpdateLastSeen(t *testing.T) {
+func TestIntegration_Store_UpdateLastSeen(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	truncateTables(t)
 
-	store := storage.NewTrackedRepoStore(testDB)
+	store := repository.NewStore(testDB)
 	ctx := context.Background()
 
 	require.NoError(t, store.Upsert(ctx, "golang", "go"))
@@ -178,13 +178,13 @@ func TestIntegration_TrackedRepoStore_UpdateLastSeen(t *testing.T) {
 	assert.True(t, checkedAt.Valid, "last_checked_at should be set")
 }
 
-func TestIntegration_TrackedRepoStore_GetAll(t *testing.T) {
+func TestIntegration_Store_GetAll(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	truncateTables(t)
 
-	store := storage.NewTrackedRepoStore(testDB)
+	store := repository.NewStore(testDB)
 	ctx := context.Background()
 
 	repos, err := store.GetAll(ctx)
@@ -199,11 +199,11 @@ func TestIntegration_TrackedRepoStore_GetAll(t *testing.T) {
 	assert.Len(t, repos, 2)
 }
 
-// --- SubscriptionRepo Integration Tests ---
+// --- subscription.Repo Integration Tests ---
 
 func createTrackedRepo(t *testing.T, owner, name string) {
 	t.Helper()
-	store := storage.NewTrackedRepoStore(testDB)
+	store := repository.NewStore(testDB)
 	require.NoError(t, store.Upsert(context.Background(), owner, name))
 }
 
@@ -214,7 +214,7 @@ func TestIntegration_SubscriptionRepo_CreateAndGetByToken(t *testing.T) {
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	repo := storage.NewSubscriptionRepo(testDB)
+	repo := subscription.NewRepo(testDB)
 	ctx := context.Background()
 
 	sub := &subscription.Subscription{
@@ -244,7 +244,7 @@ func TestIntegration_SubscriptionRepo_GetByToken_NotFound(t *testing.T) {
 	}
 	truncateTables(t)
 
-	repo := storage.NewSubscriptionRepo(testDB)
+	repo := subscription.NewRepo(testDB)
 	ctx := context.Background()
 
 	_, err := repo.GetByToken(ctx, "nonexistent-token")
@@ -259,7 +259,7 @@ func TestIntegration_SubscriptionRepo_UpdateStatus_TriggersUpdatedAt(t *testing.
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	repo := storage.NewSubscriptionRepo(testDB)
+	repo := subscription.NewRepo(testDB)
 	ctx := context.Background()
 
 	sub := &subscription.Subscription{
@@ -291,7 +291,7 @@ func TestIntegration_SubscriptionRepo_Exists(t *testing.T) {
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	repo := storage.NewSubscriptionRepo(testDB)
+	repo := subscription.NewRepo(testDB)
 	ctx := context.Background()
 
 	exists, err := repo.Exists(ctx, "user@example.com", "golang", "go")
@@ -324,7 +324,7 @@ func TestIntegration_SubscriptionRepo_PartialUniqueIndex(t *testing.T) {
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	repo := storage.NewSubscriptionRepo(testDB)
+	repo := subscription.NewRepo(testDB)
 	ctx := context.Background()
 
 	sub1 := &subscription.Subscription{
@@ -356,7 +356,7 @@ func TestIntegration_SubscriptionRepo_ForeignKeyConstraint(t *testing.T) {
 	}
 	truncateTables(t)
 
-	repo := storage.NewSubscriptionRepo(testDB)
+	repo := subscription.NewRepo(testDB)
 	ctx := context.Background()
 
 	sub := &subscription.Subscription{
@@ -375,7 +375,7 @@ func TestIntegration_SubscriptionRepo_GetActiveByEmail(t *testing.T) {
 	createTrackedRepo(t, "golang", "go")
 	createTrackedRepo(t, "rust-lang", "rust")
 
-	repo := storage.NewSubscriptionRepo(testDB)
+	repo := subscription.NewRepo(testDB)
 	ctx := context.Background()
 
 	sub1 := &subscription.Subscription{
@@ -405,7 +405,7 @@ func TestIntegration_SubscriptionRepo_GetEmailsByRepo(t *testing.T) {
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	repo := storage.NewSubscriptionRepo(testDB)
+	repo := subscription.NewRepo(testDB)
 	ctx := context.Background()
 
 	for i, tc := range []struct {
@@ -441,7 +441,7 @@ func TestIntegration_CascadeDelete_RemovesSubscriptions(t *testing.T) {
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	subRepo := storage.NewSubscriptionRepo(testDB)
+	subRepo := subscription.NewRepo(testDB)
 	ctx := context.Background()
 
 	sub := &subscription.Subscription{

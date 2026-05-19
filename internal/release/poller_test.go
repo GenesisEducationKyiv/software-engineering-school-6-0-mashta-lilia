@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github-release-notifier/internal/repository"
 )
 
 func TestMain(m *testing.M) {
@@ -43,8 +45,8 @@ func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
 	var notifiedEmails []string
 
 	repos := &mockRepoScanReader{
-		GetAllFn: func(_ context.Context) ([]TrackedRepository, error) {
-			return []TrackedRepository{
+		GetAllFn: func(_ context.Context) ([]repository.Repository, error) {
+			return []repository.Repository{
 				{ID: 1, Owner: "golang", Name: "go", LastSeenTag: sql.NullString{String: "v1.21", Valid: true}},
 			}, nil
 		},
@@ -92,8 +94,8 @@ func TestPoller_SameTag_NoNotification(t *testing.T) {
 	var checkedID int64
 
 	repos := &mockRepoScanReader{
-		GetAllFn: func(_ context.Context) ([]TrackedRepository, error) {
-			return []TrackedRepository{
+		GetAllFn: func(_ context.Context) ([]repository.Repository, error) {
+			return []repository.Repository{
 				{ID: 1, Owner: "golang", Name: "go", LastSeenTag: sql.NullString{String: "v1.22", Valid: true}},
 			}, nil
 		},
@@ -129,8 +131,8 @@ func TestPoller_NullLastSeenTag_TreatsAsNew(t *testing.T) {
 	var updatedTag string
 
 	repos := &mockRepoScanReader{
-		GetAllFn: func(_ context.Context) ([]TrackedRepository, error) {
-			return []TrackedRepository{
+		GetAllFn: func(_ context.Context) ([]repository.Repository, error) {
+			return []repository.Repository{
 				{ID: 1, Owner: "golang", Name: "go", LastSeenTag: sql.NullString{Valid: false}},
 			}, nil
 		},
@@ -166,8 +168,8 @@ func TestPoller_NoRelease_Skips(t *testing.T) {
 	checkedCalled := false
 
 	repos := &mockRepoScanReader{
-		GetAllFn: func(_ context.Context) ([]TrackedRepository, error) {
-			return []TrackedRepository{{ID: 1, Owner: "new", Name: "repo"}}, nil
+		GetAllFn: func(_ context.Context) ([]repository.Repository, error) {
+			return []repository.Repository{{ID: 1, Owner: "new", Name: "repo"}}, nil
 		},
 		UpdateLastSeenFn: func(_ context.Context, _ int64, _ string) error {
 			updateCalled = true
@@ -202,8 +204,8 @@ func TestPoller_GitHubError_ContinuesOtherRepos(t *testing.T) {
 	var updatedTags []string
 
 	repos := &mockRepoScanReader{
-		GetAllFn: func(_ context.Context) ([]TrackedRepository, error) {
-			return []TrackedRepository{
+		GetAllFn: func(_ context.Context) ([]repository.Repository, error) {
+			return []repository.Repository{
 				{ID: 1, Owner: "fail", Name: "repo"},
 				{ID: 2, Owner: "ok", Name: "repo", LastSeenTag: sql.NullString{String: "v1.0", Valid: true}},
 			}, nil
@@ -242,8 +244,8 @@ func TestPoller_UpdateLastSeenFails_SkipsNotification(t *testing.T) {
 	notifyCalled := false
 
 	repos := &mockRepoScanReader{
-		GetAllFn: func(_ context.Context) ([]TrackedRepository, error) {
-			return []TrackedRepository{
+		GetAllFn: func(_ context.Context) ([]repository.Repository, error) {
+			return []repository.Repository{
 				{ID: 1, Owner: "golang", Name: "go", LastSeenTag: sql.NullString{String: "v1.0", Valid: true}},
 			}, nil
 		},
@@ -275,8 +277,8 @@ func TestPoller_ContextCancelled_StopsProcessing(t *testing.T) {
 	processedCount := 0
 
 	repos := &mockRepoScanReader{
-		GetAllFn: func(_ context.Context) ([]TrackedRepository, error) {
-			return []TrackedRepository{
+		GetAllFn: func(_ context.Context) ([]repository.Repository, error) {
+			return []repository.Repository{
 				{ID: 1, Owner: "a", Name: "repo"},
 				{ID: 2, Owner: "b", Name: "repo"},
 				{ID: 3, Owner: "c", Name: "repo"},
@@ -313,7 +315,7 @@ func TestPoller_OverlappingScanSkipped(t *testing.T) {
 	var getAllCalls atomic.Int32
 
 	repos := &mockRepoScanReader{
-		GetAllFn: func(_ context.Context) ([]TrackedRepository, error) {
+		GetAllFn: func(_ context.Context) ([]repository.Repository, error) {
 			if getAllCalls.Add(1) == 1 {
 				close(firstScanStarted)
 				<-releaseFirstScan

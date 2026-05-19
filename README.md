@@ -41,15 +41,14 @@ main/main.go                       -- Thin entrypoint that loads config and call
 internal/
   app/                              -- Bootstrap: wiring, migrations, HTTP, graceful shutdown
   config/                           -- Parse env vars once at startup
-  subscription/                     -- Subscription domain: Service, Subscription, errors
-  release/                          -- Release domain: Poller, Release, TrackedRepository
+  subscription/                     -- Subscription domain: Service, Repo, Subscription, errors
+  release/                          -- Release domain: Poller, Release
+  repository/                       -- Repository entity, Ref value object, Store (PG)
   email/                            -- email.Address value object
-  repo/                             -- repo.Ref value object
   platform/health/                  -- health.DBChecker
   platform/logger/                  -- slog setup
   platform/postgres/                -- *sql.DB factory + golang-migrate runner
   platform/token/                   -- token.Generator (crypto/rand → hex)
-  storage/                          -- PostgreSQL data access (parameterized queries only)
   client/github/                    -- GitHub REST API client + Redis cache decorator
   client/mailer/                    -- SMTP client + email templates
   api/rest/                         -- chi router
@@ -57,12 +56,12 @@ internal/
     health/                         -- /health handler
     middleware/                     -- API-key auth, per-IP rate limiting, metrics
 migrations/                         -- SQL schema (auto-applied via golang-migrate)
-tests/storage/                      -- Integration tests (testcontainers, real Postgres)
+tests/repository/                   -- Integration tests (testcontainers, real Postgres)
 ```
 
-The project follows **clean architecture** with consumer-side interface placement (see [ADR 0009](docs/adr/0009-consumer-side-interface-placement.md)): each domain package declares the small unexported interfaces it actually uses. Outer layers (`storage`, `client`, `api`) provide implementations and satisfy those interfaces via Go's structural typing. Business logic has zero knowledge of HTTP, SQL, or Redis.
+The project follows **clean architecture** with consumer-side interface placement (see [ADR 0009](docs/adr/0009-consumer-side-interface-placement.md)): each domain package declares the small unexported interfaces it actually uses. Outer layers (`client`, `api`, persistence) provide implementations and satisfy those interfaces via Go's structural typing. Business logic has zero knowledge of HTTP, SQL, or Redis.
 
-**Why this matters**: Every dependency can be swapped or mocked independently. The domain packages are tested with pure in-memory mocks, and the storage layer is tested against a real database. No test touches both concerns at once.
+**Why this matters**: Every dependency can be swapped or mocked independently. The domain packages are tested with pure in-memory mocks, and the persistence layer is tested against a real database. No test touches both concerns at once.
 
 ### Subscription Lifecycle
 
@@ -309,13 +308,12 @@ cp .env.example .env
 │   │   ├── github/              # GitHub API client + Redis cache decorator
 │   │   └── mailer/              # SMTP transport + email templates
 │   ├── config/                  # Environment-based config
-│   ├── subscription/            # Subscription domain (Service + types + errors)
-│   ├── release/                 # Release domain (Poller + Release/TrackedRepository)
+│   ├── subscription/            # Subscription domain (Service + Repo + types + errors)
+│   ├── release/                 # Release domain (Poller + Release)
+│   ├── repository/              # repository.Repository entity + Ref + Store (PG)
 │   ├── email/                   # email.Address value object
-│   ├── repo/                    # repo.Ref value object
-│   ├── platform/                # health.DBChecker, slog, postgres, token.Generator
-│   └── storage/                 # PostgreSQL data access layer
-├── tests/storage/               # Integration tests (testcontainers + real Postgres)
+│   └── platform/                # health.DBChecker, slog, postgres, token.Generator
+├── tests/repository/            # Integration tests (testcontainers + real Postgres)
 ├── migrations/                  # SQL schema (auto-applied on startup)
 ├── docker-compose.yml           # PostgreSQL 16 + Redis 7 + app
 ├── Dockerfile                   # Multi-stage build (Alpine)

@@ -13,7 +13,7 @@ import (
 	"github-release-notifier/internal/platform/health"
 	"github-release-notifier/internal/platform/token"
 	"github-release-notifier/internal/release"
-	"github-release-notifier/internal/storage"
+	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/subscription"
 	"log/slog"
 	"net/http"
@@ -47,11 +47,11 @@ func newRedisClient(cfg *config.Config) *redis.Client {
 func buildDependencies(
 	ctx context.Context, cfg *config.Config, db *sql.DB, rdb *redis.Client,
 ) (*dependencies, error) {
-	subRepo, err := storage.NewSubscriptionRepoWithContext(ctx, db)
+	subRepo, err := subscription.NewRepoWithContext(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("creating subscription repo: %w", err)
 	}
-	repoStore, err := storage.NewTrackedRepoStoreWithContext(ctx, db)
+	repoStore, err := repository.NewStoreWithContext(ctx, db)
 	if err != nil {
 		closeQuietly("subscription repo", subRepo.Close)
 		return nil, fmt.Errorf("creating tracked repo store: %w", err)

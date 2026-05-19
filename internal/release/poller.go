@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github-release-notifier/internal/repository"
 )
 
 type repoScanReader interface {
-	GetAll(ctx context.Context) ([]TrackedRepository, error)
+	GetAll(ctx context.Context) ([]repository.Repository, error)
 	UpdateLastSeen(ctx context.Context, id int64, tag string) error
 	UpdateLastChecked(ctx context.Context, id int64) error
 }
@@ -118,7 +120,7 @@ func (p *Poller) scan(ctx context.Context) {
 	}
 }
 
-func (p *Poller) scanRepository(ctx context.Context, repo TrackedRepository) {
+func (p *Poller) scanRepository(ctx context.Context, repo repository.Repository) {
 	rel, err := p.github.GetLatestRelease(ctx, repo.Owner, repo.Name)
 	if err != nil {
 		p.log.Error("Failed to get release", "repo", repo.FullName(), "err", err)
@@ -145,13 +147,13 @@ func (p *Poller) scanRepository(ctx context.Context, repo TrackedRepository) {
 	p.notifySubscribers(ctx, repo, rel)
 }
 
-func (p *Poller) updateLastChecked(ctx context.Context, repo TrackedRepository) {
+func (p *Poller) updateLastChecked(ctx context.Context, repo repository.Repository) {
 	if err := p.repos.UpdateLastChecked(ctx, repo.ID); err != nil {
 		p.log.Error("Failed to update last_checked_at", "repo", repo.FullName(), "err", err)
 	}
 }
 
-func (p *Poller) notifySubscribers(ctx context.Context, repo TrackedRepository, rel *Release) {
+func (p *Poller) notifySubscribers(ctx context.Context, repo repository.Repository, rel *Release) {
 	emails, err := p.subs.GetEmailsByRepo(ctx, repo.Owner, repo.Name)
 	if err != nil {
 		p.log.Error("Failed to get subscribers", "repo", repo.FullName(), "err", err)

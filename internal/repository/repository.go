@@ -1,11 +1,12 @@
-package release
+package repository
 
 import (
 	"database/sql"
 	"time"
 )
 
-type TrackedRepository struct {
+// Repository is a GitHub repository the poller watches for releases.
+type Repository struct {
 	ID            int64          `db:"id"`
 	Owner         string         `db:"owner"`
 	Name          string         `db:"name"`
@@ -14,6 +15,6 @@ type TrackedRepository struct {
 	CreatedAt     time.Time      `db:"created_at"`
 }
 
-func (r *TrackedRepository) FullName() string {
+func (r *Repository) FullName() string {
 	return r.Owner + "/" + r.Name
 }
