@@ -3,10 +3,9 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
@@ -21,7 +20,7 @@ func AccessLog(next http.Handler) http.Handler {
 		defer func() {
 			slog.Info("http",
 				"method", r.Method,
-				"path", redactPath(r.URL),
+				"path", redactPath(r),
 				"status", ww.Status(),
 				"bytes", ww.BytesWritten(),
 				"duration_ms", time.Since(start).Milliseconds(),
@@ -32,15 +31,17 @@ func AccessLog(next http.Handler) http.Handler {
 	})
 }
 
-func redactPath(u *url.URL) string {
-	path := u.Path
-	switch {
-	case strings.HasPrefix(path, "/api/confirm/"):
-		path = "/api/confirm/<redacted>"
-	case strings.HasPrefix(path, "/api/unsubscribe/"):
-		path = "/api/unsubscribe/<redacted>"
+// redactPath substitutes the chi route pattern (e.g. /api/confirm/{token})
+// for the raw path, so route params holding bearer tokens never reach logs.
+// Query params with PII (email) are masked separately.
+func redactPath(r *http.Request) string {
+	path := r.URL.Path
+	if rc := chi.RouteContext(r.Context()); rc != nil {
+		if pattern := rc.RoutePattern(); pattern != "" {
+			path = pattern
+		}
 	}
-	q := u.Query()
+	q := r.URL.Query()
 	if q.Has("email") {
 		q.Set("email", "<redacted>")
 	}
