@@ -5,13 +5,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github-release-notifier/internal/repository"
 	"io"
 	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github-release-notifier/internal/repository"
 )
 
 func TestMain(m *testing.M) {

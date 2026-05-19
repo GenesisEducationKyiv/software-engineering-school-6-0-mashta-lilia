@@ -5,14 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
+	"github-release-notifier/internal/repository"
+	"github-release-notifier/internal/subscription"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github-release-notifier/internal/repository"
-	"github-release-notifier/internal/subscription"
 
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"

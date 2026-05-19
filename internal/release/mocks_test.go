@@ -3,7 +3,6 @@ package release
 
 import (
 	"context"
-
 	"github-release-notifier/internal/repository"
 )
 

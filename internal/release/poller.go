@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github-release-notifier/internal/repository"
 	"log/slog"
 	"sync"
 	"time"
-
-	"github-release-notifier/internal/repository"
 )
 
 type repoScanReader interface {
