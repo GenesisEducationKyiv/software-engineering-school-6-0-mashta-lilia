@@ -19,6 +19,9 @@ type Service struct {
 	tokens tokenGen
 }
 
+// NewService panics if any collaborator is nil. Service is built once at
+// startup by the composition root; a nil dep is a wiring bug that should
+// crash boot rather than surface as a request-time nil-pointer panic.
 func NewService(
 	subs subscriptionStore,
 	repos repoUpserter,
@@ -26,6 +29,9 @@ func NewService(
 	m confirmationSender,
 	tokens tokenGen,
 ) *Service {
+	if subs == nil || repos == nil || gh == nil || m == nil || tokens == nil {
+		panic("subscription.NewService: all dependencies must be non-nil")
+	}
 	return &Service{subs: subs, repos: repos, github: gh, mailer: m, tokens: tokens}
 }
 

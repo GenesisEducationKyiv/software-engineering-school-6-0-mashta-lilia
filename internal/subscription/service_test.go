@@ -22,6 +22,47 @@ func newTestService(
 	return NewService(subs, repos, gh, mail, fixedTokenGenerator{Token: testToken})
 }
 
+func TestNewService_PanicsOnNilDependency(t *testing.T) {
+	subs := &mockSubscriptionRepo{}
+	repos := &mockRepoUpserter{}
+	gh := &mockGitHubChecker{}
+	mail := &mockConfirmationSender{}
+	tok := fixedTokenGenerator{Token: testToken}
+
+	cases := []struct {
+		name string
+		args [5]any
+	}{
+		{"subs", [5]any{nil, repos, gh, mail, tok}},
+		{"repos", [5]any{subs, nil, gh, mail, tok}},
+		{"github", [5]any{subs, repos, nil, mail, tok}},
+		{"mailer", [5]any{subs, repos, gh, nil, tok}},
+		{"tokens", [5]any{subs, repos, gh, mail, nil}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Fatalf("expected panic for nil %s, got none", tc.name)
+				}
+			}()
+			s, r, g, m, tg := castDeps(tc.args)
+			_ = NewService(s, r, g, m, tg)
+		})
+	}
+}
+
+func castDeps(args [5]any) (
+	subscriptionStore, repoUpserter, githubChecker, confirmationSender, tokenGen,
+) {
+	asSubs, _ := args[0].(subscriptionStore)
+	asRepos, _ := args[1].(repoUpserter)
+	asGH, _ := args[2].(githubChecker)
+	asMail, _ := args[3].(confirmationSender)
+	asTok, _ := args[4].(tokenGen)
+	return asSubs, asRepos, asGH, asMail, asTok
+}
+
 // --- Subscribe Tests ---
 
 func TestSubscribe_Success(t *testing.T) {
