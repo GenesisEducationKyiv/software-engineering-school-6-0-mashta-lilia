@@ -148,6 +148,8 @@ paths:
     get:
       summary: Get all active subscriptions for an email
       description: Returns only subscriptions with status "active". Pending and unsubscribed entries are excluded.
+      security:
+        - ApiKeyAuth: []
       parameters:
         - name: email
           in: query
@@ -222,6 +224,11 @@ paths:
                 type: string
 
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
   schemas:
     Error:
       type: object

@@ -1,8 +1,12 @@
 package rest
 
 import (
-	"database/sql"
-	"github-release-notifier/internal/api/middleware"
+	"context"
+	"encoding/json"
+	"github-release-notifier/internal/api/rest/health"
+	"github-release-notifier/internal/api/rest/middleware"
+	"github-release-notifier/internal/api/rest/subscription"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -10,35 +14,40 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+type healthChecker interface {
+	Check(ctx context.Context) error
+}
+
 func NewRouter(
-	h *Handler,
-	db *sql.DB,
+	h *subscription.Handler,
+	hc healthChecker,
 	apiKey string,
 	subscribeLimiter *middleware.RateLimiter,
 	swaggerPath string,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
-	r.Use(chimw.Logger)
-	r.Use(chimw.Recoverer)
 	r.Use(chimw.RequestID)
+	r.Use(middleware.AccessLog)
+	r.Use(chimw.Recoverer)
+	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.Metrics)
 
 	r.Get("/", root)
-	r.Get("/health", healthCheck(db))
+	r.Get("/health", health.Handler(hc))
 	r.Get("/swagger.yaml", serveFile(swaggerPath))
 	r.Handle("/metrics", promhttp.Handler())
 
 	r.With(subscribeLimiter.Limit).Post("/api/subscribe", h.Subscribe)
 	r.Get("/api/confirm/{token}", h.Confirm)
 	r.Get("/api/unsubscribe/{token}", h.Unsubscribe)
-	r.With(middleware.APIKeyAuth(apiKey)).Get("/api/subscriptions", h.GetSubscriptions)
+	r.With(middleware.APIKeyAuth(apiKey)).Get("/api/subscriptions", h.List)
 
 	return r
 }
 
 func root(w http.ResponseWriter, _ *http.Request) {
-	respondJSON(w, http.StatusOK, map[string]string{
+	writeJSON(w, http.StatusOK, map[string]string{
 		"service": "GitHub Release Notification API",
 		"docs":    "/swagger.yaml",
 		"health":  "/health",
@@ -52,12 +61,10 @@ func serveFile(path string) http.HandlerFunc {
 	}
 }
 
-func healthCheck(db *sql.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := db.PingContext(r.Context()); err != nil {
-			respondJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
-			return
-		}
-		respondJSON(w, http.StatusOK, map[string]string{"status": "healthy"})
+func writeJSON(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		slog.Error("Failed to encode response", "err", err)
 	}
 }

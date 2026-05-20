@@ -1,10 +1,14 @@
 .PHONY: run build test test-integration lint docker-up docker-down migrate-up migrate-down
 
+COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS    := -X main.commit=$(COMMIT) -X main.buildTime=$(BUILD_TIME)
+
 run:
-	go run ./cmd/server
+	go run ./main
 
 build:
-	go build -o bin/server ./cmd/server
+	go build -ldflags "$(LDFLAGS)" -o bin/server ./main
 
 test:
 	go test -short ./... -v -count=1
