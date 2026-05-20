@@ -58,11 +58,14 @@ func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies) 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("server shutdown: %w", err)
-	}
-
+	// Drain the poller regardless of Shutdown outcome — otherwise an in-flight
+	// scan can race with process exit and leak a half-finished SMTP send or
+	// Postgres write.
+	shutdownErr := srv.Shutdown(shutdownCtx)
 	waitForPollerWithContext(shutdownCtx, deps)
+	if shutdownErr != nil {
+		return fmt.Errorf("server shutdown: %w", shutdownErr)
+	}
 	slog.Info("Server stopped")
 	return nil
 }
