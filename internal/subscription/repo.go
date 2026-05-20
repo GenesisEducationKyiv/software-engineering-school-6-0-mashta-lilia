@@ -139,6 +139,9 @@ func (r *Repo) Close() error {
 }
 
 func (r *Repo) Create(ctx context.Context, sub *Subscription) error {
+	if sub == nil {
+		return errors.New("subscription repo: nil subscription")
+	}
 	if err := r.ensurePrepared(ctx); err != nil {
 		return err
 	}
