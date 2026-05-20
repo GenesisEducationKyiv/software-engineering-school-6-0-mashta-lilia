@@ -80,6 +80,11 @@ func (p *Poller) Done() <-chan struct{} { return p.done }
 func (p *Poller) Start(ctx context.Context) {
 	defer p.doneOnce.Do(func() { close(p.done) })
 
+	if ctx == nil {
+		p.log.Error("poller start failed: nil context")
+		return
+	}
+
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
 
