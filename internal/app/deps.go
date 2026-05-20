@@ -89,11 +89,6 @@ func buildDependencies(
 	healthChecker := health.NewDBChecker(db)
 	subscribeLimiter := middleware.NewRateLimiter(rateLimitRequests, time.Minute, cfg.TrustedProxy)
 
-	if cfg.APIKey == "" {
-		// Middleware fails closed on empty key (always 401). Warn loudly so a
-		// misconfigured deploy doesn't silently 401 every admin request.
-		slog.Warn("API_KEY is not set — /api/subscriptions will reject all requests with 401")
-	}
 	router := rest.NewRouter(handler, healthChecker, cfg.APIKey, subscribeLimiter, "swagger.yaml")
 
 	storageReady = true

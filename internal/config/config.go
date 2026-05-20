@@ -81,6 +81,10 @@ func NewFromEnv() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	apiKey, err := envRequired("API_KEY")
+	if err != nil {
+		return nil, err
+	}
 
 	return &Config{
 		ServerPort: envOrDefault("SERVER_PORT", "8080"),
@@ -102,7 +106,7 @@ func NewFromEnv() (*Config, error) {
 		ScanInterval: scanInterval,
 		BaseURL:      envOrDefault("BASE_URL", "http://localhost:8080"),
 
-		APIKey: envOrDefault("API_KEY", ""),
+		APIKey: apiKey,
 
 		RedisAddr:     envOrDefault("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: envOrDefault("REDIS_PASSWORD", ""),
@@ -120,6 +124,17 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// envRequired returns the env value or an error if unset/empty. Used for
+// secrets where a silent empty value turns a config mistake into a runtime
+// security regression.
+func envRequired(key string) (string, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return "", fmt.Errorf("env %s: required, set a non-empty value", key)
+	}
+	return v, nil
 }
 
 func envInt(key string, fallback int) (int, error) {
