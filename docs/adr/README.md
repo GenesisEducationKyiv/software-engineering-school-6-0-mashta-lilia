@@ -17,7 +17,7 @@ The format follows [MADR 3.0](https://adr.github.io/madr/).
 | 0009 | Accepted | [Consumer-Side Interface Placement](0009-consumer-side-interface-placement.md) | Refines ADR-0001 with a precise rule for adapters and cross-layer contracts. |
 | 0010 | Accepted | [Entry point at `main/main.go`, not `cmd/<name>/`](0010-entry-point-at-main-not-cmd.md) | Overrides the rulebook's `cmd/` mandate per PR-5 reviewer; closes off the idiomatic multi-binary layout. |
 | 0011 | Accepted | [Foundational Packages Return Root-Cause Errors](0011-platform-returns-root-cause-errors.md) | Locks the `internal/platform/` no-`%w`, no-`slog`, no-`panic` contract and the `errors.Join` close-failure pattern. |
-| 0012 | Accepted | [Adapter→Domain Sibling Imports Permitted](0012-adapter-to-domain-sibling-imports.md) | Documents a one-line carve-out from rulebook §5 instead of vertical-DDD restructuring all adapters. |
+| 0012 | Superseded | [Adapter→Domain Sibling Imports Permitted](0012-adapter-to-domain-sibling-imports.md) | Historical carve-out from rulebook §5; superseded by vertical slicing (2026-05-19). |
 | 0013 | Accepted | [Do not commit `vendor/`](0013-vendor-third-party-dependencies.md) | Deviates from rulebook §2; `go.sum` provides the same supply-chain integrity without the diff cost. |
 
 ## When to Add a New ADR
