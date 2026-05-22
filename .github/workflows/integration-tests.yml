@@ -1,0 +1,25 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    # Docker is preinstalled on ubuntu-latest runners; testcontainers will
+    # spin up postgres + mailpit on demand, so we don't need service: blocks.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run integration tests
+        # Repository-level and full HTTP integration tests live under tests/.
+        # Skipping -short turns them on; testing.Short() guards inside each
+        # file make sure unit-only CI does not pay the docker cost.
+        run: go test ./tests/... -count=1 -timeout 10m -race -v
