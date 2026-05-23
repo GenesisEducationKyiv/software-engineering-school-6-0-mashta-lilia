@@ -122,13 +122,21 @@ func setupEnv(ctx context.Context) (*testEnv, func(), error) {
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("subscription repo: %w", err)
 	}
-	cleanups = append(cleanups, func() { _ = subRepo.Close() })
+	cleanups = append(cleanups, func() {
+		if err := subRepo.Close(); err != nil {
+			slog.Warn("close subscription repo", "err", err)
+		}
+	})
 
 	repoStore, err := repository.NewStoreWithContext(ctx, db)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("tracked repo store: %w", err)
 	}
-	cleanups = append(cleanups, func() { _ = repoStore.Close() })
+	cleanups = append(cleanups, func() {
+		if err := repoStore.Close(); err != nil {
+			slog.Warn("close repo store", "err", err)
+		}
+	})
 
 	templates := mailer.NewTemplateBuilder("http://test.local")
 	mail, err := mailer.NewSMTPMailer(mp.host, mp.smtpPort, "", "", "noreply@test.local", templates)
@@ -212,6 +220,15 @@ func runMigrations(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("migrate new: %w", err)
 	}
+	defer func() {
+		srcErr, dbErr := mig.Close()
+		if srcErr != nil {
+			slog.Warn("close migration source", "err", srcErr)
+		}
+		if dbErr != nil {
+			slog.Warn("close migration db", "err", dbErr)
+		}
+	}()
 	if err := mig.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("migrate up: %w", err)
 	}

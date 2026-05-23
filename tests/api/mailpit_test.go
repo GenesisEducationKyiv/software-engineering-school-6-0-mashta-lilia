@@ -25,7 +25,7 @@ type mailpitContainer struct {
 
 func startMailpit(ctx context.Context) (*mailpitContainer, func(), error) {
 	req := testcontainers.ContainerRequest{
-		Image:        "axllent/mailpit:latest",
+		Image:        "axllent/mailpit:v1.18",
 		ExposedPorts: []string{"1025/tcp", "8025/tcp"},
 		WaitingFor: wait.ForHTTP("/api/v1/info").
 			WithPort("8025/tcp").

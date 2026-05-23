@@ -119,6 +119,7 @@ func TestSubscribe_UnknownFieldsRejected(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Zero(t, fs.callCnt, "service must not be called on unknown fields")
 }
 
 func TestSubscribe_TrailingGarbageRejected(t *testing.T) {
@@ -133,6 +134,7 @@ func TestSubscribe_TrailingGarbageRejected(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode,
 		"trailing data after JSON object should be rejected")
+	assert.Zero(t, fs.callCnt, "service must not be called on trailing garbage")
 }
 
 func TestSubscribe_ErrorMapping(t *testing.T) {
@@ -161,7 +163,8 @@ func TestSubscribe_ErrorMapping(t *testing.T) {
 			require.NoError(t, err)
 			defer resp.Body.Close()
 
-			body, _ := readAll(t, resp)
+			body, err := readAll(t, resp)
+			require.NoError(t, err)
 			assert.Equal(t, tc.wantStatus, resp.StatusCode)
 			assert.Equal(t, tc.wantMsg, decodeError(t, body))
 		})
@@ -193,7 +196,8 @@ func TestConfirm_TokenNotFound_LeaksNoDifferenceFromInactive(t *testing.T) {
 
 		resp, err := http.Get(srv.URL + "/api/confirm/anything")
 		require.NoError(t, err)
-		body, _ := readAll(t, resp)
+		body, readErr := readAll(t, resp)
+		require.NoError(t, readErr)
 		resp.Body.Close()
 		srv.Close()
 
@@ -258,7 +262,8 @@ func TestList_Success(t *testing.T) {
 	defer resp.Body.Close()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	body, _ := readAll(t, resp)
+	body, err := readAll(t, resp)
+	require.NoError(t, err)
 	var got []subscription.Subscription
 	require.NoError(t, json.Unmarshal(body, &got))
 	require.Len(t, got, 1)
@@ -279,8 +284,8 @@ func TestList_InvalidEmailFromService(t *testing.T) {
 }
 
 // Helper to drain response body and preserve a copy for assertions.
+// Body lifecycle is the caller's responsibility — pair with defer resp.Body.Close().
 func readAll(t *testing.T, resp *http.Response) ([]byte, error) {
 	t.Helper()
-	defer resp.Body.Close()
 	return io.ReadAll(resp.Body)
 }

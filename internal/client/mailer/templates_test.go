@@ -52,6 +52,27 @@ func TestTemplateBuilder_ReleaseNotification_Standard(t *testing.T) {
 	assert.Contains(t, msg.Body, rel.HTMLURL)
 }
 
+func TestTemplateBuilder_ReleaseNotification_StripsCRLFInjection(t *testing.T) {
+	tb := mailer.NewTemplateBuilder("https://example.com")
+	// Header injection attempt — newlines must be stripped from `To`,
+	// the repo subject input, and the tag (which lands in the Subject).
+	rel := &release.Release{
+		TagName: "v1.0\r\nX-Evil: 1",
+		Name:    "ok",
+		HTMLURL: "https://example.com/r",
+	}
+	msg := tb.ReleaseNotification(
+		"alice@example.com\r\nBcc: evil@bad.com",
+		"golang/go\r\nX-Evil: 1",
+		rel,
+	)
+
+	assert.NotContains(t, msg.To, "\n")
+	assert.NotContains(t, msg.To, "\r")
+	assert.NotContains(t, msg.Subject, "\n")
+	assert.NotContains(t, msg.Subject, "\r")
+}
+
 func TestTemplateBuilder_ReleaseNotification_NilRelease_DoesNotPanic(t *testing.T) {
 	tb := mailer.NewTemplateBuilder("https://example.com")
 

@@ -47,6 +47,7 @@ func TestNewFromEnv_DefaultsAreApplied(t *testing.T) {
 }
 
 func TestNewFromEnv_RequiresAPIKey(t *testing.T) {
+	setBaseEnv(t)
 	t.Setenv("API_KEY", "")
 
 	cfg, err := config.NewFromEnv()

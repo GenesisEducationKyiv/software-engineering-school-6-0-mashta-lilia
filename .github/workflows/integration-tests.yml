@@ -8,6 +8,8 @@ on:
 jobs:
   integration:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     # Docker is preinstalled on ubuntu-latest runners; testcontainers will
     # spin up postgres + mailpit on demand, so we don't need service: blocks.
     steps:

@@ -27,7 +27,8 @@ services:
       retries: 20
 
   mailpit:
-    image: axllent/mailpit:latest
+    # Pin to a concrete tag so E2E runs are reproducible across CI invocations.
+    image: axllent/mailpit:v1.18
     ports:
       - "1026:1025"   # SMTP (off-by-one to avoid host clashes)
       - "8026:8025"   # HTTP API (used by Playwright to assert on captured mail)
