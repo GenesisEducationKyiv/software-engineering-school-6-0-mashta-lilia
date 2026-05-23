@@ -12,6 +12,7 @@ import (
 )
 
 func TestRepoExists_Found(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/repos/golang/go" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -37,6 +38,7 @@ func TestRepoExists_Found(t *testing.T) {
 }
 
 func TestRepoExists_NotFound(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -55,6 +57,7 @@ func TestRepoExists_NotFound(t *testing.T) {
 }
 
 func TestRepoExists_WithToken(t *testing.T) {
+	t.Parallel()
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
@@ -75,6 +78,7 @@ func TestRepoExists_WithToken(t *testing.T) {
 }
 
 func TestGetLatestRelease_Success(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/repos/golang/go/releases/latest" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -104,6 +108,7 @@ func TestGetLatestRelease_Success(t *testing.T) {
 }
 
 func TestGetLatestRelease_NoReleases(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -122,6 +127,7 @@ func TestGetLatestRelease_NoReleases(t *testing.T) {
 }
 
 func TestDoRequest_RateLimitRetry_RetryAfterHeader(t *testing.T) {
+	t.Parallel()
 	var attempts int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -154,6 +160,7 @@ func TestDoRequest_RateLimitRetry_RetryAfterHeader(t *testing.T) {
 }
 
 func TestDoRequest_RateLimitRetry_XRateLimitResetHeader(t *testing.T) {
+	t.Parallel()
 	var attempts int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -182,6 +189,7 @@ func TestDoRequest_RateLimitRetry_XRateLimitResetHeader(t *testing.T) {
 }
 
 func TestDoRequest_RateLimitExhausted(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Retry-After", "1")
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -202,6 +210,7 @@ func TestDoRequest_RateLimitExhausted(t *testing.T) {
 }
 
 func TestDoRequest_ContextCancelled_DuringRetry(t *testing.T) {
+	t.Parallel()
 	var attempts int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -229,6 +238,7 @@ func TestDoRequest_ContextCancelled_DuringRetry(t *testing.T) {
 }
 
 func TestParseRateLimitWait_RetryAfterHeader(t *testing.T) {
+	t.Parallel()
 	h := http.Header{}
 	h.Set("Retry-After", "5")
 
@@ -239,6 +249,7 @@ func TestParseRateLimitWait_RetryAfterHeader(t *testing.T) {
 }
 
 func TestParseRateLimitWait_XRateLimitResetHeader(t *testing.T) {
+	t.Parallel()
 	h := http.Header{}
 	resetTime := time.Now().Add(10 * time.Second).Unix()
 	h.Set("X-RateLimit-Reset", fmt.Sprintf("%d", resetTime))
@@ -250,6 +261,7 @@ func TestParseRateLimitWait_XRateLimitResetHeader(t *testing.T) {
 }
 
 func TestParseRateLimitWait_NoHeaders_ExponentialBackoff(t *testing.T) {
+	t.Parallel()
 	h := http.Header{}
 
 	tests := []struct {
@@ -270,6 +282,7 @@ func TestParseRateLimitWait_NoHeaders_ExponentialBackoff(t *testing.T) {
 }
 
 func TestParseRateLimitWait_XRateLimitReset_TooFarInFuture(t *testing.T) {
+	t.Parallel()
 	h := http.Header{}
 	resetTime := time.Now().Add(5 * time.Minute).Unix()
 	h.Set("X-RateLimit-Reset", fmt.Sprintf("%d", resetTime))
@@ -284,6 +297,7 @@ func TestParseRateLimitWait_XRateLimitReset_TooFarInFuture(t *testing.T) {
 }
 
 func TestParseRateLimitWait_ExponentialBackoff_BoundedAtMax(t *testing.T) {
+	t.Parallel()
 	h := http.Header{}
 
 	// Attempts beyond maxBackoffAttempt stay clamped to 4s — guards
@@ -297,6 +311,7 @@ func TestParseRateLimitWait_ExponentialBackoff_BoundedAtMax(t *testing.T) {
 }
 
 func TestParseRateLimitWait_NegativeAttempt_TreatsAsZero(t *testing.T) {
+	t.Parallel()
 	h := http.Header{}
 	got := HeaderAwareRetry{}.NextWait(h, -1)
 	if got != 1*time.Second {

@@ -11,6 +11,7 @@ import (
 )
 
 func TestTemplateBuilder_Confirmation_IncludesURLAndRepo(t *testing.T) {
+	t.Parallel()
 	tb := mailer.NewTemplateBuilder("https://example.com")
 	msg := tb.Confirmation("alice@example.com", "tok123", "golang/go")
 
@@ -23,6 +24,7 @@ func TestTemplateBuilder_Confirmation_IncludesURLAndRepo(t *testing.T) {
 }
 
 func TestTemplateBuilder_Confirmation_StripsCRLFInjection(t *testing.T) {
+	t.Parallel()
 	tb := mailer.NewTemplateBuilder("https://example.com")
 	// Header injection attempt — newlines must be stripped from `To`
 	// and from subject inputs so attackers cannot inject extra MIME
@@ -36,6 +38,7 @@ func TestTemplateBuilder_Confirmation_StripsCRLFInjection(t *testing.T) {
 }
 
 func TestTemplateBuilder_ReleaseNotification_Standard(t *testing.T) {
+	t.Parallel()
 	tb := mailer.NewTemplateBuilder("https://example.com")
 	rel := &release.Release{
 		TagName: "v1.22.0",
@@ -53,6 +56,7 @@ func TestTemplateBuilder_ReleaseNotification_Standard(t *testing.T) {
 }
 
 func TestTemplateBuilder_ReleaseNotification_StripsCRLFInjection(t *testing.T) {
+	t.Parallel()
 	tb := mailer.NewTemplateBuilder("https://example.com")
 	// Header injection attempt — newlines must be stripped from `To`,
 	// the repo subject input, and the tag (which lands in the Subject).
@@ -74,6 +78,7 @@ func TestTemplateBuilder_ReleaseNotification_StripsCRLFInjection(t *testing.T) {
 }
 
 func TestTemplateBuilder_ReleaseNotification_NilRelease_DoesNotPanic(t *testing.T) {
+	t.Parallel()
 	tb := mailer.NewTemplateBuilder("https://example.com")
 
 	assert.NotPanics(t, func() {

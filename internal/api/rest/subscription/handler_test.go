@@ -80,6 +80,7 @@ func decodeError(t *testing.T, body []byte) string {
 // --- Subscribe ---
 
 func TestSubscribe_Success(t *testing.T) {
+	t.Parallel()
 	fs := &fakeService{}
 	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
 	defer srv.Close()
@@ -95,6 +96,7 @@ func TestSubscribe_Success(t *testing.T) {
 }
 
 func TestSubscribe_MalformedJSON(t *testing.T) {
+	t.Parallel()
 	fs := &fakeService{}
 	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
 	defer srv.Close()
@@ -109,6 +111,7 @@ func TestSubscribe_MalformedJSON(t *testing.T) {
 }
 
 func TestSubscribe_UnknownFieldsRejected(t *testing.T) {
+	t.Parallel()
 	fs := &fakeService{}
 	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
 	defer srv.Close()
@@ -123,6 +126,7 @@ func TestSubscribe_UnknownFieldsRejected(t *testing.T) {
 }
 
 func TestSubscribe_TrailingGarbageRejected(t *testing.T) {
+	t.Parallel()
 	fs := &fakeService{}
 	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
 	defer srv.Close()
@@ -138,6 +142,7 @@ func TestSubscribe_TrailingGarbageRejected(t *testing.T) {
 }
 
 func TestSubscribe_ErrorMapping(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		serviceErr error
@@ -174,6 +179,7 @@ func TestSubscribe_ErrorMapping(t *testing.T) {
 // --- Confirm ---
 
 func TestConfirm_Success(t *testing.T) {
+	t.Parallel()
 	fs := &fakeService{}
 	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
 	defer srv.Close()
@@ -187,6 +193,7 @@ func TestConfirm_Success(t *testing.T) {
 }
 
 func TestConfirm_TokenNotFound_LeaksNoDifferenceFromInactive(t *testing.T) {
+	t.Parallel()
 	// Both ErrTokenNotFound and ErrSubscriptionInactive must produce
 	// identical responses so a probing attacker can't distinguish
 	// "never existed" from "already used".
@@ -209,6 +216,7 @@ func TestConfirm_TokenNotFound_LeaksNoDifferenceFromInactive(t *testing.T) {
 // --- Unsubscribe ---
 
 func TestUnsubscribe_Success(t *testing.T) {
+	t.Parallel()
 	fs := &fakeService{}
 	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
 	defer srv.Close()
@@ -222,6 +230,7 @@ func TestUnsubscribe_Success(t *testing.T) {
 }
 
 func TestUnsubscribe_TokenNotFound(t *testing.T) {
+	t.Parallel()
 	fs := &fakeService{unsubscribeErr: subscription.ErrTokenNotFound}
 	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
 	defer srv.Close()
@@ -236,6 +245,7 @@ func TestUnsubscribe_TokenNotFound(t *testing.T) {
 // --- List ---
 
 func TestList_RequiresEmailQuery(t *testing.T) {
+	t.Parallel()
 	fs := &fakeService{}
 	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
 	defer srv.Close()
@@ -249,6 +259,7 @@ func TestList_RequiresEmailQuery(t *testing.T) {
 }
 
 func TestList_Success(t *testing.T) {
+	t.Parallel()
 	fs := &fakeService{
 		listResult: []subscription.Subscription{
 			{ID: 1, Email: "a@b.com", RepoOwner: "golang", RepoName: "go", Status: subscription.StatusActive},
@@ -272,6 +283,7 @@ func TestList_Success(t *testing.T) {
 }
 
 func TestList_InvalidEmailFromService(t *testing.T) {
+	t.Parallel()
 	fs := &fakeService{listErr: subscription.ErrInvalidEmail}
 	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
 	defer srv.Close()

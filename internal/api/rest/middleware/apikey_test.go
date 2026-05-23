@@ -21,6 +21,7 @@ func okHandler() http.Handler {
 }
 
 func TestAPIKeyAuth_EmptyKey_FailsClosed(t *testing.T) {
+	t.Parallel()
 	h := middleware.APIKeyAuth("")(okHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/subscriptions", http.NoBody)
@@ -39,6 +40,7 @@ func TestAPIKeyAuth_EmptyKey_FailsClosed(t *testing.T) {
 }
 
 func TestAPIKeyAuth_MissingHeader(t *testing.T) {
+	t.Parallel()
 	h := middleware.APIKeyAuth("expected-key")(okHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/subscriptions", http.NoBody)
@@ -53,6 +55,7 @@ func TestAPIKeyAuth_MissingHeader(t *testing.T) {
 }
 
 func TestAPIKeyAuth_WrongKey(t *testing.T) {
+	t.Parallel()
 	h := middleware.APIKeyAuth("expected-key")(okHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/subscriptions", http.NoBody)
@@ -65,6 +68,7 @@ func TestAPIKeyAuth_WrongKey(t *testing.T) {
 }
 
 func TestAPIKeyAuth_CorrectKey(t *testing.T) {
+	t.Parallel()
 	h := middleware.APIKeyAuth("expected-key")(okHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/subscriptions", http.NoBody)
@@ -81,6 +85,7 @@ func TestAPIKeyAuth_CorrectKey(t *testing.T) {
 // wrong-but-long keys must produce identical responses (only outcome,
 // not timing, is asserted in unit tests).
 func TestAPIKeyAuth_RejectsKeysOfDifferingLength(t *testing.T) {
+	t.Parallel()
 	h := middleware.APIKeyAuth("expected-key-1234567890")(okHandler())
 
 	for _, attempt := range []string{"x", "x-very-very-very-long-and-still-wrong"} {

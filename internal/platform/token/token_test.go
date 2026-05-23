@@ -11,6 +11,7 @@ import (
 )
 
 func TestGenerator_Generate_ProducesHexOfExpectedLength(t *testing.T) {
+	t.Parallel()
 	got, err := token.New().Generate()
 	require.NoError(t, err)
 
@@ -23,6 +24,7 @@ func TestGenerator_Generate_ProducesHexOfExpectedLength(t *testing.T) {
 }
 
 func TestGenerator_Generate_NoCollisionsAcrossManyCalls(t *testing.T) {
+	t.Parallel()
 	const n = 1000
 	g := token.New()
 	seen := make(map[string]struct{}, n)
@@ -37,6 +39,7 @@ func TestGenerator_Generate_NoCollisionsAcrossManyCalls(t *testing.T) {
 
 // Tokens must use only the hex alphabet so they remain URL-safe in confirm/unsubscribe paths.
 func TestGenerator_Generate_URLSafeCharset(t *testing.T) {
+	t.Parallel()
 	tok, err := token.New().Generate()
 	require.NoError(t, err)
 	for _, c := range tok {

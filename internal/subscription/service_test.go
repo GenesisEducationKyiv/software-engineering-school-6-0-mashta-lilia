@@ -23,6 +23,7 @@ func newTestService(
 }
 
 func TestNewService_PanicsOnNilDependency(t *testing.T) {
+	t.Parallel()
 	subs := &mockSubscriptionRepo{}
 	repos := &mockRepoUpserter{}
 	gh := &mockGitHubChecker{}
@@ -66,6 +67,7 @@ func castDeps(args [5]any) (
 // --- Subscribe Tests ---
 
 func TestSubscribe_Success(t *testing.T) {
+	t.Parallel()
 	var createdSub *Subscription
 	var sentEmail, sentToken, sentRepo string
 
@@ -125,6 +127,7 @@ func TestSubscribe_Success(t *testing.T) {
 }
 
 func TestSubscribe_InvalidEmail(t *testing.T) {
+	t.Parallel()
 	svc := newTestService(&mockSubscriptionRepo{}, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	for _, e := range []string{"", "invalid", "@", "foo@", "@bar.com"} {
 		if err := svc.Subscribe(context.Background(), e, "golang/go"); !errors.Is(err, ErrInvalidEmail) {
@@ -134,6 +137,7 @@ func TestSubscribe_InvalidEmail(t *testing.T) {
 }
 
 func TestSubscribe_InvalidRepoFormat(t *testing.T) {
+	t.Parallel()
 	svc := newTestService(&mockSubscriptionRepo{}, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	for _, r := range []string{"", "noslash", "/", "owner/", "/repo", "a/b/c"} {
 		if err := svc.Subscribe(context.Background(), testEmail, r); !errors.Is(err, ErrInvalidRepo) {
@@ -143,6 +147,7 @@ func TestSubscribe_InvalidRepoFormat(t *testing.T) {
 }
 
 func TestSubscribe_RepoNotFound(t *testing.T) {
+	t.Parallel()
 	svc := newTestService(
 		&mockSubscriptionRepo{},
 		&mockRepoUpserter{},
@@ -157,6 +162,7 @@ func TestSubscribe_RepoNotFound(t *testing.T) {
 }
 
 func TestSubscribe_AlreadyExists(t *testing.T) {
+	t.Parallel()
 	t.Run("pre-check detects duplicate", func(t *testing.T) {
 		svc := newTestService(
 			&mockSubscriptionRepo{
@@ -194,6 +200,7 @@ func TestSubscribe_AlreadyExists(t *testing.T) {
 }
 
 func TestSubscribe_GitHubAPIError(t *testing.T) {
+	t.Parallel()
 	svc := newTestService(
 		&mockSubscriptionRepo{},
 		&mockRepoUpserter{},
@@ -214,6 +221,7 @@ func TestSubscribe_GitHubAPIError(t *testing.T) {
 }
 
 func TestSubscribe_TokenGeneratorFailure_Propagates(t *testing.T) {
+	t.Parallel()
 	svc := NewService(
 		&mockSubscriptionRepo{
 			ExistsFn: func(_ context.Context, _, _, _ string) (bool, error) { return false, nil },
@@ -235,6 +243,7 @@ func TestSubscribe_TokenGeneratorFailure_Propagates(t *testing.T) {
 }
 
 func TestSubscribe_UpsertBeforeCreate(t *testing.T) {
+	t.Parallel()
 	var callOrder []string
 	svc := newTestService(
 		&mockSubscriptionRepo{
@@ -266,6 +275,7 @@ func TestSubscribe_UpsertBeforeCreate(t *testing.T) {
 }
 
 func TestSubscribe_SMTPFailure_RollsBackSubscription(t *testing.T) {
+	t.Parallel()
 	var rolledBackID int64
 	var rolledBackStatus Status
 
@@ -312,6 +322,7 @@ func TestSubscribe_SMTPFailure_RollsBackSubscription(t *testing.T) {
 }
 
 func TestSubscribe_SMTPFailure_RollbackFailure_JoinedError(t *testing.T) {
+	t.Parallel()
 	smtpErr := errors.New("smtp down")
 	rollbackErr := errors.New("db unavailable")
 
@@ -372,6 +383,7 @@ func TestSubscribe_SMTPFailure_RollbackFailure_JoinedError(t *testing.T) {
 // --- Confirm Tests ---
 
 func TestConfirm_Success(t *testing.T) {
+	t.Parallel()
 	var updatedID int64
 	var updatedStatus Status
 
@@ -400,6 +412,7 @@ func TestConfirm_Success(t *testing.T) {
 }
 
 func TestConfirm_TokenNotFound(t *testing.T) {
+	t.Parallel()
 	svc := newTestService(
 		&mockSubscriptionRepo{
 			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
@@ -414,6 +427,7 @@ func TestConfirm_TokenNotFound(t *testing.T) {
 }
 
 func TestConfirm_AlreadyActive_Idempotent(t *testing.T) {
+	t.Parallel()
 	svc := newTestService(
 		&mockSubscriptionRepo{
 			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
@@ -428,6 +442,7 @@ func TestConfirm_AlreadyActive_Idempotent(t *testing.T) {
 }
 
 func TestConfirm_UnsubscribedToken(t *testing.T) {
+	t.Parallel()
 	svc := newTestService(
 		&mockSubscriptionRepo{
 			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
@@ -442,6 +457,7 @@ func TestConfirm_UnsubscribedToken(t *testing.T) {
 }
 
 func TestConfirm_DBError_Propagates(t *testing.T) {
+	t.Parallel()
 	svc := newTestService(
 		&mockSubscriptionRepo{
 			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
@@ -462,6 +478,7 @@ func TestConfirm_DBError_Propagates(t *testing.T) {
 // --- Unsubscribe Tests ---
 
 func TestUnsubscribe_Success(t *testing.T) {
+	t.Parallel()
 	var updatedStatus Status
 	svc := newTestService(
 		&mockSubscriptionRepo{
@@ -484,6 +501,7 @@ func TestUnsubscribe_Success(t *testing.T) {
 }
 
 func TestUnsubscribe_TokenNotFound(t *testing.T) {
+	t.Parallel()
 	svc := newTestService(
 		&mockSubscriptionRepo{
 			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
@@ -498,6 +516,7 @@ func TestUnsubscribe_TokenNotFound(t *testing.T) {
 }
 
 func TestUnsubscribe_AlreadyUnsubscribed_Idempotent(t *testing.T) {
+	t.Parallel()
 	updateCalled := false
 	svc := newTestService(
 		&mockSubscriptionRepo{
@@ -520,6 +539,7 @@ func TestUnsubscribe_AlreadyUnsubscribed_Idempotent(t *testing.T) {
 }
 
 func TestUnsubscribe_DBError_Propagates(t *testing.T) {
+	t.Parallel()
 	svc := newTestService(
 		&mockSubscriptionRepo{
 			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
@@ -540,6 +560,7 @@ func TestUnsubscribe_DBError_Propagates(t *testing.T) {
 // --- GetSubscriptions Tests ---
 
 func TestGetSubscriptions_Success(t *testing.T) {
+	t.Parallel()
 	expected := []Subscription{
 		{ID: 1, Email: testEmail, RepoOwner: "golang", RepoName: "go", Status: StatusActive},
 	}
@@ -567,6 +588,7 @@ func TestGetSubscriptions_Success(t *testing.T) {
 }
 
 func TestGetSubscriptions_EmptyEmail(t *testing.T) {
+	t.Parallel()
 	svc := newTestService(&mockSubscriptionRepo{}, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	if _, err := svc.GetSubscriptions(context.Background(), ""); !errors.Is(err, ErrInvalidEmail) {
 		t.Errorf("got %v, want ErrInvalidEmail", err)
@@ -576,6 +598,7 @@ func TestGetSubscriptions_EmptyEmail(t *testing.T) {
 // --- Email Normalization Tests ---
 
 func TestSubscribe_NormalizesEmail(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input string
 		want  string
@@ -616,6 +639,7 @@ func TestSubscribe_NormalizesEmail(t *testing.T) {
 }
 
 func TestGetSubscriptions_NormalizesEmail(t *testing.T) {
+	t.Parallel()
 	var queriedEmail string
 	svc := newTestService(
 		&mockSubscriptionRepo{

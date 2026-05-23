@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewAddress_ValidEmails(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		raw  string
 		want string
@@ -31,6 +32,7 @@ func TestNewAddress_ValidEmails(t *testing.T) {
 }
 
 func TestNewAddress_InvalidEmails(t *testing.T) {
+	t.Parallel()
 	cases := []string{
 		"",
 		"not-an-email",

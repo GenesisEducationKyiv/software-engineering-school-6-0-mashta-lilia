@@ -37,6 +37,7 @@ func setupCachedClient(t *testing.T, handler http.Handler) (*CachedClient, *mini
 // --- RepoExists Cache Tests ---
 
 func TestCachedClient_RepoExists_CacheHit(t *testing.T) {
+	t.Parallel()
 	var apiCalls int32
 
 	client, _ := setupCachedClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -73,6 +74,7 @@ func TestCachedClient_RepoExists_CacheHit(t *testing.T) {
 // --- GetLatestRelease Cache Tests ---
 
 func TestCachedClient_GetLatestRelease_CacheHit(t *testing.T) {
+	t.Parallel()
 	var apiCalls int32
 
 	client, _ := setupCachedClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -112,6 +114,7 @@ func TestCachedClient_GetLatestRelease_CacheHit(t *testing.T) {
 }
 
 func TestCachedClient_GetLatestRelease_NoRelease_NotCached(t *testing.T) {
+	t.Parallel()
 	var apiCalls int32
 
 	client, _ := setupCachedClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -139,6 +142,7 @@ func TestCachedClient_GetLatestRelease_NoRelease_NotCached(t *testing.T) {
 // --- Graceful Degradation Tests ---
 
 func TestCachedClient_RepoExists_RedisDown_FallsBackToAPI(t *testing.T) {
+	t.Parallel()
 	var apiCalls int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -185,6 +189,7 @@ func TestCachedClient_RepoExists_RedisDown_FallsBackToAPI(t *testing.T) {
 }
 
 func TestCachedClient_GetLatestRelease_RedisDown_FallsBackToAPI(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		r := release.Release{TagName: "v2.0.0"}
@@ -214,6 +219,7 @@ func TestCachedClient_GetLatestRelease_RedisDown_FallsBackToAPI(t *testing.T) {
 // --- TTL Expiry Test ---
 
 func TestCachedClient_RepoExists_TTLExpiry(t *testing.T) {
+	t.Parallel()
 	var apiCalls int32
 
 	client, mr := setupCachedClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

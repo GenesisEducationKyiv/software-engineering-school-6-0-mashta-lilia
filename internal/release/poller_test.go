@@ -32,6 +32,7 @@ func mustNewPoller(
 }
 
 func TestNewPoller_RejectsNonPositiveInterval(t *testing.T) {
+	t.Parallel()
 	for _, d := range []time.Duration{0, -time.Second} {
 		if _, err := NewPoller(nil, nil, nil, nil, d); err == nil {
 			t.Errorf("NewPoller(interval=%s) returned nil error, want non-nil", d)
@@ -40,6 +41,7 @@ func TestNewPoller_RejectsNonPositiveInterval(t *testing.T) {
 }
 
 func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
+	t.Parallel()
 	var updatedTag string
 	var notifiedEmails []string
 
@@ -89,6 +91,7 @@ func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
 }
 
 func TestPoller_SameTag_NoNotification(t *testing.T) {
+	t.Parallel()
 	notifyCalled := false
 	var checkedID int64
 
@@ -127,6 +130,7 @@ func TestPoller_SameTag_NoNotification(t *testing.T) {
 }
 
 func TestPoller_NullLastSeenTag_TreatsAsNew(t *testing.T) {
+	t.Parallel()
 	var updatedTag string
 
 	repos := &mockRepoScanReader{
@@ -163,6 +167,7 @@ func TestPoller_NullLastSeenTag_TreatsAsNew(t *testing.T) {
 }
 
 func TestPoller_NoRelease_Skips(t *testing.T) {
+	t.Parallel()
 	updateCalled := false
 	checkedCalled := false
 
@@ -200,6 +205,7 @@ func TestPoller_NoRelease_Skips(t *testing.T) {
 }
 
 func TestPoller_GitHubError_ContinuesOtherRepos(t *testing.T) {
+	t.Parallel()
 	var updatedTags []string
 
 	repos := &mockRepoScanReader{
@@ -240,6 +246,7 @@ func TestPoller_GitHubError_ContinuesOtherRepos(t *testing.T) {
 }
 
 func TestPoller_UpdateLastSeenFails_SkipsNotification(t *testing.T) {
+	t.Parallel()
 	notifyCalled := false
 
 	repos := &mockRepoScanReader{
@@ -273,6 +280,7 @@ func TestPoller_UpdateLastSeenFails_SkipsNotification(t *testing.T) {
 }
 
 func TestPoller_ContextCancelled_StopsProcessing(t *testing.T) {
+	t.Parallel()
 	processedCount := 0
 
 	repos := &mockRepoScanReader{
@@ -307,6 +315,7 @@ func TestPoller_ContextCancelled_StopsProcessing(t *testing.T) {
 }
 
 func TestPoller_OverlappingScanSkipped(t *testing.T) {
+	t.Parallel()
 	firstScanStarted := make(chan struct{})
 	releaseFirstScan := make(chan struct{})
 	firstScanDone := make(chan struct{})

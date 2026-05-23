@@ -38,6 +38,7 @@ func dispatchN(rl *middleware.RateLimiter, n int, prepare func(*http.Request)) [
 }
 
 func TestRateLimiter_WithinLimit_AllPass(t *testing.T) {
+	t.Parallel()
 	rl := newLimiter(t, 3, time.Minute, false)
 	codes := dispatchN(rl, 3, nil)
 	for i, code := range codes {
@@ -46,6 +47,7 @@ func TestRateLimiter_WithinLimit_AllPass(t *testing.T) {
 }
 
 func TestRateLimiter_OverLimit_Returns429(t *testing.T) {
+	t.Parallel()
 	rl := newLimiter(t, 2, time.Minute, false)
 	codes := dispatchN(rl, 3, nil)
 	assert.Equal(t, http.StatusOK, codes[0])
@@ -54,6 +56,7 @@ func TestRateLimiter_OverLimit_Returns429(t *testing.T) {
 }
 
 func TestRateLimiter_429ResponseHasRetryAfterAndJSON(t *testing.T) {
+	t.Parallel()
 	rl := newLimiter(t, 1, 30*time.Second, false)
 	h := rl.Limit(okHandler())
 
@@ -82,6 +85,7 @@ func TestRateLimiter_429ResponseHasRetryAfterAndJSON(t *testing.T) {
 }
 
 func TestRateLimiter_PerIPIsolation(t *testing.T) {
+	t.Parallel()
 	rl := newLimiter(t, 1, time.Minute, false)
 	h := rl.Limit(okHandler())
 
@@ -95,6 +99,7 @@ func TestRateLimiter_PerIPIsolation(t *testing.T) {
 }
 
 func TestRateLimiter_WindowResets(t *testing.T) {
+	t.Parallel()
 	// Wall-clock test. Window + sleep are sized generously so a loaded CI
 	// runner (GC pause, scheduler jitter) doesn't flake. Trading a few
 	// hundred ms of test runtime for stability is the right call.
@@ -119,6 +124,7 @@ func TestRateLimiter_WindowResets(t *testing.T) {
 }
 
 func TestRateLimiter_TrustedProxy_HonorsXForwardedFor(t *testing.T) {
+	t.Parallel()
 	rl := newLimiter(t, 1, time.Minute, true)
 	h := rl.Limit(okHandler())
 
@@ -135,6 +141,7 @@ func TestRateLimiter_TrustedProxy_HonorsXForwardedFor(t *testing.T) {
 }
 
 func TestRateLimiter_UntrustedProxy_IgnoresXForwardedFor(t *testing.T) {
+	t.Parallel()
 	rl := newLimiter(t, 1, time.Minute, false)
 	h := rl.Limit(okHandler())
 
@@ -156,6 +163,7 @@ func TestRateLimiter_UntrustedProxy_IgnoresXForwardedFor(t *testing.T) {
 }
 
 func TestRateLimiter_Stop_IsIdempotent(t *testing.T) {
+	t.Parallel()
 	rl := middleware.NewRateLimiter(1, time.Minute, false)
 	rl.Stop()
 	assert.NotPanics(t, rl.Stop, "Stop must be safe to call twice")

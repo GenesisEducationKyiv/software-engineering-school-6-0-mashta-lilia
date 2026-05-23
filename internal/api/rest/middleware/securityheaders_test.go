@@ -11,6 +11,7 @@ import (
 )
 
 func TestSecurityHeaders_AlwaysSetOnAllPaths(t *testing.T) {
+	t.Parallel()
 	h := middleware.SecurityHeaders(okHandler())
 
 	for _, path := range []string{"/", "/health", "/api/subscribe", "/metrics"} {
@@ -25,6 +26,7 @@ func TestSecurityHeaders_AlwaysSetOnAllPaths(t *testing.T) {
 }
 
 func TestSecurityHeaders_CacheControlNoStore_OnlyForAPI(t *testing.T) {
+	t.Parallel()
 	h := middleware.SecurityHeaders(okHandler())
 
 	cases := []struct {

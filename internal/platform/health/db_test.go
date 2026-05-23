@@ -14,18 +14,21 @@ import (
 )
 
 func TestDBChecker_NilReceiver_ReturnsError(t *testing.T) {
+	t.Parallel()
 	var c *health.DBChecker
 	err := c.Check(context.Background())
 	require.Error(t, err)
 }
 
 func TestDBChecker_NilDB_ReturnsError(t *testing.T) {
+	t.Parallel()
 	c := health.NewDBChecker(nil)
 	err := c.Check(context.Background())
 	require.Error(t, err)
 }
 
 func TestDBChecker_UnreachableDB_PropagatesContextCancellation(t *testing.T) {
+	t.Parallel()
 	// Open a sql.DB pointing at an address nothing listens on; the lazy
 	// connect lets sql.Open succeed but Ping must fail. We then pre-cancel
 	// the context so the failure mode is deterministic (context.Canceled)
