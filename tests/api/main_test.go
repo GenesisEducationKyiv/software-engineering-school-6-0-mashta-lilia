@@ -216,19 +216,14 @@ func runMigrations(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("migrations path: %w", err)
 	}
+	// Deliberately not calling mig.Close(): golang-migrate's Close() closes
+	// both the source AND the database driver, which wraps the *sql.DB we
+	// share with the rest of the test suite. The file-source has no real
+	// resources to release; the db handle is closed once at suite teardown.
 	mig, err := migrate.NewWithDatabaseInstance("file://"+filepath.ToSlash(abs), "postgres", driver)
 	if err != nil {
 		return fmt.Errorf("migrate new: %w", err)
 	}
-	defer func() {
-		srcErr, dbErr := mig.Close()
-		if srcErr != nil {
-			slog.Warn("close migration source", "err", srcErr)
-		}
-		if dbErr != nil {
-			slog.Warn("close migration db", "err", dbErr)
-		}
-	}()
 	if err := mig.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("migrate up: %w", err)
 	}
