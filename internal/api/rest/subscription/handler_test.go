@@ -293,6 +293,13 @@ func TestList_InvalidEmailFromService(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	// callCnt guard proves the service was actually reached. Without it the
+	// test would still pass if the handler short-circuited on its own
+	// validation — masking a regression where the service path stops being
+	// exercised at all.
+	assert.Equal(t, 1, fs.callCnt,
+		"handler must forward to service; ErrInvalidEmail mapping is service-driven")
+	assert.Equal(t, "not-an-email", fs.gotEmail)
 }
 
 // Helper to drain response body and preserve a copy for assertions.

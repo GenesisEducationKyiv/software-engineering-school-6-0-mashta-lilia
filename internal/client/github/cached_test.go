@@ -14,6 +14,8 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupCachedClient(t *testing.T, handler http.Handler) (*CachedClient, *miniredis.Miniredis) {
@@ -48,27 +50,18 @@ func TestCachedClient_RepoExists_CacheHit(t *testing.T) {
 
 	ctx := context.Background()
 
-	// First call — cache miss, hits API
+	// First call — cache miss, hits API.
 	exists, err := client.RepoExists(ctx, "golang", "go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !exists {
-		t.Error("expected repo to exist")
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
 
-	// Second call — cache hit, should NOT hit API
+	// Second call — cache hit, should NOT hit API.
 	exists, err = client.RepoExists(ctx, "golang", "go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !exists {
-		t.Error("expected repo to exist from cache")
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
 
-	if got := atomic.LoadInt32(&apiCalls); got != 1 {
-		t.Errorf("API calls = %d, want 1 (second call should be cached)", got)
-	}
+	assert.Equal(t, int32(1), atomic.LoadInt32(&apiCalls),
+		"second call must be served from cache")
 }
 
 // --- GetLatestRelease Cache Tests ---
@@ -90,27 +83,18 @@ func TestCachedClient_GetLatestRelease_CacheHit(t *testing.T) {
 
 	ctx := context.Background()
 
-	// First call — cache miss
-	release, err := client.GetLatestRelease(ctx, "test", "repo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if release.TagName != "v1.0.0" {
-		t.Errorf("tag = %q, want %q", release.TagName, "v1.0.0")
-	}
+	// First call — cache miss.
+	rel, err := client.GetLatestRelease(ctx, "test", "repo")
+	require.NoError(t, err)
+	assert.Equal(t, "v1.0.0", rel.TagName)
 
-	// Second call — cache hit
-	release2, err := client.GetLatestRelease(ctx, "test", "repo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if release2.TagName != "v1.0.0" {
-		t.Errorf("cached tag = %q, want %q", release2.TagName, "v1.0.0")
-	}
+	// Second call — cache hit.
+	rel2, err := client.GetLatestRelease(ctx, "test", "repo")
+	require.NoError(t, err)
+	assert.Equal(t, "v1.0.0", rel2.TagName)
 
-	if got := atomic.LoadInt32(&apiCalls); got != 1 {
-		t.Errorf("API calls = %d, want 1 (second call should be cached)", got)
-	}
+	assert.Equal(t, int32(1), atomic.LoadInt32(&apiCalls),
+		"second call must be served from cache")
 }
 
 func TestCachedClient_GetLatestRelease_NoRelease_NotCached(t *testing.T) {
@@ -124,19 +108,14 @@ func TestCachedClient_GetLatestRelease_NoRelease_NotCached(t *testing.T) {
 
 	ctx := context.Background()
 
-	release, err := client.GetLatestRelease(ctx, "test", "repo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if release != nil {
-		t.Errorf("expected nil release, got %+v", release)
-	}
+	rel, err := client.GetLatestRelease(ctx, "test", "repo")
+	require.NoError(t, err)
+	assert.Nil(t, rel)
 
-	// Second call should still hit API (nil releases are not cached)
+	// Second call should still hit API (nil releases are not cached).
 	_, _ = client.GetLatestRelease(ctx, "test", "repo") //nolint:errcheck // test: result not needed
-	if got := atomic.LoadInt32(&apiCalls); got != 2 {
-		t.Errorf("API calls = %d, want 2 (nil releases should not be cached)", got)
-	}
+	assert.Equal(t, int32(2), atomic.LoadInt32(&apiCalls),
+		"nil releases must NOT be cached — second call must hit API")
 }
 
 // --- Graceful Degradation Tests ---
@@ -155,7 +134,7 @@ func TestCachedClient_RepoExists_RedisDown_FallsBackToAPI(t *testing.T) {
 	base := NewClient("")
 	base.baseURL = srv.URL
 
-	// Connect to a non-existent Redis — simulates Redis being down
+	// Connect to a non-existent Redis — simulates Redis being down.
 	rdb := redis.NewClient(&redis.Options{
 		Addr: "localhost:0", MaxRetries: 0, PoolSize: 1, MinIdleConns: 0, DialTimeout: time.Millisecond,
 	})
@@ -165,27 +144,18 @@ func TestCachedClient_RepoExists_RedisDown_FallsBackToAPI(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Should succeed despite Redis being down
+	// Should succeed despite Redis being down.
 	exists, err := cached.RepoExists(ctx, "golang", "go")
-	if err != nil {
-		t.Fatalf("expected graceful degradation, got error: %v", err)
-	}
-	if !exists {
-		t.Error("expected repo to exist")
-	}
+	require.NoError(t, err, "expected graceful degradation when Redis is down")
+	assert.True(t, exists)
 
-	// Both calls hit API since cache is unavailable
+	// Both calls hit API since cache is unavailable.
 	exists, err = cached.RepoExists(ctx, "golang", "go")
-	if err != nil {
-		t.Fatalf("expected graceful degradation on second call: %v", err)
-	}
-	if !exists {
-		t.Error("expected repo to exist")
-	}
+	require.NoError(t, err, "expected graceful degradation on second call")
+	assert.True(t, exists)
 
-	if got := atomic.LoadInt32(&apiCalls); got != 2 {
-		t.Errorf("API calls = %d, want 2 (both should hit API with Redis down)", got)
-	}
+	assert.Equal(t, int32(2), atomic.LoadInt32(&apiCalls),
+		"both calls must hit API when Redis is down")
 }
 
 func TestCachedClient_GetLatestRelease_RedisDown_FallsBackToAPI(t *testing.T) {
@@ -207,13 +177,10 @@ func TestCachedClient_GetLatestRelease_RedisDown_FallsBackToAPI(t *testing.T) {
 
 	cached := NewCachedClient(base, rdb, 5*time.Minute)
 
-	release, err := cached.GetLatestRelease(context.Background(), "test", "repo")
-	if err != nil {
-		t.Fatalf("expected graceful degradation, got error: %v", err)
-	}
-	if release == nil || release.TagName != "v2.0.0" {
-		t.Errorf("expected v2.0.0, got %+v", release)
-	}
+	rel, err := cached.GetLatestRelease(context.Background(), "test", "repo")
+	require.NoError(t, err, "expected graceful degradation when Redis is down")
+	require.NotNil(t, rel)
+	assert.Equal(t, "v2.0.0", rel.TagName)
 }
 
 // --- TTL Expiry Test ---
@@ -230,16 +197,15 @@ func TestCachedClient_RepoExists_TTLExpiry(t *testing.T) {
 
 	ctx := context.Background()
 
-	// First call — populates cache
+	// First call — populates cache.
 	_, _ = client.RepoExists(ctx, "golang", "go") //nolint:errcheck // TTL test: call count matters
 
-	// Fast-forward past TTL
+	// Fast-forward past TTL.
 	mr.FastForward(6 * time.Minute)
 
-	// Should hit API again after TTL expiry
+	// Should hit API again after TTL expiry.
 	_, _ = client.RepoExists(ctx, "golang", "go") //nolint:errcheck // TTL test: call count matters
 
-	if got := atomic.LoadInt32(&apiCalls); got != 2 {
-		t.Errorf("API calls = %d, want 2 (cache should expire after TTL)", got)
-	}
+	assert.Equal(t, int32(2), atomic.LoadInt32(&apiCalls),
+		"cache must expire after TTL — second call should hit API")
 }

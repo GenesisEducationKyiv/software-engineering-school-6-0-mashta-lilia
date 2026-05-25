@@ -9,17 +9,17 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRepoExists_Found(t *testing.T) {
 	t.Parallel()
+	var gotPath, gotAccept string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/golang/go" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		if r.Header.Get("Accept") != "application/vnd.github.v3+json" {
-			t.Error("missing Accept header")
-		}
+		gotPath = r.URL.Path
+		gotAccept = r.Header.Get("Accept")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"id": 1}`)) //nolint:errcheck // test: write ignored
 	}))
@@ -29,12 +29,10 @@ func TestRepoExists_Found(t *testing.T) {
 	c.baseURL = srv.URL
 
 	exists, err := c.RepoExists(context.Background(), "golang", "go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !exists {
-		t.Error("expected repo to exist")
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
+	assert.Equal(t, "/repos/golang/go", gotPath)
+	assert.Equal(t, "application/vnd.github.v3+json", gotAccept)
 }
 
 func TestRepoExists_NotFound(t *testing.T) {
@@ -48,12 +46,8 @@ func TestRepoExists_NotFound(t *testing.T) {
 	c.baseURL = srv.URL
 
 	exists, err := c.RepoExists(context.Background(), "nonexistent", "repo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if exists {
-		t.Error("expected repo to not exist")
-	}
+	require.NoError(t, err)
+	assert.False(t, exists)
 }
 
 func TestRepoExists_WithToken(t *testing.T) {
@@ -69,20 +63,15 @@ func TestRepoExists_WithToken(t *testing.T) {
 	c.baseURL = srv.URL
 
 	_, err := c.RepoExists(context.Background(), "owner", "repo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if gotAuth != "Bearer ghp_testtoken123" {
-		t.Errorf("auth header = %q, want %q", gotAuth, "Bearer ghp_testtoken123")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Bearer ghp_testtoken123", gotAuth)
 }
 
 func TestGetLatestRelease_Success(t *testing.T) {
 	t.Parallel()
+	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/golang/go/releases/latest" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
+		gotPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"tag_name":"v1.22.0","name":"Go 1.22","html_url":"https://github.com/golang/go/releases/tag/v1.22.0"}`)) //nolint:errcheck,revive // test: write ignored, URL exceeds limit
@@ -93,18 +82,11 @@ func TestGetLatestRelease_Success(t *testing.T) {
 	c.baseURL = srv.URL
 
 	release, err := c.GetLatestRelease(context.Background(), "golang", "go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if release == nil {
-		t.Fatal("expected release, got nil")
-	}
-	if release.TagName != "v1.22.0" {
-		t.Errorf("tag = %q, want %q", release.TagName, "v1.22.0")
-	}
-	if release.Name != "Go 1.22" {
-		t.Errorf("name = %q, want %q", release.Name, "Go 1.22")
-	}
+	require.NoError(t, err)
+	require.NotNil(t, release)
+	assert.Equal(t, "/repos/golang/go/releases/latest", gotPath)
+	assert.Equal(t, "v1.22.0", release.TagName)
+	assert.Equal(t, "Go 1.22", release.Name)
 }
 
 func TestGetLatestRelease_NoReleases(t *testing.T) {
@@ -118,12 +100,8 @@ func TestGetLatestRelease_NoReleases(t *testing.T) {
 	c.baseURL = srv.URL
 
 	release, err := c.GetLatestRelease(context.Background(), "owner", "repo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if release != nil {
-		t.Errorf("expected nil release, got %+v", release)
-	}
+	require.NoError(t, err)
+	assert.Nil(t, release)
 }
 
 func TestDoRequest_RateLimitRetry_RetryAfterHeader(t *testing.T) {
@@ -146,17 +124,9 @@ func TestDoRequest_RateLimitRetry_RetryAfterHeader(t *testing.T) {
 	c.baseURL = srv.URL
 
 	exists, err := c.RepoExists(context.Background(), "owner", "repo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !exists {
-		t.Error("expected repo to exist after retry")
-	}
-
-	got := atomic.LoadInt32(&attempts)
-	if got != 3 {
-		t.Errorf("attempts = %d, want 3 (2 retries + 1 success)", got)
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
+	assert.Equal(t, int32(3), atomic.LoadInt32(&attempts), "expected 2 retries + 1 success")
 }
 
 func TestDoRequest_RateLimitRetry_XRateLimitResetHeader(t *testing.T) {
@@ -180,12 +150,8 @@ func TestDoRequest_RateLimitRetry_XRateLimitResetHeader(t *testing.T) {
 	c.baseURL = srv.URL
 
 	exists, err := c.RepoExists(context.Background(), "owner", "repo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !exists {
-		t.Error("expected repo to exist after retry")
-	}
+	require.NoError(t, err)
+	assert.True(t, exists)
 }
 
 func TestDoRequest_RateLimitExhausted(t *testing.T) {
@@ -200,13 +166,8 @@ func TestDoRequest_RateLimitExhausted(t *testing.T) {
 	c.baseURL = srv.URL
 
 	_, err := c.RepoExists(context.Background(), "owner", "repo")
-	if err == nil {
-		t.Fatal("expected error after exhausting retries")
-	}
-	expected := "GitHub rate limit exceeded after 3 retries"
-	if err.Error() != expected {
-		t.Errorf("error = %q, want %q", err.Error(), expected)
-	}
+	require.Error(t, err)
+	assert.EqualError(t, err, "GitHub rate limit exceeded after 3 retries")
 }
 
 func TestDoRequest_ContextCancelled_DuringRetry(t *testing.T) {
@@ -227,14 +188,9 @@ func TestDoRequest_ContextCancelled_DuringRetry(t *testing.T) {
 	defer cancel()
 
 	_, err := c.RepoExists(ctx, "owner", "repo")
-	if err == nil {
-		t.Fatal("expected error from canceled context")
-	}
-
-	got := atomic.LoadInt32(&attempts)
-	if got > 2 {
-		t.Errorf("attempts = %d, expected context to cancel before exhausting retries", got)
-	}
+	require.Error(t, err)
+	assert.LessOrEqual(t, atomic.LoadInt32(&attempts), int32(2),
+		"context should cancel before exhausting retries")
 }
 
 func TestParseRateLimitWait_RetryAfterHeader(t *testing.T) {
@@ -243,9 +199,7 @@ func TestParseRateLimitWait_RetryAfterHeader(t *testing.T) {
 	h.Set("Retry-After", "5")
 
 	wait := HeaderAwareRetry{}.NextWait(h, 0)
-	if wait != 5*time.Second {
-		t.Errorf("wait = %v, want 5s", wait)
-	}
+	assert.Equal(t, 5*time.Second, wait)
 }
 
 func TestParseRateLimitWait_XRateLimitResetHeader(t *testing.T) {
@@ -255,9 +209,9 @@ func TestParseRateLimitWait_XRateLimitResetHeader(t *testing.T) {
 	h.Set("X-RateLimit-Reset", fmt.Sprintf("%d", resetTime))
 
 	wait := HeaderAwareRetry{}.NextWait(h, 0)
-	if wait < 8*time.Second || wait > 12*time.Second {
-		t.Errorf("wait = %v, want ~10s", wait)
-	}
+	// Reset-time math is wall-clock dependent; tolerate ±2s jitter.
+	assert.GreaterOrEqual(t, wait, 8*time.Second)
+	assert.LessOrEqual(t, wait, 12*time.Second)
 }
 
 func TestParseRateLimitWait_NoHeaders_ExponentialBackoff(t *testing.T) {
@@ -274,10 +228,9 @@ func TestParseRateLimitWait_NoHeaders_ExponentialBackoff(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := HeaderAwareRetry{}.NextWait(h, tt.attempt)
-		if got != tt.want {
-			t.Errorf("attempt %d: wait = %v, want %v", tt.attempt, got, tt.want)
-		}
+		t.Run(fmt.Sprintf("attempt=%d", tt.attempt), func(t *testing.T) {
+			assert.Equal(t, tt.want, HeaderAwareRetry{}.NextWait(h, tt.attempt))
+		})
 	}
 }
 
@@ -291,9 +244,7 @@ func TestParseRateLimitWait_XRateLimitReset_TooFarInFuture(t *testing.T) {
 	// exponential — the server's signal stays meaningful while caller
 	// latency stays bounded.
 	wait := HeaderAwareRetry{}.NextWait(h, 1)
-	if wait != maxResetWait {
-		t.Errorf("wait = %v, want %v (capped at maxResetWait)", wait, maxResetWait)
-	}
+	assert.Equal(t, maxResetWait, wait)
 }
 
 func TestParseRateLimitWait_ExponentialBackoff_BoundedAtMax(t *testing.T) {
@@ -303,18 +254,14 @@ func TestParseRateLimitWait_ExponentialBackoff_BoundedAtMax(t *testing.T) {
 	// Attempts beyond maxBackoffAttempt stay clamped to 4s — guards
 	// against future increases of maxRetries producing minute-long sleeps.
 	for _, attempt := range []int{3, 5, 10, 62} {
-		got := HeaderAwareRetry{}.NextWait(h, attempt)
-		if got != 4*time.Second {
-			t.Errorf("attempt %d: wait = %v, want 4s", attempt, got)
-		}
+		t.Run(fmt.Sprintf("attempt=%d", attempt), func(t *testing.T) {
+			assert.Equal(t, 4*time.Second, HeaderAwareRetry{}.NextWait(h, attempt))
+		})
 	}
 }
 
 func TestParseRateLimitWait_NegativeAttempt_TreatsAsZero(t *testing.T) {
 	t.Parallel()
 	h := http.Header{}
-	got := HeaderAwareRetry{}.NextWait(h, -1)
-	if got != 1*time.Second {
-		t.Errorf("negative attempt: wait = %v, want 1s", got)
-	}
+	assert.Equal(t, 1*time.Second, HeaderAwareRetry{}.NextWait(h, -1))
 }

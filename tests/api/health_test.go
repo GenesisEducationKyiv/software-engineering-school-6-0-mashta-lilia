@@ -12,6 +12,7 @@ import (
 
 func TestIntegration_Root_ReturnsServiceInfo(t *testing.T) {
 	env := envForTest(t)
+	env.resetDB(t)
 
 	resp, err := http.Get(env.server.URL + "/")
 	require.NoError(t, err)
@@ -28,6 +29,7 @@ func TestIntegration_Root_ReturnsServiceInfo(t *testing.T) {
 
 func TestIntegration_Health_OK(t *testing.T) {
 	env := envForTest(t)
+	env.resetDB(t)
 
 	resp, err := http.Get(env.server.URL + "/health")
 	require.NoError(t, err)
@@ -41,6 +43,7 @@ func TestIntegration_Health_OK(t *testing.T) {
 
 func TestIntegration_Metrics_Exposed(t *testing.T) {
 	env := envForTest(t)
+	env.resetDB(t)
 
 	resp, err := http.Get(env.server.URL + "/metrics")
 	require.NoError(t, err)
@@ -55,6 +58,7 @@ func TestIntegration_Metrics_Exposed(t *testing.T) {
 
 func TestIntegration_SecurityHeaders_PresentEverywhere(t *testing.T) {
 	env := envForTest(t)
+	env.resetDB(t)
 
 	resp, err := http.Get(env.server.URL + "/")
 	require.NoError(t, err)

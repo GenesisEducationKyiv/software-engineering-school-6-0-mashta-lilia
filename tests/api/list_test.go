@@ -26,6 +26,7 @@ func doGet(t *testing.T, fullURL string, headers map[string]string) *http.Respon
 
 func TestIntegration_List_RejectsMissingAPIKey(t *testing.T) {
 	env := envForTest(t)
+	env.resetDB(t)
 
 	resp := doGet(t, env.server.URL+"/api/subscriptions?email=alice@example.com", nil)
 	defer resp.Body.Close()
@@ -34,6 +35,7 @@ func TestIntegration_List_RejectsMissingAPIKey(t *testing.T) {
 
 func TestIntegration_List_RejectsWrongAPIKey(t *testing.T) {
 	env := envForTest(t)
+	env.resetDB(t)
 
 	resp := doGet(
 		t,
@@ -76,6 +78,7 @@ func TestIntegration_List_HappyPath_ReturnsActiveOnly(t *testing.T) {
 
 func TestIntegration_List_RequiresEmailQueryParam(t *testing.T) {
 	env := envForTest(t)
+	env.resetDB(t)
 
 	resp := doGet(
 		t,
@@ -88,6 +91,7 @@ func TestIntegration_List_RequiresEmailQueryParam(t *testing.T) {
 
 func TestIntegration_List_InvalidEmail(t *testing.T) {
 	env := envForTest(t)
+	env.resetDB(t)
 
 	resp := doGet(
 		t,

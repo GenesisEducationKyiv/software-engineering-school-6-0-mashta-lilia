@@ -55,6 +55,7 @@ func TestIntegration_Subscribe_RepoNotFoundOnGitHub(t *testing.T) {
 	env := envForTest(t)
 	env.resetDB(t)
 	env.github.reset()
+	require.NoError(t, env.mailpit.reset(context.Background()))
 	// fake github reports the repo does not exist
 	env.github.SetRepoExists("ghost", "repo", false)
 
@@ -72,6 +73,7 @@ func TestIntegration_Subscribe_DuplicateActiveSubscription(t *testing.T) {
 	env := envForTest(t)
 	env.resetDB(t)
 	env.github.reset()
+	require.NoError(t, env.mailpit.reset(context.Background()))
 	env.github.SetRepoExists("golang", "go", true)
 
 	env.seedSubscription(t, "alice@example.com", "golang", "go", "tok-pre", subscription.StatusActive)

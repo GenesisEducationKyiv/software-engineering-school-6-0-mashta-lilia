@@ -89,22 +89,30 @@ func TestRateLimiter_PerIPIsolation(t *testing.T) {
 	rl := newLimiter(t, 1, time.Minute, false)
 	h := rl.Limit(okHandler())
 
-	for _, ip := range []string{"10.0.0.1:1", "10.0.0.2:1"} {
+	send := func(ip string) int {
 		req := httptest.NewRequest(http.MethodPost, "/api/subscribe", http.NoBody)
 		req.RemoteAddr = ip
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
-		assert.Equal(t, http.StatusOK, rec.Code, "first request from %s should pass", ip)
+		return rec.Code
 	}
+
+	// Exhaust IP1's bucket so the test can distinguish per-IP isolation from
+	// a no-op limiter: only a real per-IP bucket lets IP2 pass once IP1 is 429.
+	assert.Equal(t, http.StatusOK, send("10.0.0.1:1"))
+	assert.Equal(t, http.StatusTooManyRequests, send("10.0.0.1:1"))
+	assert.Equal(t, http.StatusOK, send("10.0.0.2:1"),
+		"IP2 must have its own bucket while IP1 is throttled")
 }
 
 func TestRateLimiter_WindowResets(t *testing.T) {
 	t.Parallel()
-	// Wall-clock test. Window + sleep are sized generously so a loaded CI
-	// runner (GC pause, scheduler jitter) doesn't flake. Trading a few
-	// hundred ms of test runtime for stability is the right call.
+	// Wall-clock test (production uses time.Now directly; no clock injection).
+	// The 1s safety margin over the window absorbs GC pauses and scheduler
+	// jitter on a loaded CI runner — earlier 100ms margin was tight enough to
+	// flake. Trading a second of test runtime for stability is the right call.
 	const window = 200 * time.Millisecond
-	const sleep = window + 100*time.Millisecond
+	const sleep = window + 1*time.Second
 
 	rl := newLimiter(t, 1, window, false)
 	h := rl.Limit(okHandler())
