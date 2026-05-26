@@ -26,7 +26,10 @@ docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}" up -d --build --wait
 echo "==> Installing npm deps (if needed)"
 cd "${E2E_DIR}"
 if [ ! -d node_modules ]; then
-  npm ci 2>/dev/null || npm install
+  # npm ci enforces the committed lockfile — same versions every run on
+  # every machine. If the lockfile is missing or out of sync, fail loudly
+  # rather than silently resolving fresh versions via npm install.
+  npm ci
 fi
 
 echo "==> Ensuring Playwright Chromium is installed"

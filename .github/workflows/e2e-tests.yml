@@ -16,15 +16,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # actions/setup-node's npm cache requires a package-lock.json
-          # to compute a stable key; we don't commit one yet, so caching
-          # is intentionally disabled here. Re-enable once e2e/package-lock.json
-          # is committed alongside the deps.
+          # Cache keyed off the committed lockfile so dependency installs are
+          # reproducible across runs and fast on cache hit.
+          cache: 'npm'
+          cache-dependency-path: e2e/package-lock.json
 
       - name: Install e2e npm dependencies
         working-directory: e2e
-        # No lockfile committed yet; npm install is the honest choice.
-        run: npm install
+        # npm ci enforces the lockfile: same versions every run, fails loudly
+        # if package.json and package-lock.json drift out of sync.
+        run: npm ci
 
       - name: Install Playwright browsers
         working-directory: e2e
