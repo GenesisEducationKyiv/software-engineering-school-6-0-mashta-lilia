@@ -8,20 +8,21 @@ import (
 	"time"
 
 	"github-release-notifier/internal/subscription"
+	"github-release-notifier/tests/pkg/testapp"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestIntegration_Subscribe_HappyPath(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
-	env.github.reset()
-	env.github.SetRepoExists("golang", "go", true)
-	require.NoError(t, env.mailpit.reset(context.Background()))
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
+	app.Github.Reset()
+	app.Github.SetRepoExists("golang", "go", true)
+	require.NoError(t, app.Mailpit.Reset(context.Background()))
 
 	resp, err := http.Post(
-		env.server.URL+"/api/subscribe",
+		app.Server.URL+"/api/subscribe",
 		"application/json",
 		strings.NewReader(`{"email":"alice@example.com","repo":"golang/go"}`),
 	)
@@ -34,13 +35,13 @@ func TestIntegration_Subscribe_HappyPath(t *testing.T) {
 	// the confirm URL (which embeds the token from the DB).
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	msg, err := env.mailpit.waitForMessage(ctx, 10*time.Second)
+	msg, err := app.Mailpit.WaitForMessage(ctx, 10*time.Second)
 	require.NoError(t, err)
 	require.Len(t, msg.To, 1)
 	assert.Equal(t, "alice@example.com", msg.To[0].Address)
 	assert.Contains(t, msg.Subject, "golang/go")
 
-	body, err := env.mailpit.messageBody(ctx, msg.ID)
+	body, err := app.Mailpit.MessageBody(ctx, msg.ID)
 	require.NoError(t, err)
 	assert.Contains(t, body, "http://test.local/api/confirm/",
 		"confirmation URL with token must be present in the email body")
@@ -52,15 +53,15 @@ func TestIntegration_Subscribe_HappyPath(t *testing.T) {
 // integration layer only covers wiring + side-effects, not branching rules.
 
 func TestIntegration_Subscribe_RepoNotFoundOnGitHub(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
-	env.github.reset()
-	require.NoError(t, env.mailpit.reset(context.Background()))
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
+	app.Github.Reset()
+	require.NoError(t, app.Mailpit.Reset(context.Background()))
 	// fake github reports the repo does not exist
-	env.github.SetRepoExists("ghost", "repo", false)
+	app.Github.SetRepoExists("ghost", "repo", false)
 
 	resp, err := http.Post(
-		env.server.URL+"/api/subscribe",
+		app.Server.URL+"/api/subscribe",
 		"application/json",
 		strings.NewReader(`{"email":"alice@example.com","repo":"ghost/repo"}`),
 	)
@@ -70,16 +71,16 @@ func TestIntegration_Subscribe_RepoNotFoundOnGitHub(t *testing.T) {
 }
 
 func TestIntegration_Subscribe_DuplicateActiveSubscription(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
-	env.github.reset()
-	require.NoError(t, env.mailpit.reset(context.Background()))
-	env.github.SetRepoExists("golang", "go", true)
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
+	app.Github.Reset()
+	require.NoError(t, app.Mailpit.Reset(context.Background()))
+	app.Github.SetRepoExists("golang", "go", true)
 
-	env.seedSubscription(t, "alice@example.com", "golang", "go", "tok-pre", subscription.StatusActive)
+	testapp.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-pre", subscription.StatusActive)
 
 	resp, err := http.Post(
-		env.server.URL+"/api/subscribe",
+		app.Server.URL+"/api/subscribe",
 		"application/json",
 		strings.NewReader(`{"email":"alice@example.com","repo":"golang/go"}`),
 	)

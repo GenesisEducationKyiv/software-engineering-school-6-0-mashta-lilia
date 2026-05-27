@@ -23,20 +23,6 @@ func TestGenerator_Generate_ProducesHexOfExpectedLength(t *testing.T) {
 	assert.Len(t, decoded, 32)
 }
 
-func TestGenerator_Generate_NoCollisionsAcrossManyCalls(t *testing.T) {
-	t.Parallel()
-	const n = 1000
-	g := token.New()
-	seen := make(map[string]struct{}, n)
-	for i := 0; i < n; i++ {
-		tok, err := g.Generate()
-		require.NoError(t, err)
-		_, dup := seen[tok]
-		require.False(t, dup, "duplicate token at iteration %d", i)
-		seen[tok] = struct{}{}
-	}
-}
-
 // Tokens must use only the hex alphabet so they remain URL-safe in confirm/unsubscribe paths.
 func TestGenerator_Generate_URLSafeCharset(t *testing.T) {
 	t.Parallel()

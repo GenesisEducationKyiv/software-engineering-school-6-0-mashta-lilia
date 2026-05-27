@@ -15,48 +15,34 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-// fakeService implements the unexported subscriptionService interface
-// structurally — Go's interface satisfaction is duck-typed, so we don't
-// need to reference the interface name from outside the package.
-type fakeService struct {
-	subscribeErr   error
-	confirmErr     error
-	unsubscribeErr error
-	listResult     []subscription.Subscription
-	listErr        error
-
-	gotEmail string
-	gotRepo  string
-	gotToken string
-	callCnt  int
+// serviceMock satisfies the handler's unexported subscriptionService
+// interface structurally — Go's duck typing means we never have to name
+// the interface from outside the package.
+type serviceMock struct {
+	mock.Mock
 }
 
-func (f *fakeService) Subscribe(_ context.Context, email, repo string) error {
-	f.callCnt++
-	f.gotEmail = email
-	f.gotRepo = repo
-	return f.subscribeErr
+func (m *serviceMock) Subscribe(ctx context.Context, email, repo string) error {
+	return m.Called(ctx, email, repo).Error(0)
 }
 
-func (f *fakeService) Confirm(_ context.Context, token string) error {
-	f.callCnt++
-	f.gotToken = token
-	return f.confirmErr
+func (m *serviceMock) Confirm(ctx context.Context, token string) error {
+	return m.Called(ctx, token).Error(0)
 }
 
-func (f *fakeService) Unsubscribe(_ context.Context, token string) error {
-	f.callCnt++
-	f.gotToken = token
-	return f.unsubscribeErr
+func (m *serviceMock) Unsubscribe(ctx context.Context, token string) error {
+	return m.Called(ctx, token).Error(0)
 }
 
-func (f *fakeService) GetSubscriptions(_ context.Context, email string) ([]subscription.Subscription, error) {
-	f.callCnt++
-	f.gotEmail = email
-	return f.listResult, f.listErr
+func (m *serviceMock) GetSubscriptions(ctx context.Context, email string) ([]subscription.Subscription, error) {
+	args := m.Called(ctx, email)
+	// Return arg may legitimately be nil (error path); guard the cast.
+	subs, _ := args.Get(0).([]subscription.Subscription)
+	return subs, args.Error(1)
 }
 
 func newRouterWithHandler(h *resthandler.Handler) http.Handler {
@@ -66,6 +52,18 @@ func newRouterWithHandler(h *resthandler.Handler) http.Handler {
 	r.Get("/api/unsubscribe/{token}", h.Unsubscribe)
 	r.Get("/api/subscriptions", h.List)
 	return r
+}
+
+// newServer wires a mocked service into a fresh test server and returns
+// both. Callers .AssertExpectations(t) at the end if they want to enforce
+// "service was/wasn't called" — tests that care about that contract
+// register their expectations up front via .On(...).
+func newServer(t *testing.T) (*serviceMock, *httptest.Server) {
+	t.Helper()
+	m := &serviceMock{}
+	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(m)))
+	t.Cleanup(srv.Close)
+	return m, srv
 }
 
 func decodeError(t *testing.T, body []byte) string {
@@ -81,9 +79,8 @@ func decodeError(t *testing.T, body []byte) string {
 
 func TestSubscribe_Success(t *testing.T) {
 	t.Parallel()
-	fs := &fakeService{}
-	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
-	defer srv.Close()
+	m, srv := newServer(t)
+	m.On("Subscribe", mock.Anything, "a@b.com", "golang/go").Return(nil).Once()
 
 	resp, err := http.Post(srv.URL+"/api/subscribe", "application/json",
 		strings.NewReader(`{"email":"a@b.com","repo":"golang/go"}`))
@@ -91,15 +88,12 @@ func TestSubscribe_Success(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "a@b.com", fs.gotEmail)
-	assert.Equal(t, "golang/go", fs.gotRepo)
+	m.AssertExpectations(t)
 }
 
 func TestSubscribe_MalformedJSON(t *testing.T) {
 	t.Parallel()
-	fs := &fakeService{}
-	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
-	defer srv.Close()
+	m, srv := newServer(t)
 
 	resp, err := http.Post(srv.URL+"/api/subscribe", "application/json",
 		strings.NewReader(`{not valid json`))
@@ -107,14 +101,12 @@ func TestSubscribe_MalformedJSON(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	assert.Zero(t, fs.callCnt, "service must not be called on bad JSON")
+	m.AssertNotCalled(t, "Subscribe", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestSubscribe_UnknownFieldsRejected(t *testing.T) {
 	t.Parallel()
-	fs := &fakeService{}
-	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
-	defer srv.Close()
+	m, srv := newServer(t)
 
 	resp, err := http.Post(srv.URL+"/api/subscribe", "application/json",
 		strings.NewReader(`{"email":"a@b.com","repo":"x/y","extra":"nope"}`))
@@ -122,14 +114,12 @@ func TestSubscribe_UnknownFieldsRejected(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	assert.Zero(t, fs.callCnt, "service must not be called on unknown fields")
+	m.AssertNotCalled(t, "Subscribe", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestSubscribe_TrailingGarbageRejected(t *testing.T) {
 	t.Parallel()
-	fs := &fakeService{}
-	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
-	defer srv.Close()
+	m, srv := newServer(t)
 
 	resp, err := http.Post(srv.URL+"/api/subscribe", "application/json",
 		strings.NewReader(`{"email":"a@b.com","repo":"x/y"}{"another":"object"}`))
@@ -138,7 +128,7 @@ func TestSubscribe_TrailingGarbageRejected(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode,
 		"trailing data after JSON object should be rejected")
-	assert.Zero(t, fs.callCnt, "service must not be called on trailing garbage")
+	m.AssertNotCalled(t, "Subscribe", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestSubscribe_ErrorMapping(t *testing.T) {
@@ -159,9 +149,8 @@ func TestSubscribe_ErrorMapping(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			fs := &fakeService{subscribeErr: tc.serviceErr}
-			srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
-			defer srv.Close()
+			m, srv := newServer(t)
+			m.On("Subscribe", mock.Anything, mock.Anything, mock.Anything).Return(tc.serviceErr).Once()
 
 			resp, err := http.Post(srv.URL+"/api/subscribe", "application/json",
 				strings.NewReader(`{"email":"a@b.com","repo":"x/y"}`))
@@ -180,16 +169,15 @@ func TestSubscribe_ErrorMapping(t *testing.T) {
 
 func TestConfirm_Success(t *testing.T) {
 	t.Parallel()
-	fs := &fakeService{}
-	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
-	defer srv.Close()
+	m, srv := newServer(t)
+	m.On("Confirm", mock.Anything, "the-token").Return(nil).Once()
 
 	resp, err := http.Get(srv.URL + "/api/confirm/the-token")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "the-token", fs.gotToken)
+	m.AssertExpectations(t)
 }
 
 func TestConfirm_TokenNotFound_LeaksNoDifferenceFromInactive(t *testing.T) {
@@ -198,15 +186,14 @@ func TestConfirm_TokenNotFound_LeaksNoDifferenceFromInactive(t *testing.T) {
 	// identical responses so a probing attacker can't distinguish
 	// "never existed" from "already used".
 	for _, e := range []error{subscription.ErrTokenNotFound, subscription.ErrSubscriptionInactive} {
-		fs := &fakeService{confirmErr: e}
-		srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
+		m, srv := newServer(t)
+		m.On("Confirm", mock.Anything, mock.Anything).Return(e).Once()
 
 		resp, err := http.Get(srv.URL + "/api/confirm/anything")
 		require.NoError(t, err)
 		body, readErr := readAll(t, resp)
 		require.NoError(t, readErr)
 		resp.Body.Close()
-		srv.Close()
 
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode, "err=%v", e)
 		assert.Equal(t, "invalid or expired token", decodeError(t, body), "err=%v", e)
@@ -217,23 +204,21 @@ func TestConfirm_TokenNotFound_LeaksNoDifferenceFromInactive(t *testing.T) {
 
 func TestUnsubscribe_Success(t *testing.T) {
 	t.Parallel()
-	fs := &fakeService{}
-	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
-	defer srv.Close()
+	m, srv := newServer(t)
+	m.On("Unsubscribe", mock.Anything, "the-token").Return(nil).Once()
 
 	resp, err := http.Get(srv.URL + "/api/unsubscribe/the-token")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "the-token", fs.gotToken)
+	m.AssertExpectations(t)
 }
 
 func TestUnsubscribe_TokenNotFound(t *testing.T) {
 	t.Parallel()
-	fs := &fakeService{unsubscribeErr: subscription.ErrTokenNotFound}
-	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
-	defer srv.Close()
+	m, srv := newServer(t)
+	m.On("Unsubscribe", mock.Anything, mock.Anything).Return(subscription.ErrTokenNotFound).Once()
 
 	resp, err := http.Get(srv.URL + "/api/unsubscribe/anything")
 	require.NoError(t, err)
@@ -246,27 +231,23 @@ func TestUnsubscribe_TokenNotFound(t *testing.T) {
 
 func TestList_RequiresEmailQuery(t *testing.T) {
 	t.Parallel()
-	fs := &fakeService{}
-	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
-	defer srv.Close()
+	m, srv := newServer(t)
 
 	resp, err := http.Get(srv.URL + "/api/subscriptions")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	assert.Zero(t, fs.callCnt, "service must not be called when email is missing")
+	m.AssertNotCalled(t, "GetSubscriptions", mock.Anything, mock.Anything)
 }
 
 func TestList_Success(t *testing.T) {
 	t.Parallel()
-	fs := &fakeService{
-		listResult: []subscription.Subscription{
-			{ID: 1, Email: "a@b.com", RepoOwner: "golang", RepoName: "go", Status: subscription.StatusActive},
-		},
+	want := []subscription.Subscription{
+		{ID: 1, Email: "a@b.com", RepoOwner: "golang", RepoName: "go", Status: subscription.StatusActive},
 	}
-	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
-	defer srv.Close()
+	m, srv := newServer(t)
+	m.On("GetSubscriptions", mock.Anything, "a@b.com").Return(want, nil).Once()
 
 	resp, err := http.Get(srv.URL + "/api/subscriptions?email=a@b.com")
 	require.NoError(t, err)
@@ -277,29 +258,27 @@ func TestList_Success(t *testing.T) {
 	require.NoError(t, err)
 	var got []subscription.Subscription
 	require.NoError(t, json.Unmarshal(body, &got))
-	require.Len(t, got, 1)
-	assert.Equal(t, "a@b.com", got[0].Email)
-	assert.Equal(t, "a@b.com", fs.gotEmail)
+	assert.Equal(t, want, got)
+	m.AssertExpectations(t)
 }
 
 func TestList_InvalidEmailFromService(t *testing.T) {
 	t.Parallel()
-	fs := &fakeService{listErr: subscription.ErrInvalidEmail}
-	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(fs)))
-	defer srv.Close()
+	m, srv := newServer(t)
+	// The handler delegates email validation to the service: register the
+	// expectation so AssertExpectations below proves the request reached it.
+	// Without this, the test would still pass if the handler short-circuited
+	// on its own — masking a regression where the service path stops being
+	// exercised at all.
+	m.On("GetSubscriptions", mock.Anything, "not-an-email").
+		Return(nil, subscription.ErrInvalidEmail).Once()
 
 	resp, err := http.Get(srv.URL + "/api/subscriptions?email=not-an-email")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	// callCnt guard proves the service was actually reached. Without it the
-	// test would still pass if the handler short-circuited on its own
-	// validation — masking a regression where the service path stops being
-	// exercised at all.
-	assert.Equal(t, 1, fs.callCnt,
-		"handler must forward to service; ErrInvalidEmail mapping is service-driven")
-	assert.Equal(t, "not-an-email", fs.gotEmail)
+	m.AssertExpectations(t)
 }
 
 // Helper to drain response body and preserve a copy for assertions.

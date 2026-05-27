@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github-release-notifier/internal/api/rest/middleware"
@@ -107,28 +108,29 @@ func TestRateLimiter_PerIPIsolation(t *testing.T) {
 
 func TestRateLimiter_WindowResets(t *testing.T) {
 	t.Parallel()
-	// Wall-clock test (production uses time.Now directly; no clock injection).
-	// The 1s safety margin over the window absorbs GC pauses and scheduler
-	// jitter on a loaded CI runner — earlier 100ms margin was tight enough to
-	// flake. Trading a second of test runtime for stability is the right call.
-	const window = 200 * time.Millisecond
-	const sleep = window + 1*time.Second
+	// Production code calls time.Now directly. Run inside a synctest bubble
+	// so the rate-limiter's clock advances virtually — no wall-clock sleep,
+	// no GC/scheduler-jitter flake budget to pad against.
+	synctest.Test(t, func(t *testing.T) {
+		const window = 200 * time.Millisecond
 
-	rl := newLimiter(t, 1, window, false)
-	h := rl.Limit(okHandler())
+		rl := middleware.NewRateLimiter(1, window, false)
+		defer rl.Stop()
+		h := rl.Limit(okHandler())
 
-	send := func() int {
-		req := httptest.NewRequest(http.MethodPost, "/api/subscribe", http.NoBody)
-		req.RemoteAddr = "10.0.0.1:1"
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-		return rec.Code
-	}
+		send := func() int {
+			req := httptest.NewRequest(http.MethodPost, "/api/subscribe", http.NoBody)
+			req.RemoteAddr = "10.0.0.1:1"
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			return rec.Code
+		}
 
-	assert.Equal(t, http.StatusOK, send())
-	assert.Equal(t, http.StatusTooManyRequests, send())
-	time.Sleep(sleep)
-	assert.Equal(t, http.StatusOK, send(), "after window expires, requests should pass again")
+		assert.Equal(t, http.StatusOK, send())
+		assert.Equal(t, http.StatusTooManyRequests, send())
+		time.Sleep(window + time.Second)
+		assert.Equal(t, http.StatusOK, send(), "after window expires, requests should pass again")
+	})
 }
 
 func TestRateLimiter_TrustedProxy_HonorsXForwardedFor(t *testing.T) {

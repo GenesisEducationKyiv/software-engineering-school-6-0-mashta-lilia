@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github-release-notifier/internal/subscription"
+	"github-release-notifier/tests/pkg/testapp"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,21 +26,21 @@ func doGet(t *testing.T, fullURL string, headers map[string]string) *http.Respon
 }
 
 func TestIntegration_List_RejectsMissingAPIKey(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
 
-	resp := doGet(t, env.server.URL+"/api/subscriptions?email=alice@example.com", nil)
+	resp := doGet(t, app.Server.URL+"/api/subscriptions?email=alice@example.com", nil)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
 func TestIntegration_List_RejectsWrongAPIKey(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
 
 	resp := doGet(
 		t,
-		env.server.URL+"/api/subscriptions?email=alice@example.com",
+		app.Server.URL+"/api/subscriptions?email=alice@example.com",
 		map[string]string{"X-API-Key": "wrong-key"},
 	)
 	defer resp.Body.Close()
@@ -47,14 +48,14 @@ func TestIntegration_List_RejectsWrongAPIKey(t *testing.T) {
 }
 
 func TestIntegration_List_HappyPath_ReturnsActiveOnly(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
 
-	env.seedSubscription(t, "alice@example.com", "golang", "go", "tok-list-active",
+	testapp.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-list-active",
 		subscription.StatusActive)
-	env.seedSubscription(t, "alice@example.com", "rust-lang", "rust", "tok-list-pending",
+	testapp.SeedSubscription(t, app.DB, "alice@example.com", "rust-lang", "rust", "tok-list-pending",
 		subscription.StatusPending)
-	env.seedSubscription(t, "bob@example.com", "golang", "go", "tok-list-other",
+	testapp.SeedSubscription(t, app.DB, "bob@example.com", "golang", "go", "tok-list-other",
 		subscription.StatusActive)
 
 	q := url.Values{}
@@ -62,8 +63,8 @@ func TestIntegration_List_HappyPath_ReturnsActiveOnly(t *testing.T) {
 
 	resp := doGet(
 		t,
-		env.server.URL+"/api/subscriptions?"+q.Encode(),
-		map[string]string{"X-API-Key": env.apiKey},
+		app.Server.URL+"/api/subscriptions?"+q.Encode(),
+		map[string]string{"X-API-Key": app.APIKey},
 	)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -77,26 +78,26 @@ func TestIntegration_List_HappyPath_ReturnsActiveOnly(t *testing.T) {
 }
 
 func TestIntegration_List_RequiresEmailQueryParam(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
 
 	resp := doGet(
 		t,
-		env.server.URL+"/api/subscriptions",
-		map[string]string{"X-API-Key": env.apiKey},
+		app.Server.URL+"/api/subscriptions",
+		map[string]string{"X-API-Key": app.APIKey},
 	)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestIntegration_List_InvalidEmail(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
 
 	resp := doGet(
 		t,
-		env.server.URL+"/api/subscriptions?email=not-an-email",
-		map[string]string{"X-API-Key": env.apiKey},
+		app.Server.URL+"/api/subscriptions?email=not-an-email",
+		map[string]string{"X-API-Key": app.APIKey},
 	)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)

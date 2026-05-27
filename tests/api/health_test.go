@@ -6,15 +6,17 @@ import (
 	"net/http"
 	"testing"
 
+	"github-release-notifier/tests/pkg/testapp"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestIntegration_Root_ReturnsServiceInfo(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
 
-	resp, err := http.Get(env.server.URL + "/")
+	resp, err := http.Get(app.Server.URL + "/")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -28,10 +30,10 @@ func TestIntegration_Root_ReturnsServiceInfo(t *testing.T) {
 }
 
 func TestIntegration_Health_OK(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
 
-	resp, err := http.Get(env.server.URL + "/health")
+	resp, err := http.Get(app.Server.URL + "/health")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -42,10 +44,10 @@ func TestIntegration_Health_OK(t *testing.T) {
 }
 
 func TestIntegration_Metrics_Exposed(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
 
-	resp, err := http.Get(env.server.URL + "/metrics")
+	resp, err := http.Get(app.Server.URL + "/metrics")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -57,10 +59,10 @@ func TestIntegration_Metrics_Exposed(t *testing.T) {
 }
 
 func TestIntegration_SecurityHeaders_PresentEverywhere(t *testing.T) {
-	env := envForTest(t)
-	env.resetDB(t)
+	app := envForTest(t)
+	testapp.TruncateAll(t, app.DB)
 
-	resp, err := http.Get(env.server.URL + "/")
+	resp, err := http.Get(app.Server.URL + "/")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
