@@ -3,9 +3,8 @@ package testapp
 import (
 	"context"
 	"database/sql"
-	"testing"
-
 	"github-release-notifier/internal/subscription"
+	"testing"
 
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +34,8 @@ func SeedSubscription(
 	t.Helper()
 	ctx := context.Background()
 
-	_, err := db.ExecContext(ctx,
+	_, err := db.ExecContext(
+		ctx,
 		`INSERT INTO tracked_repositories (owner, name)
 		 VALUES ($1, $2)
 		 ON CONFLICT (owner, name) DO NOTHING`,
@@ -44,7 +44,8 @@ func SeedSubscription(
 	require.NoError(t, err, "upsert tracked repo")
 
 	var id int64
-	err = db.QueryRowContext(ctx,
+	err = db.QueryRowContext(
+		ctx,
 		`INSERT INTO subscriptions (email, repo_owner, repo_name, token, status)
 		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING id`,
@@ -59,7 +60,8 @@ func SeedSubscription(
 func StatusOf(t *testing.T, db *sql.DB, token string) subscription.Status {
 	t.Helper()
 	var s string
-	err := db.QueryRowContext(context.Background(),
+	err := db.QueryRowContext(
+		context.Background(),
 		"SELECT status FROM subscriptions WHERE token = $1", token,
 	).Scan(&s)
 	require.NoError(t, err, "read status")

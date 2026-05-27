@@ -16,6 +16,14 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
+const (
+	startupTimeout = 60 * time.Second
+	pollInterval   = 100 * time.Millisecond
+	// listLimit caps how many messages a single list call returns; matches
+	// the suite's per-test mailbox volume (a handful of mails per case).
+	listLimit = 200
+)
+
 // Container wraps a running Mailpit, exposing the SMTP port (where the app
 // sends mail) and the HTTP API URL (where tests query captured messages).
 type Container struct {
@@ -33,7 +41,7 @@ func New(ctx context.Context) (*Container, func(), error) {
 		ExposedPorts: []string{"1025/tcp", "8025/tcp"},
 		WaitingFor: wait.ForHTTP("/api/v1/info").
 			WithPort("8025/tcp").
-			WithStartupTimeout(60 * time.Second),
+			WithStartupTimeout(startupTimeout),
 	}
 	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
@@ -91,7 +99,7 @@ type messagesResponse struct {
 // newest first per Mailpit's API contract.
 func (mp *Container) ListMessages(ctx context.Context) ([]Message, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		mp.HTTPURL+"/api/v1/messages?limit=200", http.NoBody)
+		fmt.Sprintf("%s/api/v1/messages?limit=%d", mp.HTTPURL, listLimit), http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -99,9 +107,11 @@ func (mp *Container) ListMessages(ctx context.Context) ([]Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // body close error is safe to ignore
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		// Body read is diagnostic only; a read error here is less informative
+		// than the status code we're about to report, so we ignore it.
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // diagnostic only
 		return nil, fmt.Errorf("mailpit list: %d %s", resp.StatusCode, string(body))
 	}
 	var out messagesResponse
@@ -122,7 +132,7 @@ func (mp *Container) MessageBody(ctx context.Context, id string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // body close error is safe to ignore
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("mailpit get message: %d", resp.StatusCode)
 	}
@@ -146,7 +156,7 @@ func (mp *Container) Reset(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // body close error is safe to ignore
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("mailpit reset: %d", resp.StatusCode)
 	}
@@ -169,7 +179,7 @@ func (mp *Container) WaitForMessage(ctx context.Context, timeout time.Duration) 
 		select {
 		case <-pollCtx.Done():
 			return Message{}, fmt.Errorf("no message received within %s: %w", timeout, pollCtx.Err())
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(pollInterval):
 		}
 	}
 }

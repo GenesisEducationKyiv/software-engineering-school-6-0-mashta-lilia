@@ -2,9 +2,8 @@ package testapp
 
 import (
 	"context"
-	"sync"
-
 	"github-release-notifier/internal/release"
+	"sync"
 )
 
 // FakeGithub satisfies the subscription package's `githubChecker` interface

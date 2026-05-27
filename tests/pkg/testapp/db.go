@@ -19,6 +19,15 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
+const (
+	postgresStartupTimeout = 60 * time.Second
+	// The postgres image emits "database system is ready to accept
+	// connections" twice (once on initdb, once on the real startup); waiting
+	// for the second occurrence is the canonical way to avoid the false-ready
+	// race documented in testcontainers' postgres module.
+	postgresReadyOccurrence = 2
+)
+
 // NewPostgres starts a postgres testcontainer, opens a *sql.DB against it,
 // and applies the repo's migrations. Returns the DB and a cleanup func that
 // closes the connection and terminates the container.
@@ -31,7 +40,8 @@ func NewPostgres(ctx context.Context) (*sql.DB, func(), error) {
 		postgres.WithPassword("testpass"),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second),
+				WithOccurrence(postgresReadyOccurrence).
+				WithStartupTimeout(postgresStartupTimeout),
 		),
 	)
 	if err != nil {
@@ -52,11 +62,15 @@ func NewPostgres(ctx context.Context) (*sql.DB, func(), error) {
 		return nil, terminate, err
 	}
 	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Warn("close db on ping failure", "err", closeErr)
+		}
 		return nil, terminate, err
 	}
 	if err := runMigrations(db); err != nil {
-		_ = db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Warn("close db on migrate failure", "err", closeErr)
+		}
 		return nil, terminate, err
 	}
 

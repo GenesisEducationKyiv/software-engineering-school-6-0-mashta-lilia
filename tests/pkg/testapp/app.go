@@ -8,19 +8,28 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log/slog"
-	"net/http/httptest"
-	"time"
-
 	"github-release-notifier/internal/api/rest"
 	"github-release-notifier/internal/api/rest/middleware"
-	subhandler "github-release-notifier/internal/api/rest/subscription"
 	"github-release-notifier/internal/client/mailer"
 	"github-release-notifier/internal/platform/health"
 	"github-release-notifier/internal/platform/token"
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/subscription"
 	"github-release-notifier/tests/pkg/testmailpit"
+	"log/slog"
+	"net/http/httptest"
+	"time"
+
+	subhandler "github-release-notifier/internal/api/rest/subscription"
+)
+
+const (
+	// rateLimitRequests caps how many requests a single bucket allows per
+	// rateLimitWindow. The integration suite is single-tenant per test, so a
+	// number well above the per-test traffic volume keeps the limiter from
+	// becoming a confounding variable.
+	rateLimitRequests = 100
+	rateLimitWindow   = time.Minute
 )
 
 // APIKey is the canonical API key seeded into the test router; tests
@@ -64,7 +73,7 @@ func New(ctx context.Context) (*App, func(), error) {
 	cleanups = append(cleanups, mpCleanup)
 
 	gh := NewFakeGithub()
-	rl := middleware.NewRateLimiter(100, time.Minute, false)
+	rl := middleware.NewRateLimiter(rateLimitRequests, rateLimitWindow, false)
 	cleanups = append(cleanups, rl.Stop)
 
 	subRepo, err := subscription.NewRepoWithContext(ctx, db)
