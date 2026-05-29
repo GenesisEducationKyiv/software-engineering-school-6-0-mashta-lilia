@@ -1,0 +1,82 @@
+# Self-contained Docker stack for end-to-end tests.
+# Brought up by e2e/scripts/run.sh; does NOT read .env so a fresh clone
+# can run the suite with only `git`, `docker`, and Node installed.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: release_notifier
+    ports:
+      - "5433:5432"   # off-by-one to avoid clashing with the dev compose stack
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d release_notifier"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  mailpit:
+    # Pin to a concrete tag so E2E runs are reproducible across CI invocations.
+    image: axllent/mailpit:v1.18
+    ports:
+      - "1026:1025"   # SMTP (off-by-one to avoid host clashes)
+      - "8026:8025"   # HTTP API (used by Playwright to assert on captured mail)
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8025/api/v1/info"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: "8080"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: release_notifier
+      DB_SSLMODE: disable
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SMTP_FROM: "noreply@e2e.local"
+      GITHUB_TOKEN: ""
+      SCAN_INTERVAL: "1h"   # disable polling traffic during e2e
+      BASE_URL: "http://localhost:8081"
+      API_KEY: "e2e-api-key"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ""
+      REDIS_DB: "0"
+      REDIS_CACHE_TTL: "10m"
+      TRUSTED_PROXY: "false"
+      LOG_LEVEL: "info"
+    ports:
+      - "8081:8080"   # off-by-one to avoid host clashes
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 5s

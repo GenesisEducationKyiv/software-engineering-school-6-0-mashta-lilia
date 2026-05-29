@@ -5,12 +5,16 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github-release-notifier/internal/repository"
 	"io"
 	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github-release-notifier/internal/repository"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -25,21 +29,22 @@ func mustNewPoller(
 ) *Poller {
 	t.Helper()
 	p, err := NewPoller(repos, subs, gh, mailer, interval)
-	if err != nil {
-		t.Fatalf("NewPoller: %v", err)
-	}
+	require.NoError(t, err)
 	return p
 }
 
 func TestNewPoller_RejectsNonPositiveInterval(t *testing.T) {
+	t.Parallel()
 	for _, d := range []time.Duration{0, -time.Second} {
-		if _, err := NewPoller(nil, nil, nil, nil, d); err == nil {
-			t.Errorf("NewPoller(interval=%s) returned nil error, want non-nil", d)
-		}
+		t.Run(d.String(), func(t *testing.T) {
+			_, err := NewPoller(nil, nil, nil, nil, d)
+			assert.Error(t, err)
+		})
 	}
 }
 
 func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
+	t.Parallel()
 	var updatedTag string
 	var notifiedEmails []string
 
@@ -77,18 +82,12 @@ func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
 	poller := mustNewPoller(t, repos, subs, gh, mailer, time.Hour)
 	poller.scan(context.Background())
 
-	if updatedTag != "v1.22" {
-		t.Errorf("updated tag = %q, want %q", updatedTag, "v1.22")
-	}
-	if len(notifiedEmails) != 2 {
-		t.Fatalf("notified %d emails, want 2", len(notifiedEmails))
-	}
-	if notifiedEmails[0] != "alice@example.com" || notifiedEmails[1] != "bob@example.com" {
-		t.Errorf("notified = %v, want [alice@example.com, bob@example.com]", notifiedEmails)
-	}
+	assert.Equal(t, "v1.22", updatedTag)
+	assert.Equal(t, []string{"alice@example.com", "bob@example.com"}, notifiedEmails)
 }
 
 func TestPoller_SameTag_NoNotification(t *testing.T) {
+	t.Parallel()
 	notifyCalled := false
 	var checkedID int64
 
@@ -118,15 +117,12 @@ func TestPoller_SameTag_NoNotification(t *testing.T) {
 	poller := mustNewPoller(t, repos, &mockSubscriberLister{}, gh, mailer, time.Hour)
 	poller.scan(context.Background())
 
-	if notifyCalled {
-		t.Error("should not notify when tag hasn't changed")
-	}
-	if checkedID != 1 {
-		t.Errorf("checked ID = %d, want 1", checkedID)
-	}
+	assert.False(t, notifyCalled, "should not notify when tag hasn't changed")
+	assert.Equal(t, int64(1), checkedID)
 }
 
 func TestPoller_NullLastSeenTag_TreatsAsNew(t *testing.T) {
+	t.Parallel()
 	var updatedTag string
 
 	repos := &mockRepoScanReader{
@@ -157,14 +153,13 @@ func TestPoller_NullLastSeenTag_TreatsAsNew(t *testing.T) {
 	poller := mustNewPoller(t, repos, subs, gh, mailer, time.Hour)
 	poller.scan(context.Background())
 
-	if updatedTag != "v1.0.0" {
-		t.Errorf("updated tag = %q, want %q", updatedTag, "v1.0.0")
-	}
+	assert.Equal(t, "v1.0.0", updatedTag)
 }
 
 func TestPoller_NoRelease_Skips(t *testing.T) {
+	t.Parallel()
 	updateCalled := false
-	checkedCalled := false
+	var checkedID int64
 
 	repos := &mockRepoScanReader{
 		GetAllFn: func(_ context.Context) ([]repository.Repository, error) {
@@ -175,10 +170,7 @@ func TestPoller_NoRelease_Skips(t *testing.T) {
 			return nil
 		},
 		UpdateLastCheckedFn: func(_ context.Context, id int64) error {
-			if id != 1 {
-				t.Errorf("checked ID = %d, want 1", id)
-			}
-			checkedCalled = true
+			checkedID = id
 			return nil
 		},
 	}
@@ -191,15 +183,12 @@ func TestPoller_NoRelease_Skips(t *testing.T) {
 	poller := mustNewPoller(t, repos, &mockSubscriberLister{}, gh, &mockReleaseNotifier{}, time.Hour)
 	poller.scan(context.Background())
 
-	if updateCalled {
-		t.Error("should not update tag when no release exists")
-	}
-	if !checkedCalled {
-		t.Error("should update last_checked_at when no release exists")
-	}
+	assert.False(t, updateCalled, "should not update tag when no release exists")
+	assert.Equal(t, int64(1), checkedID, "should update last_checked_at when no release exists")
 }
 
 func TestPoller_GitHubError_ContinuesOtherRepos(t *testing.T) {
+	t.Parallel()
 	var updatedTags []string
 
 	repos := &mockRepoScanReader{
@@ -234,12 +223,11 @@ func TestPoller_GitHubError_ContinuesOtherRepos(t *testing.T) {
 	poller := mustNewPoller(t, repos, subs, gh, mailer, time.Hour)
 	poller.scan(context.Background())
 
-	if len(updatedTags) != 1 || updatedTags[0] != "v2.0" {
-		t.Errorf("updated tags = %v, want [v2.0]", updatedTags)
-	}
+	assert.Equal(t, []string{"v2.0"}, updatedTags)
 }
 
 func TestPoller_UpdateLastSeenFails_SkipsNotification(t *testing.T) {
+	t.Parallel()
 	notifyCalled := false
 
 	repos := &mockRepoScanReader{
@@ -267,13 +255,13 @@ func TestPoller_UpdateLastSeenFails_SkipsNotification(t *testing.T) {
 	poller := mustNewPoller(t, repos, &mockSubscriberLister{}, gh, mailer, time.Hour)
 	poller.scan(context.Background())
 
-	if notifyCalled {
-		t.Error("should NOT send notifications when UpdateLastSeen fails (persist-before-notify)")
-	}
+	assert.False(t, notifyCalled,
+		"persist-before-notify: must NOT notify when UpdateLastSeen fails")
 }
 
 func TestPoller_ContextCancelled_StopsProcessing(t *testing.T) {
-	processedCount := 0
+	t.Parallel()
+	var processedCount atomic.Int32
 
 	repos := &mockRepoScanReader{
 		GetAllFn: func(_ context.Context) ([]repository.Repository, error) {
@@ -290,7 +278,7 @@ func TestPoller_ContextCancelled_StopsProcessing(t *testing.T) {
 
 	gh := &mockGitHubReleaseClient{
 		GetLatestReleaseFn: func(_ context.Context, owner, _ string) (*Release, error) {
-			processedCount++
+			processedCount.Add(1)
 			if owner == "a" {
 				cancel()
 			}
@@ -301,12 +289,12 @@ func TestPoller_ContextCancelled_StopsProcessing(t *testing.T) {
 	poller := mustNewPoller(t, repos, &mockSubscriberLister{}, gh, &mockReleaseNotifier{}, time.Hour)
 	poller.scan(ctx)
 
-	if processedCount > 2 {
-		t.Errorf("processed %d repos after cancel, expected early exit", processedCount)
-	}
+	assert.LessOrEqual(t, processedCount.Load(), int32(2),
+		"context cancel should short-circuit before all repos are processed")
 }
 
 func TestPoller_OverlappingScanSkipped(t *testing.T) {
+	t.Parallel()
 	firstScanStarted := make(chan struct{})
 	releaseFirstScan := make(chan struct{})
 	firstScanDone := make(chan struct{})
@@ -348,7 +336,6 @@ func TestPoller_OverlappingScanSkipped(t *testing.T) {
 	close(releaseFirstScan)
 	<-firstScanDone
 
-	if got := getAllCalls.Load(); got != 1 {
-		t.Errorf("GetAll calls = %d, want 1", got)
-	}
+	assert.Equal(t, int32(1), getAllCalls.Load(),
+		"second scan must skip while the first holds the lock")
 }

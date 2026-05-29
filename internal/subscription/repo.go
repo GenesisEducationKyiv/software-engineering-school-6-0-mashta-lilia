@@ -10,13 +10,9 @@ import (
 	"github.com/lib/pq"
 )
 
-// Postgres SQLSTATE for unique/partial-unique constraint violation.
 const pgUniqueViolation = "23505"
 
-// Name of the partial unique index that enforces "no duplicate active
-// subscription for (email, repo)". Matches migrations/000001_init_schema.up.sql.
-// Only this constraint should map to ErrAlreadyExists; other 23505s
-// (e.g. the token UNIQUE column) indicate a different bug and must surface.
+// Filter on this index so other 23505s (e.g. token UNIQUE) don't get mis-mapped to ErrAlreadyExists.
 const emailRepoActiveIndex = "idx_subscriptions_email_repo_active"
 
 const (
@@ -148,11 +144,7 @@ func (r *Repo) Create(ctx context.Context, sub *Subscription) error {
 	if err := r.stmtCreate.QueryRowContext(ctx,
 		sub.Email, sub.RepoOwner, sub.RepoName, sub.Token, sub.Status,
 	).Scan(&sub.ID, &sub.CreatedAt, &sub.UpdatedAt); err != nil {
-		// Partial-unique-index violation -> domain sentinel so concurrent
-		// duplicate subscribes return 409, not 500. The service pre-check
-		// is a soft optimization; this is the authoritative guard. Filter
-		// by constraint name so a future unique index (e.g. on token)
-		// doesn't get mis-classified as "duplicate subscription".
+		// Authoritative guard for concurrent dupes (the service pre-check is a soft optimization).
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) &&
 			pqErr.Code == pgUniqueViolation &&

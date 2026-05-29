@@ -73,8 +73,6 @@ func NewPoller(
 	}, nil
 }
 
-// Done returns a channel that is closed when Start has returned. Callers
-// use this to wait for the poller to finish in-flight work during shutdown.
 func (p *Poller) Done() <-chan struct{} { return p.done }
 
 func (p *Poller) Start(ctx context.Context) {

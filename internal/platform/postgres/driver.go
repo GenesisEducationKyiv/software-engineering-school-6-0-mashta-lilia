@@ -34,8 +34,7 @@ func NewWithContext(ctx context.Context, databaseURL string) (*sql.DB, error) {
 	pingCtx, cancel := context.WithTimeout(ctx, dbPingTimeout)
 	defer cancel()
 	if err := db.PingContext(pingCtx); err != nil {
-		// Join so callers see both the ping failure and any close error
-		// from the partially-open pool.
+		// Join so callers see the close error from the partially-open pool too.
 		return nil, errors.Join(err, db.Close())
 	}
 

@@ -5,121 +5,45 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
-	"github-release-notifier/internal/repository"
-	"github-release-notifier/internal/subscription"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
-	_ "github.com/lib/pq"
+	"github-release-notifier/internal/repository"
+	"github-release-notifier/internal/subscription"
+	"github-release-notifier/tests/pkg/testdb"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 var testDB *sql.DB
 
 func TestMain(m *testing.M) {
-	// runTests owns all setup and uses deferred cleanup so the postgres
-	// container is terminated even on mid-setup failures. Calling os.Exit
-	// from TestMain directly would skip any deferred Terminate and leak
-	// containers across CI/dev runs.
+	// runTests owns lifecycle so deferred cleanup runs even on mid-setup failures.
 	os.Exit(runTests(m))
 }
 
 func runTests(m *testing.M) int {
 	flag.Parse()
-
 	if testing.Short() {
 		return m.Run()
 	}
 
-	ctx := context.Background()
-
-	pgContainer, err := postgres.Run(ctx,
-		"postgres:15-alpine",
-		postgres.WithDatabase("testdb"),
-		postgres.WithUsername("testuser"),
-		postgres.WithPassword("testpass"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(30*time.Second),
-		),
-	)
+	db, cleanup, err := testdb.NewPostgres(context.Background())
+	defer cleanup()
 	if err != nil {
-		slog.Error("Failed to start postgres container", "err", err)
+		slog.Error("postgres setup failed", "err", err)
 		return 1
 	}
-	defer func() {
-		if err := pgContainer.Terminate(ctx); err != nil {
-			slog.Warn("Failed to terminate postgres container", "err", err)
-		}
-	}()
-
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		slog.Error("Failed to get connection string", "err", err)
-		return 1
-	}
-
-	testDB, err = sql.Open("postgres", connStr)
-	if err != nil {
-		slog.Error("Failed to open database", "err", err)
-		return 1
-	}
-	defer func() {
-		if err := testDB.Close(); err != nil {
-			slog.Warn("Failed to close test database", "err", err)
-		}
-	}()
-
-	if err := testDB.PingContext(ctx); err != nil {
-		slog.Error("Failed to ping database", "err", err)
-		return 1
-	}
-
-	driver, err := migratepg.WithInstance(testDB, &migratepg.Config{})
-	if err != nil {
-		slog.Error("Failed to create migration driver", "err", err)
-		return 1
-	}
-
-	// Tests live under tests/repository, migrations are at the repo root.
-	migrationsPath, err := filepath.Abs(filepath.Join("..", "..", "migrations"))
-	if err != nil {
-		slog.Error("Failed to resolve migrations path", "err", err)
-		return 1
-	}
-
-	mig, err := migrate.NewWithDatabaseInstance(
-		"file://"+filepath.ToSlash(migrationsPath), "postgres", driver,
-	)
-	if err != nil {
-		slog.Error("Failed to create migrator", "err", err)
-		return 1
-	}
-	if err := mig.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		slog.Error("Failed to run migrations", "err", err)
-		return 1
-	}
-
+	testDB = db
 	return m.Run()
 }
 
 func truncateTables(t *testing.T) {
-	t.Helper()
-	_, err := testDB.ExecContext(context.Background(), "TRUNCATE subscriptions, tracked_repositories CASCADE")
-	require.NoError(t, err)
+	testdb.TruncateAll(t, testDB)
 }
-
-// --- repository.Store Integration Tests ---
 
 func TestIntegration_Store_Upsert(t *testing.T) {
 	if testing.Short() {
@@ -197,8 +121,6 @@ func TestIntegration_Store_GetAll(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, repos, 2)
 }
-
-// --- subscription.Repo Integration Tests ---
 
 func createTrackedRepo(t *testing.T, owner, name string) {
 	t.Helper()

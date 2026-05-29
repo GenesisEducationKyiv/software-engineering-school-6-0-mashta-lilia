@@ -4,17 +4,11 @@ import (
 	"context"
 )
 
-// subscriptionStore groups write-side mutation (Create, UpdateStatus, Exists,
-// used by Subscribe/Confirm/Unsubscribe) and token-keyed reads (GetByToken,
-// GetActiveByEmail). Kept as one interface because the package as a whole is
-// the consumer (ADR-0009); split if a sixth method appears.
+// Kept as one interface because the package itself is the consumer (ADR-0009).
 type subscriptionStore interface {
-	// Write side.
 	Create(ctx context.Context, sub *Subscription) error
 	UpdateStatus(ctx context.Context, id int64, status Status) error
 	Exists(ctx context.Context, email, owner, name string) (bool, error)
-
-	// Read side.
 	GetByToken(ctx context.Context, token string) (*Subscription, error)
 	GetActiveByEmail(ctx context.Context, email string) ([]Subscription, error)
 }

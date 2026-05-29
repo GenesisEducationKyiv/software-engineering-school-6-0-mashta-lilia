@@ -13,10 +13,7 @@ type MigrationResult struct {
 	Applied bool
 }
 
-// RunMigrations opens its own short-lived connection pool via migrate.New
-// rather than sharing the application's *sql.DB. This keeps lifecycle clean:
-// m.Close() shuts down its own pool without affecting the app's, and no
-// migrator-held connection lingers for the life of the process.
+// Uses its own pool so m.Close() can't tear down the app's *sql.DB.
 func RunMigrations(databaseURL, sourceURL string) (MigrationResult, error) {
 	return RunMigrationsWithContext(context.Background(), databaseURL, sourceURL)
 }

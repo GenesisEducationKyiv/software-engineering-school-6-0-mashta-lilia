@@ -7,19 +7,11 @@ import (
 )
 
 const (
-	// X-RateLimit-Reset is honored up to this cap to bound wait time even
-	// when GitHub reports a window of minutes (clock skew or genuinely
-	// long quota window) — 120s still respects the server's signal while
-	// keeping caller latency tolerable.
-	maxResetWait = 120 * time.Second
-
-	// Bounds the exponential fallback to the 3-tier sequence 1s/2s/4s.
+	// Cap X-RateLimit-Reset so a minutes-long window or clock skew can't stall callers.
+	maxResetWait      = 120 * time.Second
 	maxBackoffAttempt = 2
 )
 
-// HeaderAwareRetry decides how long to wait before retrying a 429 response:
-// Retry-After first, then X-RateLimit-Reset (capped at maxResetWait), then
-// exponential backoff bounded to 1s/2s/4s.
 type HeaderAwareRetry struct{}
 
 func (HeaderAwareRetry) NextWait(headers http.Header, attempt int) time.Duration {

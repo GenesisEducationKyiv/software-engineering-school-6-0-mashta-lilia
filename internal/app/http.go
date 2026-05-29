@@ -28,8 +28,7 @@ func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies) 
 
 	pollerCtx, cancelPoller := context.WithCancel(ctx)
 	defer cancelPoller()
-	// Deferred so the rate-limiter goroutine is stopped on server-error
-	// exits, not just the shutdown path.
+	// Deferred so server-error exits also stop the rate-limiter goroutine.
 	defer deps.subscribeLimiter.Stop()
 
 	go deps.poller.Start(pollerCtx)
@@ -42,8 +41,6 @@ func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies) 
 		}
 	}()
 
-	// Block until the server fails or the parent context is canceled.
-	// The parent owns signal handling via signal.NotifyContext in main.
 	select {
 	case err := <-serverErr:
 		cancelPoller()
@@ -58,9 +55,7 @@ func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies) 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
-	// Drain the poller regardless of Shutdown outcome — otherwise an in-flight
-	// scan can race with process exit and leak a half-finished SMTP send or
-	// Postgres write.
+	// Drain poller regardless of Shutdown outcome to avoid mid-scan SMTP/Postgres leaks.
 	shutdownErr := srv.Shutdown(shutdownCtx)
 	waitForPollerWithContext(shutdownCtx, deps)
 	if shutdownErr != nil {
@@ -77,8 +72,6 @@ func waitForPoller(deps *dependencies) {
 }
 
 func waitForPollerWithContext(ctx context.Context, deps *dependencies) {
-	// Wait for the poller goroutine to drain its in-flight scan; otherwise
-	// the process can exit while a Postgres write or SMTP send is in flight.
 	select {
 	case <-deps.poller.Done():
 	case <-ctx.Done():

@@ -7,9 +7,7 @@ import (
 	"net/http"
 )
 
-// maxSubscribeBodyBytes caps the JSON request body to defend against
-// memory-exhaustion via a multi-GB payload. Subscribe only needs email + repo.
-const maxSubscribeBodyBytes = 1 << 20 // 1 MiB
+const maxSubscribeBodyBytes = 1 << 20 // 1 MiB cap; body only needs email + repo
 
 type subscribeRequest struct {
 	Email string `json:"email"`

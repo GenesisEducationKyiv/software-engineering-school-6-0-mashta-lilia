@@ -94,9 +94,7 @@ func (m *SMTPMailer) deliver(ctx context.Context, msg Message) error {
 	}
 	defer client.Close() //nolint:errcheck // SMTP client close error is safe to ignore
 
-	// Upgrade to TLS before sending PLAIN credentials. Refuse to authenticate
-	// over plaintext: smtp.PlainAuth would otherwise leak username/password
-	// to any passive observer between us and the relay.
+	// Refuse to send PLAIN creds without STARTTLS — would leak to any passive observer.
 	if ok, _ := client.Extension("STARTTLS"); ok {
 		tlsCfg := &tls.Config{ServerName: m.host, MinVersion: tls.VersionTLS12}
 		if err := client.StartTLS(tlsCfg); err != nil {

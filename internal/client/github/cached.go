@@ -14,9 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// redisCacheErrors counts Redis-side failures from the GitHub cache.
-// Per-failure logging is at Debug only; under a Redis flap the log file
-// would otherwise drown the actual symptom. Alert on this counter instead.
+// Per-failure logs are Debug to avoid flap-noise; alert on this counter instead.
 var redisCacheErrors = promauto.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "github_cache_redis_errors_total",

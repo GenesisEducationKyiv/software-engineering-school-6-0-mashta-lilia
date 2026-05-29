@@ -1,4 +1,4 @@
-.PHONY: run build test test-integration lint docker-up docker-down migrate-up migrate-down
+.PHONY: run build test test-integration test-e2e test-all lint docker-up docker-down migrate-up migrate-down
 
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -10,11 +10,24 @@ run:
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/server ./main
 
+# Unit tests only. Pure Go, no Docker, < 30s. Mirrors unit-tests.yml in CI.
 test:
-	go test -short ./... -v -count=1
+	go test -short ./... -v -count=1 -race
 
+# Integration tests. Spins up postgres + mailpit via testcontainers under
+# the hood; the only prerequisite is a running Docker daemon. Mirrors
+# integration-tests.yml in CI.
 test-integration:
-	go test ./... -v -count=1 -timeout 180s
+	go test ./tests/... -v -count=1 -timeout 10m -race
+
+# Browser-driven E2E. Boots a self-contained docker-compose stack
+# (postgres, redis, mailpit, app), runs Playwright, tears down. Mirrors
+# e2e-tests.yml in CI.
+test-e2e:
+	bash e2e/scripts/run.sh
+
+# Convenience: run every layer of the pyramid in order.
+test-all: test test-integration test-e2e
 
 lint:
 	golangci-lint run ./...

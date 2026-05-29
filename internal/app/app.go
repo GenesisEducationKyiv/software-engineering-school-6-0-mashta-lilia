@@ -30,8 +30,7 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("app: nil logger")
 	}
 
-	// Install the injected logger as slog default so package-level slog.*
-	// calls in subscription/, release/, etc. honor the configured level.
+	// Required so package-level slog.* calls honor the configured level.
 	slog.SetDefault(a.logger)
 
 	if a.cfg.DBSSLMode == "disable" {
