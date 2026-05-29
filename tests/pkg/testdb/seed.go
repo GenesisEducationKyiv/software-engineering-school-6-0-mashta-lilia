@@ -9,9 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TruncateAll wipes the tables tests assert against so each run starts
-// from a clean slate. Cascades remove subscription rows when their tracked
-// repo is purged.
 func TruncateAll(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, err := db.ExecContext(context.Background(),
@@ -19,14 +16,7 @@ func TruncateAll(t *testing.T, db *sql.DB) {
 	require.NoError(t, err)
 }
 
-// SeedSubscription inserts a tracked repo + subscription row directly via
-// raw SQL, bypassing the service layer. Used by Confirm/Unsubscribe/List
-// tests that need a known token without going through Subscribe.
-//
-// Raw SQL (not the repo abstraction) so the row lands in its final state
-// in a single write — the equivalent helper in e2e/fixtures/seed.ts does
-// the same, and we avoid two-step Create+UpdateStatus side-effects (extra
-// trigger fires, updated_at advanced past created_at).
+// Single-write raw SQL avoids the trigger side-effects of a two-step Create+UpdateStatus.
 func SeedSubscription(
 	t *testing.T, db *sql.DB,
 	email, owner, name, token string, status subscription.Status,
@@ -55,8 +45,6 @@ func SeedSubscription(
 	return id
 }
 
-// StatusOf reads the current status of a subscription by token directly
-// from the DB (bypasses the service layer for assertion-side verification).
 func StatusOf(t *testing.T, db *sql.DB, token string) subscription.Status {
 	t.Helper()
 	var s string

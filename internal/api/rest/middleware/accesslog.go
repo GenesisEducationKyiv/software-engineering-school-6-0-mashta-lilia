@@ -9,10 +9,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-// AccessLog logs each request with method, redacted URL, status, and duration.
-// Tokens embedded in /api/confirm/<token> and /api/unsubscribe/<token> are
-// bearer credentials; the email query param on /api/subscriptions is PII.
-// Logging them raw lets anyone with log access act on behalf of users.
+// Tokens in path and the email query param are credentials/PII; never log them raw.
 func AccessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
@@ -31,9 +28,6 @@ func AccessLog(next http.Handler) http.Handler {
 	})
 }
 
-// redactPath substitutes the chi route pattern (e.g. /api/confirm/{token})
-// for the raw path, so route params holding bearer tokens never reach logs.
-// Query params with PII (email) are masked separately.
 func redactPath(r *http.Request) string {
 	path := r.URL.Path
 	if rc := chi.RouteContext(r.Context()); rc != nil {

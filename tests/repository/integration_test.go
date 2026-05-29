@@ -21,10 +21,7 @@ import (
 var testDB *sql.DB
 
 func TestMain(m *testing.M) {
-	// runTests owns all setup and uses deferred cleanup so the postgres
-	// container is terminated even on mid-setup failures. Calling os.Exit
-	// from TestMain directly would skip any deferred Terminate and leak
-	// containers across CI/dev runs.
+	// runTests owns lifecycle so deferred cleanup runs even on mid-setup failures.
 	os.Exit(runTests(m))
 }
 
@@ -47,8 +44,6 @@ func runTests(m *testing.M) int {
 func truncateTables(t *testing.T) {
 	testdb.TruncateAll(t, testDB)
 }
-
-// --- repository.Store Integration Tests ---
 
 func TestIntegration_Store_Upsert(t *testing.T) {
 	if testing.Short() {
@@ -126,8 +121,6 @@ func TestIntegration_Store_GetAll(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, repos, 2)
 }
-
-// --- subscription.Repo Integration Tests ---
 
 func createTrackedRepo(t *testing.T, owner, name string) {
 	t.Helper()

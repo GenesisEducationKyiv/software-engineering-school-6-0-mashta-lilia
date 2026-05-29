@@ -29,17 +29,12 @@ func TestTemplateBuilder_Confirmation_Standard(t *testing.T) {
 func TestTemplateBuilder_Confirmation_StripsCRLFInjection(t *testing.T) {
 	t.Parallel()
 	tb := mailer.NewTemplateBuilder("https://example.com")
-	// Header injection attempt — newlines must be stripped from To and from
-	// subject inputs so attackers cannot inject extra MIME headers like Bcc:.
 	got := tb.Confirmation(
 		"alice@example.com\r\nBcc: evil@bad.com",
 		"tok",
 		"golang/go\r\nX-Evil: 1",
 	)
 
-	// Full-struct compare: the inputs that flow into headers must have CRLF
-	// removed, AND the rest of the template must still render correctly —
-	// sanitization should not nuke the body.
 	want := mailer.Message{
 		To:      "alice@example.comBcc: evil@bad.com",
 		Subject: "Confirm your subscription to golang/goX-Evil: 1 releases",
@@ -76,8 +71,6 @@ func TestTemplateBuilder_ReleaseNotification_Standard(t *testing.T) {
 func TestTemplateBuilder_ReleaseNotification_StripsCRLFInjection(t *testing.T) {
 	t.Parallel()
 	tb := mailer.NewTemplateBuilder("https://example.com")
-	// Header injection attempt — newlines must be stripped from To, the repo
-	// (subject input), and the tag (which also lands in the Subject).
 	rel := &release.Release{
 		TagName: "v1.0\r\nX-Evil: 1",
 		Name:    "ok",
@@ -92,9 +85,7 @@ func TestTemplateBuilder_ReleaseNotification_StripsCRLFInjection(t *testing.T) {
 	want := mailer.Message{
 		To:      "alice@example.comBcc: evil@bad.com",
 		Subject: "New release for golang/goX-Evil: 1: v1.0X-Evil: 1",
-		// The body intentionally renders the raw TagName: it's content, not
-		// a header, and sanitizing it would distort what the user sees. The
-		// SMTP envelope only puts sanitized values into header positions.
+		// Body intentionally keeps raw TagName: it's content, not a header.
 		Body: "A new release has been published for golang/goX-Evil: 1!\n\n" +
 			"Version: v1.0\r\nX-Evil: 1\n" +
 			"Name: ok\n" +

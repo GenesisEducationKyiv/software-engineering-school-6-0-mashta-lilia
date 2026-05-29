@@ -29,9 +29,7 @@ type errorResponse struct {
 }
 
 func respondJSON(w http.ResponseWriter, status int, data any) {
-	// Encode into a buffer first: if marshaling fails after WriteHeader,
-	// the client gets a success status with a truncated body. Buffering
-	// lets us downgrade the status to 500 on encode failure.
+	// Buffer first so an encode failure can still flip the status to 500.
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(data); err != nil {
 		slog.Error("Failed to encode response", "err", err)

@@ -23,16 +23,10 @@ import (
 
 const (
 	postgresStartupTimeout = 60 * time.Second
-	// The postgres image emits "database system is ready to accept
-	// connections" twice (once on initdb, once on the real startup); waiting
-	// for the second occurrence is the canonical way to avoid the false-ready
-	// race documented in testcontainers' postgres module.
+	// Wait for the 2nd "ready" line to avoid the initdb false-ready race.
 	postgresReadyOccurrence = 2
 )
 
-// NewPostgres starts a postgres testcontainer, opens a *sql.DB against it,
-// and applies the repo's migrations. Returns the DB and a cleanup func that
-// closes the connection and terminates the container.
 func NewPostgres(ctx context.Context) (*sql.DB, func(), error) {
 	c, err := postgres.Run(
 		ctx,
@@ -94,10 +88,7 @@ func runMigrations(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	// Deliberately not calling mig.Close(): golang-migrate's Close() closes
-	// both the source AND the database driver, which wraps the *sql.DB we
-	// share with the rest of the test suite. The file-source has no real
-	// resources to release; the db handle is closed once at suite teardown.
+	// Don't mig.Close(): it would close the shared *sql.DB; we close it once at teardown.
 	mig, err := migrate.NewWithDatabaseInstance(
 		"file://"+filepath.ToSlash(path), "postgres", driver,
 	)
@@ -110,14 +101,10 @@ func runMigrations(db *sql.DB) error {
 	return nil
 }
 
-// migrationsPath resolves the absolute path of the repo's `migrations`
-// directory relative to this source file so callers don't need to know
-// where in the tree they're running from.
 func migrationsPath() (string, error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		return "", errors.New("cannot resolve testdb package directory")
 	}
-	// file = .../tests/pkg/testdb/postgres.go -> repo root is three levels up.
 	return filepath.Abs(filepath.Join(filepath.Dir(file), "..", "..", "..", "migrations"))
 }

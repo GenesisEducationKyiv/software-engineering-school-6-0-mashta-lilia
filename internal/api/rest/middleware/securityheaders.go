@@ -5,10 +5,7 @@ import (
 	"strings"
 )
 
-// SecurityHeaders sets defensive response headers on every response.
-// Cache-Control: no-store is applied only under /api/* so confirmation
-// tokens and PII responses are not cached by intermediaries, while
-// /swagger.yaml, /metrics, /health, and / can still be cached normally.
+// no-store is scoped to /api/* so PII/tokens aren't cached by intermediaries.
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()

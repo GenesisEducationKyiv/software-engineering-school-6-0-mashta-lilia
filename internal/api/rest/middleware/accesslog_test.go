@@ -43,8 +43,6 @@ func TestAccessLog_LogsRequestMetadata(t *testing.T) {
 	assert.EqualValues(t, http.StatusOK, entry["status"])
 }
 
-// The AccessLog middleware must never log raw bearer tokens from URLs like
-// /api/confirm/<token> — chi RoutePattern() is used to redact them.
 func TestAccessLog_RedactsTokenFromConfirmPath(t *testing.T) {
 	buf := captureSlog(t)
 
@@ -86,9 +84,7 @@ func TestAccessLog_RedactsEmailQueryParam(t *testing.T) {
 	logged := buf.String()
 	assert.NotContains(t, strings.ToLower(logged), "alice@example.com",
 		"raw email PII must not appear in logs")
-	// The redacted placeholder may appear URL-encoded (%3Credacted%3E)
-	// or literal (<redacted>) depending on how the JSON encoder escapes
-	// the slog string value — both prove the email was scrubbed.
+	// Accept both encodings — JSON escaping of the slog string varies.
 	assert.True(t,
 		strings.Contains(logged, "<redacted>") || strings.Contains(logged, "%3Credacted%3E"),
 		"redacted placeholder missing from log entry: %s", logged)

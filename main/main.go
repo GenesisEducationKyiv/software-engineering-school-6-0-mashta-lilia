@@ -12,8 +12,7 @@ import (
 	"syscall"
 )
 
-// Populated at build time via -ldflags "-X main.commit=... -X main.buildTime=...".
-// Defaults make `go run ./main` work without ldflags.
+// Populated via -ldflags "-X main.commit=... -X main.buildTime=...".
 var (
 	commit    = "unknown"
 	buildTime = "unknown"

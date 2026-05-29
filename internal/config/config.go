@@ -54,8 +54,7 @@ func (c *Config) DatabaseURL() string {
 		userInfo.String(), c.DBHost, c.DBPort, c.DBName, c.DBSSLMode)
 }
 
-// NewFromEnv fails fast on a present-but-unparseable env var rather than
-// falling back to the default — silent fallback hides misconfiguration.
+// Fail fast on a present-but-unparseable env var so silent fallback doesn't hide misconfig.
 func NewFromEnv() (*Config, error) {
 	smtpPort, err := envInt("SMTP_PORT", defaultSMTPPort)
 	if err != nil {
@@ -126,9 +125,7 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
-// envRequired returns the env value or an error if unset/empty. Used for
-// secrets where a silent empty value turns a config mistake into a runtime
-// security regression.
+// Used for secrets: a silent empty value would turn config mistakes into a security regression.
 func envRequired(key string) (string, error) {
 	v := os.Getenv(key)
 	if v == "" {

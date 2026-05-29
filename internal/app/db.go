@@ -10,8 +10,7 @@ import (
 )
 
 func openAndMigrateDB(ctx context.Context, cfg *config.Config) (*sql.DB, error) {
-	// Run migrations against a dedicated short-lived pool first, so any
-	// failure happens before we wire up the application's long-lived pool.
+	// Migrate via a short-lived pool first so failures happen before wiring the long-lived one.
 	res, err := postgres.RunMigrationsWithContext(ctx, cfg.DatabaseURL(), "file://migrations")
 	if err != nil {
 		return nil, fmt.Errorf("running migrations: %w", err)
@@ -27,8 +26,7 @@ func openAndMigrateDB(ctx context.Context, cfg *config.Config) (*sql.DB, error) 
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
 
-	// Re-ping under the caller's ctx so a SIGINT during startup is honored
-	// after pool tuning as well as during initial open.
+	// Re-ping under the caller ctx so SIGINT cancels post-open pool tuning too.
 	if err := db.PingContext(ctx); err != nil {
 		closeQuietly("database", db.Close)
 		return nil, fmt.Errorf("pinging database: %w", err)

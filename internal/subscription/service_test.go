@@ -62,8 +62,6 @@ func castDeps(args [5]any) (
 	return asSubs, asRepos, asGH, asMail, asTok
 }
 
-// --- Subscribe Tests ---
-
 func TestSubscribe_Success(t *testing.T) {
 	t.Parallel()
 	var createdSub *Subscription
@@ -213,8 +211,6 @@ func TestSubscribe_TokenGeneratorFailure_Propagates(t *testing.T) {
 	)
 	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 	require.Error(t, err)
-	// errors.Is verifies the chain, not the wrap message — a typo fix to the
-	// production string would not falsely fail this test.
 	assert.ErrorIs(t, err, tokenErr,
 		"underlying token-generator error must be preserved in the chain")
 }
@@ -320,18 +316,12 @@ func TestSubscribe_SMTPFailure_RollbackFailure_JoinedError(t *testing.T) {
 
 	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 	require.Error(t, err)
-	// errors.Join must surface all three legs: the domain sentinel (callers
-	// map to 5xx), the underlying SMTP error, and the rollback failure (tells
-	// operators the row is stuck pending). errors.Is on each is enough — no
-	// substring match needed.
 	assert.ErrorIs(t, err, ErrEmailSendFailed)
 	assert.ErrorIs(t, err, smtpErr)
 	assert.ErrorIs(t, err, rollbackErr)
 	assert.Equal(t, int64(99), rolledBackID, "rollback was still attempted")
 	assert.Equal(t, StatusUnsubscribed, rolledBackStatus)
 }
-
-// --- Confirm Tests ---
 
 func TestConfirm_Success(t *testing.T) {
 	t.Parallel()
@@ -414,8 +404,6 @@ func TestConfirm_DBError_Propagates(t *testing.T) {
 		"DB errors must not be wrapped as ErrTokenNotFound")
 }
 
-// --- Unsubscribe Tests ---
-
 func TestUnsubscribe_Success(t *testing.T) {
 	t.Parallel()
 	var updatedStatus Status
@@ -485,8 +473,6 @@ func TestUnsubscribe_DBError_Propagates(t *testing.T) {
 		"DB errors must not be wrapped as ErrTokenNotFound")
 }
 
-// --- GetSubscriptions Tests ---
-
 func TestGetSubscriptions_Success(t *testing.T) {
 	t.Parallel()
 	expected := []Subscription{
@@ -515,8 +501,6 @@ func TestGetSubscriptions_EmptyEmail(t *testing.T) {
 	_, err := svc.GetSubscriptions(context.Background(), "")
 	assert.ErrorIs(t, err, ErrInvalidEmail)
 }
-
-// --- Email Normalization Tests ---
 
 func TestSubscribe_NormalizesEmail(t *testing.T) {
 	t.Parallel()

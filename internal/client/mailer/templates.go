@@ -38,7 +38,6 @@ func (t *TemplateBuilder) Confirmation(email, token, repo string) Message {
 func (t *TemplateBuilder) ReleaseNotification(email, repo string, rel *release.Release) Message {
 	safeEmail := sanitizeHeader(email)
 	safeRepo := sanitizeHeader(repo)
-	// rel may be nil — degrade gracefully rather than panic.
 	if rel == nil {
 		return Message{
 			To:      safeEmail,

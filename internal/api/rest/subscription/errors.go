@@ -21,9 +21,7 @@ var serviceErrorMappings = []errorMapping{
 		subscription.ErrEmailSendFailed, http.StatusServiceUnavailable,
 		"failed to send confirmation email, please try again",
 	},
-	// Deliberate collapse: both sentinels return identical 404 + message so
-	// the HTTP layer does not leak whether a token ever existed vs. exists
-	// but was unsubscribed. The domain keeps them distinct for tests/logs.
+	// Both sentinels collapse to the same 404 so HTTP doesn't leak whether a token ever existed.
 	{subscription.ErrTokenNotFound, http.StatusNotFound, "invalid or expired token"},
 	{subscription.ErrSubscriptionInactive, http.StatusNotFound, "invalid or expired token"},
 }

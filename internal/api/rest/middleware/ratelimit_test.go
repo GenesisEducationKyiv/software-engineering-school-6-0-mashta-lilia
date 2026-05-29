@@ -61,12 +61,10 @@ func TestRateLimiter_429ResponseHasRetryAfterAndJSON(t *testing.T) {
 	rl := newLimiter(t, 1, 30*time.Second, false)
 	h := rl.Limit(okHandler())
 
-	// First request: OK.
 	req1 := httptest.NewRequest(http.MethodPost, "/api/subscribe", http.NoBody)
 	req1.RemoteAddr = "10.0.0.1:1"
 	h.ServeHTTP(httptest.NewRecorder(), req1)
 
-	// Second request: rate limited.
 	req2 := httptest.NewRequest(http.MethodPost, "/api/subscribe", http.NoBody)
 	req2.RemoteAddr = "10.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -98,8 +96,6 @@ func TestRateLimiter_PerIPIsolation(t *testing.T) {
 		return rec.Code
 	}
 
-	// Exhaust IP1's bucket so the test can distinguish per-IP isolation from
-	// a no-op limiter: only a real per-IP bucket lets IP2 pass once IP1 is 429.
 	assert.Equal(t, http.StatusOK, send("10.0.0.1:1"))
 	assert.Equal(t, http.StatusTooManyRequests, send("10.0.0.1:1"))
 	assert.Equal(t, http.StatusOK, send("10.0.0.2:1"),
@@ -111,6 +107,7 @@ func TestRateLimiter_WindowResets(t *testing.T) {
 	// Production code calls time.Now directly. Run inside a synctest bubble
 	// so the rate-limiter's clock advances virtually — no wall-clock sleep,
 	// no GC/scheduler-jitter flake budget to pad against.
+	// synctest advances the limiter's time.Now virtually so the test can't flake on jitter.
 	synctest.Test(t, func(t *testing.T) {
 		const window = 200 * time.Millisecond
 
@@ -138,8 +135,6 @@ func TestRateLimiter_TrustedProxy_HonorsXForwardedFor(t *testing.T) {
 	rl := newLimiter(t, 1, time.Minute, true)
 	h := rl.Limit(okHandler())
 
-	// Two requests from the same RemoteAddr but different X-Forwarded-For
-	// should *not* share a bucket when proxy headers are trusted.
 	for _, fwd := range []string{"203.0.113.1", "203.0.113.2"} {
 		req := httptest.NewRequest(http.MethodPost, "/api/subscribe", http.NoBody)
 		req.RemoteAddr = "10.0.0.99:1"
@@ -155,8 +150,6 @@ func TestRateLimiter_UntrustedProxy_IgnoresXForwardedFor(t *testing.T) {
 	rl := newLimiter(t, 1, time.Minute, false)
 	h := rl.Limit(okHandler())
 
-	// Different X-Forwarded-For but same RemoteAddr; second should be 429
-	// because untrusted mode uses RemoteAddr only.
 	for i, fwd := range []string{"203.0.113.1", "203.0.113.2"} {
 		req := httptest.NewRequest(http.MethodPost, "/api/subscribe", http.NoBody)
 		req.RemoteAddr = "10.0.0.99:1"

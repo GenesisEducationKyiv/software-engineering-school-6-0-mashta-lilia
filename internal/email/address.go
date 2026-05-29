@@ -13,8 +13,6 @@ type Address struct {
 	addr string
 }
 
-// NewAddress accepts RFC 5322 forms such as "Alice <alice@example.com>"
-// and returns the lowercased address.
 func NewAddress(raw string) (Address, error) {
 	addr, err := mail.ParseAddress(raw)
 	if err != nil {

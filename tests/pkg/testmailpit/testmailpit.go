@@ -1,6 +1,4 @@
-// Package testmailpit boots an axllent/mailpit container for integration
-// tests and exposes the subset of Mailpit's REST API the suites actually
-// assert on (list, fetch body, reset, wait-for-message).
+// Package testmailpit boots a mailpit container and exposes the REST subset tests assert on.
 package testmailpit
 
 import (
@@ -19,13 +17,9 @@ import (
 const (
 	startupTimeout = 60 * time.Second
 	pollInterval   = 100 * time.Millisecond
-	// listLimit caps how many messages a single list call returns; matches
-	// the suite's per-test mailbox volume (a handful of mails per case).
-	listLimit = 200
+	listLimit      = 200
 )
 
-// Container wraps a running Mailpit, exposing the SMTP port (where the app
-// sends mail) and the HTTP API URL (where tests query captured messages).
 type Container struct {
 	c        testcontainers.Container
 	Host     string
@@ -33,8 +27,6 @@ type Container struct {
 	HTTPURL  string
 }
 
-// New starts a Mailpit container and returns it together with a cleanup
-// func that terminates the container.
 func New(ctx context.Context) (*Container, func(), error) {
 	req := testcontainers.ContainerRequest{
 		Image:        "axllent/mailpit:v1.18",
@@ -77,8 +69,6 @@ func New(ctx context.Context) (*Container, func(), error) {
 	}, terminate, nil
 }
 
-// Message is a thin subset of Mailpit's REST API envelope — only the fields
-// tests assert on.
 type Message struct {
 	ID      string `json:"ID"`
 	From    Addr   `json:"From"`
@@ -95,8 +85,6 @@ type messagesResponse struct {
 	Messages []Message `json:"messages"`
 }
 
-// ListMessages returns all captured emails currently in Mailpit. Order is
-// newest first per Mailpit's API contract.
 func (mp *Container) ListMessages(ctx context.Context) ([]Message, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		fmt.Sprintf("%s/api/v1/messages?limit=%d", mp.HTTPURL, listLimit), http.NoBody)
@@ -109,8 +97,6 @@ func (mp *Container) ListMessages(ctx context.Context) ([]Message, error) {
 	}
 	defer resp.Body.Close() //nolint:errcheck // body close error is safe to ignore
 	if resp.StatusCode != http.StatusOK {
-		// Body read is diagnostic only; a read error here is less informative
-		// than the status code we're about to report, so we ignore it.
 		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // diagnostic only
 		return nil, fmt.Errorf("mailpit list: %d %s", resp.StatusCode, string(body))
 	}
@@ -121,7 +107,6 @@ func (mp *Container) ListMessages(ctx context.Context) ([]Message, error) {
 	return out.Messages, nil
 }
 
-// MessageBody fetches the plaintext body of a captured message by ID.
 func (mp *Container) MessageBody(ctx context.Context, id string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		mp.HTTPURL+"/api/v1/message/"+id, http.NoBody)
@@ -145,7 +130,6 @@ func (mp *Container) MessageBody(ctx context.Context, id string) (string, error)
 	return msg.Text, nil
 }
 
-// Reset deletes all stored messages so the next test starts clean.
 func (mp *Container) Reset(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
 		mp.HTTPURL+"/api/v1/messages", http.NoBody)
@@ -163,10 +147,6 @@ func (mp *Container) Reset(ctx context.Context) error {
 	return nil
 }
 
-// WaitForMessage polls Mailpit for up to timeout, returning the first
-// captured message that arrives. The poll loop honors ctx so a parent that
-// cancels (e.g. via t.Context()) returns immediately instead of sleeping
-// out the remaining budget.
 func (mp *Container) WaitForMessage(ctx context.Context, timeout time.Duration) (Message, error) {
 	pollCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

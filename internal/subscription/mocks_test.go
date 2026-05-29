@@ -81,7 +81,6 @@ func (m *mockConfirmationSender) SendConfirmation(ctx context.Context, email, to
 	return m.SendConfirmationFn(ctx, email, token, repo)
 }
 
-// fixedTokenGenerator is a deterministic generator for tests.
 type fixedTokenGenerator struct {
 	Token string
 	Err   error

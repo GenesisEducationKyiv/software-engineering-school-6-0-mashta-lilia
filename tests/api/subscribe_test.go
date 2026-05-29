@@ -31,8 +31,6 @@ func TestIntegration_Subscribe_HappyPath(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// Mailpit must have received exactly one confirmation email containing
-	// the confirm URL (which embeds the token from the DB).
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	msg, err := app.Mailpit.WaitForMessage(ctx, 10*time.Second)
@@ -47,17 +45,11 @@ func TestIntegration_Subscribe_HappyPath(t *testing.T) {
 		"confirmation URL with token must be present in the email body")
 }
 
-// NOTE: per the Practical Test Pyramid (see testing.md), validation edge
-// cases — malformed JSON, invalid email format, unknown fields — live as
-// unit tests in internal/api/rest/subscription/handler_test.go. The
-// integration layer only covers wiring + side-effects, not branching rules.
-
 func TestIntegration_Subscribe_RepoNotFoundOnGitHub(t *testing.T) {
 	app := envForTest(t)
 	testdb.TruncateAll(t, app.DB)
 	app.Github.Reset()
 	require.NoError(t, app.Mailpit.Reset(context.Background()))
-	// fake github reports the repo does not exist
 	app.Github.SetRepoExists("ghost", "repo", false)
 
 	resp, err := http.Post(

@@ -81,9 +81,6 @@ func TestAPIKeyAuth_CorrectKey(t *testing.T) {
 	assert.Equal(t, "ok", rec.Body.String())
 }
 
-// Reject any length-based timing inference. Both wrong-but-short and
-// wrong-but-long keys must produce identical responses (only outcome,
-// not timing, is asserted in unit tests).
 func TestAPIKeyAuth_RejectsKeysOfDifferingLength(t *testing.T) {
 	t.Parallel()
 	h := middleware.APIKeyAuth("expected-key-1234567890")(okHandler())

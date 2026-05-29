@@ -19,9 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// serviceMock satisfies the handler's unexported subscriptionService
-// interface structurally — Go's duck typing means we never have to name
-// the interface from outside the package.
 type serviceMock struct {
 	mock.Mock
 }
@@ -40,7 +37,6 @@ func (m *serviceMock) Unsubscribe(ctx context.Context, token string) error {
 
 func (m *serviceMock) GetSubscriptions(ctx context.Context, email string) ([]subscription.Subscription, error) {
 	args := m.Called(ctx, email)
-	// Return arg may legitimately be nil (error path); guard the cast.
 	subs, _ := args.Get(0).([]subscription.Subscription)
 	return subs, args.Error(1)
 }
@@ -54,10 +50,6 @@ func newRouterWithHandler(h *resthandler.Handler) http.Handler {
 	return r
 }
 
-// newServer wires a mocked service into a fresh test server and returns
-// both. Callers .AssertExpectations(t) at the end if they want to enforce
-// "service was/wasn't called" — tests that care about that contract
-// register their expectations up front via .On(...).
 func newServer(t *testing.T) (*serviceMock, *httptest.Server) {
 	t.Helper()
 	m := &serviceMock{}
@@ -74,8 +66,6 @@ func decodeError(t *testing.T, body []byte) string {
 	require.NoError(t, json.Unmarshal(body, &e))
 	return e.Error
 }
-
-// --- Subscribe ---
 
 func TestSubscribe_Success(t *testing.T) {
 	t.Parallel()
@@ -165,8 +155,6 @@ func TestSubscribe_ErrorMapping(t *testing.T) {
 	}
 }
 
-// --- Confirm ---
-
 func TestConfirm_Success(t *testing.T) {
 	t.Parallel()
 	m, srv := newServer(t)
@@ -182,9 +170,6 @@ func TestConfirm_Success(t *testing.T) {
 
 func TestConfirm_TokenNotFound_LeaksNoDifferenceFromInactive(t *testing.T) {
 	t.Parallel()
-	// Both ErrTokenNotFound and ErrSubscriptionInactive must produce
-	// identical responses so a probing attacker can't distinguish
-	// "never existed" from "already used".
 	for _, e := range []error{subscription.ErrTokenNotFound, subscription.ErrSubscriptionInactive} {
 		m, srv := newServer(t)
 		m.On("Confirm", mock.Anything, mock.Anything).Return(e).Once()
@@ -199,8 +184,6 @@ func TestConfirm_TokenNotFound_LeaksNoDifferenceFromInactive(t *testing.T) {
 		assert.Equal(t, "invalid or expired token", decodeError(t, body), "err=%v", e)
 	}
 }
-
-// --- Unsubscribe ---
 
 func TestUnsubscribe_Success(t *testing.T) {
 	t.Parallel()
@@ -226,8 +209,6 @@ func TestUnsubscribe_TokenNotFound(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
-
-// --- List ---
 
 func TestList_RequiresEmailQuery(t *testing.T) {
 	t.Parallel()
@@ -265,11 +246,7 @@ func TestList_Success(t *testing.T) {
 func TestList_InvalidEmailFromService(t *testing.T) {
 	t.Parallel()
 	m, srv := newServer(t)
-	// The handler delegates email validation to the service: register the
-	// expectation so AssertExpectations below proves the request reached it.
-	// Without this, the test would still pass if the handler short-circuited
-	// on its own — masking a regression where the service path stops being
-	// exercised at all.
+	// Registered so AssertExpectations would catch a regression where the handler short-circuits.
 	m.On("GetSubscriptions", mock.Anything, "not-an-email").
 		Return(nil, subscription.ErrInvalidEmail).Once()
 
@@ -281,8 +258,6 @@ func TestList_InvalidEmailFromService(t *testing.T) {
 	m.AssertExpectations(t)
 }
 
-// Helper to drain response body and preserve a copy for assertions.
-// Body lifecycle is the caller's responsibility — pair with defer resp.Body.Close().
 func readAll(t *testing.T, resp *http.Response) ([]byte, error) {
 	t.Helper()
 	return io.ReadAll(resp.Body)

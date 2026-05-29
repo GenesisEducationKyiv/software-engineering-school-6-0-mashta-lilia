@@ -8,10 +8,7 @@ import (
 	"net/http"
 )
 
-// APIKeyAuth enforces X-API-Key. An empty apiKey is a misconfiguration:
-// the middleware fails closed (always 401) rather than silently bypassing
-// auth on a PII endpoint. The composition root is expected to warn loudly.
-// The empty-key decision is resolved at construction time, not per request.
+// Empty apiKey fails closed; never silently bypass auth on a PII endpoint.
 func APIKeyAuth(apiKey string) func(http.Handler) http.Handler {
 	if apiKey == "" {
 		return func(_ http.Handler) http.Handler {
@@ -21,8 +18,7 @@ func APIKeyAuth(apiKey string) func(http.Handler) http.Handler {
 		}
 	}
 
-	// Compare fixed-length sha256 digests, not raw keys: subtle.Constant
-	// TimeCompare short-circuits on length mismatch, leaking key length.
+	// Compare fixed-length digests so ConstantTimeCompare doesn't leak length via early return.
 	expected := sha256.Sum256([]byte(apiKey))
 
 	return func(next http.Handler) http.Handler {

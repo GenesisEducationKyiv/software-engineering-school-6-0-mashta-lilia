@@ -1,7 +1,4 @@
-// Package testgithub provides an in-process programmable fake of the
-// GitHub client used by integration tests. Tests configure repo
-// existence / errors per case so they don't touch the real GitHub API
-// (that's covered by internal/client/github/*_test.go).
+// Package testgithub is an in-process programmable fake of the GitHub client for integration tests.
 package testgithub
 
 import (
@@ -10,8 +7,6 @@ import (
 	"sync"
 )
 
-// Fake satisfies the subscription package's `githubChecker` interface
-// purely in-process. Programmable per-test via SetRepoExists / SetError.
 type Fake struct {
 	mu     sync.Mutex
 	exists map[string]bool
@@ -50,9 +45,7 @@ func (f *Fake) RepoExists(_ context.Context, owner, name string) (bool, error) {
 	return f.exists[owner+"/"+name], nil
 }
 
-// GetLatestRelease is not exercised through HTTP endpoints (the release
-// poller uses it), but the interface mirrors the real client so we satisfy
-// both contracts and stay forward-compatible.
+// Mirrors the real client so the interface stays satisfied; poller-only path, not HTTP.
 func (f *Fake) GetLatestRelease(_ context.Context, _, _ string) (*release.Release, error) {
 	return nil, nil
 }

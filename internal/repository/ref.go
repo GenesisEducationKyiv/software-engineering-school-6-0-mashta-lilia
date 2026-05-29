@@ -8,12 +8,9 @@ import (
 
 var ErrInvalid = errors.New("invalid repository format, expected owner/repo")
 
-// GitHub repo name: letters/digits and ._- , 1-100 chars (GitHub allows this set).
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
-// GitHub owner: alnum start, then any number of "(optional -) + alnum".
-// Rejects empty, leading -, trailing -, and consecutive -- by construction.
-// Length cap (39) is checked separately in validOwner.
+// Rejects empty, leading/trailing -, and consecutive -- by construction; len cap in validOwner.
 var ownerRe = regexp.MustCompile(`^[A-Za-z0-9](?:-?[A-Za-z0-9])*$`)
 
 type Ref struct {
@@ -21,9 +18,7 @@ type Ref struct {
 	Name  string
 }
 
-// ParseRef enforces GitHub's actual owner/name charset. The strict regex
-// blocks control characters (CR/LF) so the value is safe to interpolate
-// into log lines, URLs, and email headers without further escaping.
+// Strict charset blocks CR/LF so the value is safe to interpolate into logs/URLs/headers.
 func ParseRef(raw string) (Ref, error) {
 	owner, name, ok := strings.Cut(raw, "/")
 	if !ok || !validOwner(owner) || !nameRe.MatchString(name) {

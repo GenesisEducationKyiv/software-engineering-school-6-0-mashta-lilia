@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-// Repository is a GitHub repository the poller watches for releases.
 type Repository struct {
 	ID            int64          `db:"id"`
 	Owner         string         `db:"owner"`

@@ -12,12 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// setBaseEnv populates the minimum env so NewFromEnv() succeeds. Tests
-// then override individual keys to exercise specific code paths.
 func setBaseEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("API_KEY", "test-api-key")
-	// Make sure parsed values fall back to defaults unless test overrides them.
 	for _, k := range []string{
 		"SERVER_PORT", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSLMODE",
 		"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
@@ -124,8 +121,6 @@ func TestConfig_DatabaseURL_EscapesUserAndPassword(t *testing.T) {
 	}
 
 	url := cfg.DatabaseURL()
-	// '@' and ':' inside user/password must be URL-encoded so the lib/pq
-	// driver parses the URL unambiguously.
 	assert.Contains(t, url, "user%40name")
 	assert.Contains(t, url, "p%40ss%3Aword")
 	assert.True(t, strings.HasSuffix(url, "@localhost:5432/release_notifier?sslmode=disable"),

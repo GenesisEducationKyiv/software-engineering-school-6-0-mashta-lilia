@@ -19,9 +19,7 @@ type Service struct {
 	tokens tokenGen
 }
 
-// NewService panics if any collaborator is nil. Service is built once at
-// startup by the composition root; a nil dep is a wiring bug that should
-// crash boot rather than surface as a request-time nil-pointer panic.
+// Panics on nil deps: built once at boot, so a wiring bug should crash startup, not requests.
 func NewService(
 	subs subscriptionStore,
 	repos repoUpserter,
@@ -116,10 +114,7 @@ func (s *Service) sendConfirmationOrRollback(
 	ctx context.Context, sub *Subscription, ref repository.Ref,
 ) error {
 	if err := s.mailer.SendConfirmation(ctx, sub.Email, sub.Token, ref.String()); err != nil {
-		// Detach cancellation so rollback survives an HTTP timeout / client
-		// disconnect — a stuck pending row would block the partial unique
-		// index from accepting a retry. WithoutCancel keeps the request's
-		// trace IDs and logger; the timeout caps a hung DB.
+		// Detach cancel so rollback survives client disconnect; stuck pending row blocks retries.
 		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 		defer cancel()
 		if rbErr := s.subs.UpdateStatus(rollbackCtx, sub.ID, StatusUnsubscribed); rbErr != nil {
@@ -142,7 +137,7 @@ func (s *Service) Confirm(ctx context.Context, token string) error {
 		return fmt.Errorf("looking up token: %w", err)
 	}
 	if sub.Status == StatusActive {
-		return nil // idempotent
+		return nil
 	}
 	if sub.Status != StatusPending {
 		return ErrSubscriptionInactive
@@ -159,7 +154,7 @@ func (s *Service) Unsubscribe(ctx context.Context, token string) error {
 		return fmt.Errorf("looking up token: %w", err)
 	}
 	if sub.Status == StatusUnsubscribed {
-		return nil // idempotent
+		return nil
 	}
 	return s.subs.UpdateStatus(ctx, sub.ID, StatusUnsubscribed)
 }

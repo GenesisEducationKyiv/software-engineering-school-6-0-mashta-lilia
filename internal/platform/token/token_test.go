@@ -15,7 +15,6 @@ func TestGenerator_Generate_ProducesHexOfExpectedLength(t *testing.T) {
 	got, err := token.New().Generate()
 	require.NoError(t, err)
 
-	// 32 bytes -> 64 hex chars.
 	assert.Len(t, got, 64)
 
 	decoded, err := hex.DecodeString(got)
@@ -23,7 +22,6 @@ func TestGenerator_Generate_ProducesHexOfExpectedLength(t *testing.T) {
 	assert.Len(t, decoded, 32)
 }
 
-// Tokens must use only the hex alphabet so they remain URL-safe in confirm/unsubscribe paths.
 func TestGenerator_Generate_URLSafeCharset(t *testing.T) {
 	t.Parallel()
 	tok, err := token.New().Generate()

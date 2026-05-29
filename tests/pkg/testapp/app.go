@@ -1,8 +1,4 @@
-// Package testapp wires the full API surface (HTTP server backed by a
-// chi router, real postgres + mailpit containers, in-process fake GitHub
-// client) for integration tests. Lower-level building blocks live in
-// sibling packages: tests/pkg/testdb (postgres + SQL fixtures),
-// tests/pkg/testgithub (fake GitHub), tests/pkg/testmailpit (mailpit).
+// Package testapp wires the full API surface for integration tests.
 package testapp
 
 import (
@@ -27,21 +23,13 @@ import (
 )
 
 const (
-	// rateLimitRequests caps how many requests a single bucket allows per
-	// rateLimitWindow. The integration suite is single-tenant per test, so a
-	// number well above the per-test traffic volume keeps the limiter from
-	// becoming a confounding variable.
+	// Set well above per-test traffic so the limiter never becomes a confounder.
 	rateLimitRequests = 100
 	rateLimitWindow   = time.Minute
 )
 
-// APIKey is the canonical API key seeded into the test router; tests
-// authenticate against /api/subscriptions with this value.
 const APIKey = "test-api-key-12345"
 
-// App bundles every collaborator an api-level integration test touches —
-// the HTTP server, the underlying DB, the captured-mail backend, and the
-// programmable GitHub fake.
 type App struct {
 	Server      *httptest.Server
 	DB          *sql.DB
@@ -51,10 +39,7 @@ type App struct {
 	APIKey      string
 }
 
-// New brings up the full API surface and returns a cleanup func that tears
-// every container/handle down in reverse order. Designed to be called once
-// per suite from TestMain; per-test isolation goes through testdb.TruncateAll
-// / Github.Reset / Mailpit.Reset, not New.
+// Per-test isolation goes through testdb.TruncateAll / Github.Reset / Mailpit.Reset, not New.
 func New(ctx context.Context) (*App, func(), error) {
 	var cleanups []func()
 	cleanup := func() {
