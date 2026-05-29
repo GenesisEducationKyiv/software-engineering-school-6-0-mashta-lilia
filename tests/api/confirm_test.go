@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github-release-notifier/internal/subscription"
-	"github-release-notifier/tests/pkg/testapp"
+	"github-release-notifier/tests/pkg/testdb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,9 +13,9 @@ import (
 
 func TestIntegration_Confirm_FlipsPendingToActive(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 
-	testapp.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-pending",
+	testdb.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-pending",
 		subscription.StatusPending)
 
 	resp, err := http.Get(app.Server.URL + "/api/confirm/tok-pending")
@@ -23,12 +23,12 @@ func TestIntegration_Confirm_FlipsPendingToActive(t *testing.T) {
 	defer resp.Body.Close()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, subscription.StatusActive, testapp.StatusOf(t, app.DB, "tok-pending"))
+	assert.Equal(t, subscription.StatusActive, testdb.StatusOf(t, app.DB, "tok-pending"))
 }
 
 func TestIntegration_Confirm_UnknownToken_Returns404(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 
 	resp, err := http.Get(app.Server.URL + "/api/confirm/nope-not-a-real-token")
 	require.NoError(t, err)
@@ -39,9 +39,9 @@ func TestIntegration_Confirm_UnknownToken_Returns404(t *testing.T) {
 
 func TestIntegration_Confirm_AlreadyActive_IsIdempotent(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 
-	testapp.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-active",
+	testdb.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-active",
 		subscription.StatusActive)
 
 	resp, err := http.Get(app.Server.URL + "/api/confirm/tok-active")
@@ -50,5 +50,5 @@ func TestIntegration_Confirm_AlreadyActive_IsIdempotent(t *testing.T) {
 
 	// Already-active confirmation returns 200 (service treats it as idempotent).
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, subscription.StatusActive, testapp.StatusOf(t, app.DB, "tok-active"))
+	assert.Equal(t, subscription.StatusActive, testdb.StatusOf(t, app.DB, "tok-active"))
 }

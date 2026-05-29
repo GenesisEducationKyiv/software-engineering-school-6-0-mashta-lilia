@@ -1,4 +1,4 @@
-package testapp
+package testdb
 
 import (
 	"context"

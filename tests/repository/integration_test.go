@@ -12,7 +12,7 @@ import (
 
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/subscription"
-	"github-release-notifier/tests/pkg/testapp"
+	"github-release-notifier/tests/pkg/testdb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,7 +34,7 @@ func runTests(m *testing.M) int {
 		return m.Run()
 	}
 
-	db, cleanup, err := testapp.NewPostgres(context.Background())
+	db, cleanup, err := testdb.NewPostgres(context.Background())
 	defer cleanup()
 	if err != nil {
 		slog.Error("postgres setup failed", "err", err)
@@ -45,7 +45,7 @@ func runTests(m *testing.M) int {
 }
 
 func truncateTables(t *testing.T) {
-	testapp.TruncateAll(t, testDB)
+	testdb.TruncateAll(t, testDB)
 }
 
 // --- repository.Store Integration Tests ---

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github-release-notifier/internal/subscription"
-	"github-release-notifier/tests/pkg/testapp"
+	"github-release-notifier/tests/pkg/testdb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,9 +13,9 @@ import (
 
 func TestIntegration_Unsubscribe_FlipsActiveToUnsubscribed(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 
-	testapp.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-unsub-1",
+	testdb.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-unsub-1",
 		subscription.StatusActive)
 
 	resp, err := http.Get(app.Server.URL + "/api/unsubscribe/tok-unsub-1")
@@ -23,12 +23,12 @@ func TestIntegration_Unsubscribe_FlipsActiveToUnsubscribed(t *testing.T) {
 	defer resp.Body.Close()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, subscription.StatusUnsubscribed, testapp.StatusOf(t, app.DB, "tok-unsub-1"))
+	assert.Equal(t, subscription.StatusUnsubscribed, testdb.StatusOf(t, app.DB, "tok-unsub-1"))
 }
 
 func TestIntegration_Unsubscribe_UnknownToken_Returns404(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 
 	resp, err := http.Get(app.Server.URL + "/api/unsubscribe/does-not-exist")
 	require.NoError(t, err)
@@ -39,9 +39,9 @@ func TestIntegration_Unsubscribe_UnknownToken_Returns404(t *testing.T) {
 
 func TestIntegration_Unsubscribe_AlreadyUnsubscribed_IsIdempotent(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 
-	testapp.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-unsub-2",
+	testdb.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-unsub-2",
 		subscription.StatusUnsubscribed)
 
 	resp, err := http.Get(app.Server.URL + "/api/unsubscribe/tok-unsub-2")
@@ -49,5 +49,5 @@ func TestIntegration_Unsubscribe_AlreadyUnsubscribed_IsIdempotent(t *testing.T) 
 	defer resp.Body.Close()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, subscription.StatusUnsubscribed, testapp.StatusOf(t, app.DB, "tok-unsub-2"))
+	assert.Equal(t, subscription.StatusUnsubscribed, testdb.StatusOf(t, app.DB, "tok-unsub-2"))
 }

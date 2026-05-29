@@ -1,7 +1,8 @@
 // Package testapp wires the full API surface (HTTP server backed by a
 // chi router, real postgres + mailpit containers, in-process fake GitHub
-// client) for integration tests, plus the smaller building blocks
-// (NewPostgres, SeedSubscription, …) needed by repository-only suites.
+// client) for integration tests. Lower-level building blocks live in
+// sibling packages: tests/pkg/testdb (postgres + SQL fixtures),
+// tests/pkg/testgithub (fake GitHub), tests/pkg/testmailpit (mailpit).
 package testapp
 
 import (
@@ -15,6 +16,8 @@ import (
 	"github-release-notifier/internal/platform/token"
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/subscription"
+	"github-release-notifier/tests/pkg/testdb"
+	"github-release-notifier/tests/pkg/testgithub"
 	"github-release-notifier/tests/pkg/testmailpit"
 	"log/slog"
 	"net/http/httptest"
@@ -43,15 +46,15 @@ type App struct {
 	Server      *httptest.Server
 	DB          *sql.DB
 	Mailpit     *testmailpit.Container
-	Github      *FakeGithub
+	Github      *testgithub.Fake
 	RateLimiter *middleware.RateLimiter
 	APIKey      string
 }
 
 // New brings up the full API surface and returns a cleanup func that tears
 // every container/handle down in reverse order. Designed to be called once
-// per suite from TestMain; per-test isolation goes through ResetDB /
-// Github.Reset / Mailpit.Reset, not New.
+// per suite from TestMain; per-test isolation goes through testdb.TruncateAll
+// / Github.Reset / Mailpit.Reset, not New.
 func New(ctx context.Context) (*App, func(), error) {
 	var cleanups []func()
 	cleanup := func() {
@@ -60,7 +63,7 @@ func New(ctx context.Context) (*App, func(), error) {
 		}
 	}
 
-	db, dbCleanup, err := NewPostgres(ctx)
+	db, dbCleanup, err := testdb.NewPostgres(ctx)
 	if err != nil {
 		return nil, cleanup, err
 	}
@@ -72,7 +75,7 @@ func New(ctx context.Context) (*App, func(), error) {
 	}
 	cleanups = append(cleanups, mpCleanup)
 
-	gh := NewFakeGithub()
+	gh := testgithub.New()
 	rl := middleware.NewRateLimiter(rateLimitRequests, rateLimitWindow, false)
 	cleanups = append(cleanups, rl.Stop)
 

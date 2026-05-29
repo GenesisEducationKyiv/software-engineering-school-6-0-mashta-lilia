@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github-release-notifier/internal/subscription"
-	"github-release-notifier/tests/pkg/testapp"
+	"github-release-notifier/tests/pkg/testdb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,7 +16,7 @@ import (
 
 func TestIntegration_Subscribe_HappyPath(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 	app.Github.Reset()
 	app.Github.SetRepoExists("golang", "go", true)
 	require.NoError(t, app.Mailpit.Reset(context.Background()))
@@ -54,7 +54,7 @@ func TestIntegration_Subscribe_HappyPath(t *testing.T) {
 
 func TestIntegration_Subscribe_RepoNotFoundOnGitHub(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 	app.Github.Reset()
 	require.NoError(t, app.Mailpit.Reset(context.Background()))
 	// fake github reports the repo does not exist
@@ -72,12 +72,12 @@ func TestIntegration_Subscribe_RepoNotFoundOnGitHub(t *testing.T) {
 
 func TestIntegration_Subscribe_DuplicateActiveSubscription(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 	app.Github.Reset()
 	require.NoError(t, app.Mailpit.Reset(context.Background()))
 	app.Github.SetRepoExists("golang", "go", true)
 
-	testapp.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-pre", subscription.StatusActive)
+	testdb.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-pre", subscription.StatusActive)
 
 	resp, err := http.Post(
 		app.Server.URL+"/api/subscribe",

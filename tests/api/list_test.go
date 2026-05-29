@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github-release-notifier/internal/subscription"
-	"github-release-notifier/tests/pkg/testapp"
+	"github-release-notifier/tests/pkg/testdb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,7 +27,7 @@ func doGet(t *testing.T, fullURL string, headers map[string]string) *http.Respon
 
 func TestIntegration_List_RejectsMissingAPIKey(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 
 	resp := doGet(t, app.Server.URL+"/api/subscriptions?email=alice@example.com", nil)
 	defer resp.Body.Close()
@@ -36,7 +36,7 @@ func TestIntegration_List_RejectsMissingAPIKey(t *testing.T) {
 
 func TestIntegration_List_RejectsWrongAPIKey(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 
 	resp := doGet(
 		t,
@@ -49,13 +49,13 @@ func TestIntegration_List_RejectsWrongAPIKey(t *testing.T) {
 
 func TestIntegration_List_HappyPath_ReturnsActiveOnly(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 
-	testapp.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-list-active",
+	testdb.SeedSubscription(t, app.DB, "alice@example.com", "golang", "go", "tok-list-active",
 		subscription.StatusActive)
-	testapp.SeedSubscription(t, app.DB, "alice@example.com", "rust-lang", "rust", "tok-list-pending",
+	testdb.SeedSubscription(t, app.DB, "alice@example.com", "rust-lang", "rust", "tok-list-pending",
 		subscription.StatusPending)
-	testapp.SeedSubscription(t, app.DB, "bob@example.com", "golang", "go", "tok-list-other",
+	testdb.SeedSubscription(t, app.DB, "bob@example.com", "golang", "go", "tok-list-other",
 		subscription.StatusActive)
 
 	q := url.Values{}
@@ -79,7 +79,7 @@ func TestIntegration_List_HappyPath_ReturnsActiveOnly(t *testing.T) {
 
 func TestIntegration_List_RequiresEmailQueryParam(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 
 	resp := doGet(
 		t,
@@ -92,7 +92,7 @@ func TestIntegration_List_RequiresEmailQueryParam(t *testing.T) {
 
 func TestIntegration_List_InvalidEmail(t *testing.T) {
 	app := envForTest(t)
-	testapp.TruncateAll(t, app.DB)
+	testdb.TruncateAll(t, app.DB)
 
 	resp := doGet(
 		t,

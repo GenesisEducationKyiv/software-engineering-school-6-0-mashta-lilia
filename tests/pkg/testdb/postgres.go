@@ -1,4 +1,6 @@
-package testapp
+// Package testdb provides postgres testcontainer wiring and SQL-level
+// fixtures (truncate, seed, status read-back) for integration suites.
+package testdb
 
 import (
 	"context"
@@ -114,8 +116,8 @@ func runMigrations(db *sql.DB) error {
 func migrationsPath() (string, error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		return "", errors.New("cannot resolve testapp package directory")
+		return "", errors.New("cannot resolve testdb package directory")
 	}
-	// file = .../tests/pkg/testapp/db.go -> repo root is three levels up.
+	// file = .../tests/pkg/testdb/postgres.go -> repo root is three levels up.
 	return filepath.Abs(filepath.Join(filepath.Dir(file), "..", "..", "..", "migrations"))
 }
