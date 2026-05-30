@@ -1,10 +1,9 @@
 package middleware
 
 import (
+	"github-release-notifier/internal/platform/tracectx"
 	"net/http"
 	"strings"
-
-	"github-release-notifier/internal/platform/tracectx"
 
 	"github.com/google/uuid"
 )
@@ -12,6 +11,7 @@ import (
 const (
 	headerTraceparent = "Traceparent"
 	headerRequestID   = "X-Request-ID"
+	traceparentParts  = 4
 )
 
 func TraceID(next http.Handler) http.Handler {
@@ -34,7 +34,7 @@ func traceIDFromRequest(r *http.Request) string {
 
 func parseTraceparent(header string) string {
 	parts := strings.Split(strings.TrimSpace(header), "-")
-	if len(parts) < 4 {
+	if len(parts) < traceparentParts {
 		return ""
 	}
 	traceID := strings.ToLower(parts[1])

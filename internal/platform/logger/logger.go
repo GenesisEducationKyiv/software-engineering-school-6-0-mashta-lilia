@@ -2,14 +2,13 @@ package logger
 
 import (
 	"context"
+	"github-release-notifier/internal/platform/tracectx"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 	"unicode"
-
-	"github-release-notifier/internal/platform/tracectx"
 )
 
 type Logger interface {
@@ -29,6 +28,7 @@ type slogLogger struct {
 	logger *slog.Logger
 }
 
+//nolint:ireturn // ADR requires callers to depend on the logger interface, not slog.
 func New(cfg Config) Logger {
 	return newWithWriter(cfg, os.Stdout)
 }
@@ -55,11 +55,12 @@ func (l *slogLogger) Error(ctx context.Context, msg string, kv ...any) {
 	l.logger.ErrorContext(ctx, msg, kv...)
 }
 
+//nolint:ireturn // Method satisfies Logger.
 func (l *slogLogger) With(kv ...any) Logger {
 	return &slogLogger{logger: l.logger.With(kv...)}
 }
 
-func newWithWriter(cfg Config, w io.Writer) Logger {
+func newWithWriter(cfg Config, w io.Writer) *slogLogger {
 	handler := slog.NewJSONHandler(w, &slog.HandlerOptions{
 		Level:       parseLevel(cfg.Level),
 		ReplaceAttr: replaceAttr,
@@ -103,9 +104,10 @@ func toSnakeCase(key string) string {
 	if key == "" {
 		return key
 	}
+	const extraCapacity = 4
 	runes := []rune(key)
 	var b strings.Builder
-	b.Grow(len(key) + 4)
+	b.Grow(len(key) + extraCapacity)
 	var previousUnderscore bool
 	for i, r := range runes {
 		switch {
