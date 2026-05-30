@@ -201,6 +201,7 @@ func (s *Store) requireRowsUpdated(ctx context.Context, result sql.Result, actio
 	return nil
 }
 
+//nolint:ireturn // Accepts injected logger or a no-op fallback.
 func optionalLogger(logs ...logger.Logger) logger.Logger {
 	if len(logs) > 0 && logs[0] != nil {
 		return logs[0]

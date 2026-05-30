@@ -159,7 +159,10 @@ func (r *Repo) Create(ctx context.Context, sub *Subscription) error {
 			pqErr.Constraint == emailRepoActiveIndex {
 			return ErrAlreadyExists
 		}
-		r.log.Error(ctx, "subscription_create_failed", "repo_owner", sub.RepoOwner, "repo_name", sub.RepoName, "err", err)
+		r.log.Error(
+			ctx, "subscription_create_failed",
+			"repo_owner", sub.RepoOwner, "repo_name", sub.RepoName, "err", err,
+		)
 		return fmt.Errorf("creating subscription: %w", err)
 	}
 	return nil
@@ -197,7 +200,10 @@ func (r *Repo) GetEmailsByRepo(ctx context.Context, owner, name string) ([]strin
 	}
 	rows, err := r.stmtGetEmailsByRepo.QueryContext(ctx, owner, name, StatusActive)
 	if err != nil {
-		r.log.Error(ctx, "subscription_get_emails_by_repo_failed", "repo_owner", owner, "repo_name", name, "err", err)
+		r.log.Error(
+			ctx, "subscription_get_emails_by_repo_failed",
+			"repo_owner", owner, "repo_name", name, "err", err,
+		)
 		return nil, fmt.Errorf("querying subscriber emails: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck // rows close error is safe to ignore
@@ -206,13 +212,19 @@ func (r *Repo) GetEmailsByRepo(ctx context.Context, owner, name string) ([]strin
 	for rows.Next() {
 		var email string
 		if err := rows.Scan(&email); err != nil {
-			r.log.Error(ctx, "subscription_email_scan_failed", "repo_owner", owner, "repo_name", name, "err", err)
+			r.log.Error(
+				ctx, "subscription_email_scan_failed",
+				"repo_owner", owner, "repo_name", name, "err", err,
+			)
 			return nil, fmt.Errorf("scanning subscriber email: %w", err)
 		}
 		emails = append(emails, email)
 	}
 	if err := rows.Err(); err != nil {
-		r.log.Error(ctx, "subscription_email_iterate_failed", "repo_owner", owner, "repo_name", name, "err", err)
+		r.log.Error(
+			ctx, "subscription_email_iterate_failed",
+			"repo_owner", owner, "repo_name", name, "err", err,
+		)
 		return nil, fmt.Errorf("iterating subscriber emails: %w", err)
 	}
 	return emails, nil
@@ -292,6 +304,7 @@ func closeStmt(name string, stmt *sql.Stmt) error {
 	return nil
 }
 
+//nolint:ireturn // Accepts injected logger or a no-op fallback.
 func optionalLogger(logs ...logger.Logger) logger.Logger {
 	if len(logs) > 0 && logs[0] != nil {
 		return logs[0]

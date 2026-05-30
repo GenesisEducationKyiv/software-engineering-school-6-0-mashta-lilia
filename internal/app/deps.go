@@ -80,7 +80,9 @@ func buildDependencies(
 	tokenGen := token.New()
 	subService := subscription.NewService(subRepo, repoStore, ghClient, mail, tokenGen)
 
-	poller, err := release.NewPoller(repoStore, subRepo, ghClient, mail, cfg.ScanInterval, log.With("component", "poller"))
+	poller, err := release.NewPoller(
+		repoStore, subRepo, ghClient, mail, cfg.ScanInterval, log.With("component", "poller"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("creating poller: %w", err)
 	}

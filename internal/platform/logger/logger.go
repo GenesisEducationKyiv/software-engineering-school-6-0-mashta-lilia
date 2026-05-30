@@ -33,6 +33,7 @@ func New(cfg Config) Logger {
 	return newWithWriter(cfg, os.Stdout)
 }
 
+//nolint:ireturn // Convenience constructor for optional logger dependencies.
 func Nop() Logger {
 	return nopLogger{}
 }
@@ -163,4 +164,5 @@ func (nopLogger) Warn(context.Context, string, ...any) {}
 
 func (nopLogger) Error(context.Context, string, ...any) {}
 
+//nolint:ireturn // Method satisfies Logger.
 func (n nopLogger) With(...any) Logger { return n }

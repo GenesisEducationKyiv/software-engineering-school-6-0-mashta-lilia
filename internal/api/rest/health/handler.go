@@ -3,9 +3,8 @@ package health
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-
 	"github-release-notifier/internal/platform/logger"
+	"net/http"
 )
 
 type checker interface {
@@ -16,12 +15,18 @@ func Handler(c checker, logs ...logger.Logger) http.HandlerFunc {
 	log := optionalLogger(logs...)
 	if c == nil {
 		return func(w http.ResponseWriter, r *http.Request) {
-			respond(r.Context(), log, w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
+			respond(
+				r.Context(), log, w, http.StatusServiceUnavailable,
+				map[string]string{"status": "unhealthy"},
+			)
 		}
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := c.Check(r.Context()); err != nil {
-			respond(r.Context(), log, w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
+			respond(
+				r.Context(), log, w, http.StatusServiceUnavailable,
+				map[string]string{"status": "unhealthy"},
+			)
 			return
 		}
 		respond(r.Context(), log, w, http.StatusOK, map[string]string{"status": "healthy"})
@@ -36,6 +41,7 @@ func respond(ctx context.Context, log logger.Logger, w http.ResponseWriter, stat
 	}
 }
 
+//nolint:ireturn // Accepts injected logger or a no-op fallback.
 func optionalLogger(logs ...logger.Logger) logger.Logger {
 	if len(logs) > 0 && logs[0] != nil {
 		return logs[0]

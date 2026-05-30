@@ -35,7 +35,9 @@ type CachedClient struct {
 	log   logger.Logger
 }
 
-func NewCachedClient(base baseClient, rdb *redis.Client, ttl time.Duration, logs ...logger.Logger) *CachedClient {
+func NewCachedClient(
+	base baseClient, rdb *redis.Client, ttl time.Duration, logs ...logger.Logger,
+) *CachedClient {
 	log := logger.Nop()
 	if len(logs) > 0 && logs[0] != nil {
 		log = logs[0]
