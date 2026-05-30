@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github-release-notifier/internal/repository"
-	"log/slog"
 	"sync"
 	"time"
+
+	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/internal/repository"
 )
 
 type repoScanReader interface {
@@ -34,7 +35,7 @@ type Poller struct {
 	github   githubReleaseClient
 	mailer   releaseNotifier
 	interval time.Duration
-	log      *slog.Logger
+	log      logger.Logger
 	scanLock sync.Mutex
 	done     chan struct{}
 	doneOnce sync.Once
@@ -46,6 +47,7 @@ func NewPoller(
 	gh githubReleaseClient,
 	mailer releaseNotifier,
 	interval time.Duration,
+	log logger.Logger,
 ) (*Poller, error) {
 	if interval <= 0 {
 		return nil, fmt.Errorf("poller interval must be > 0, got %s", interval)
@@ -62,13 +64,16 @@ func NewPoller(
 	if mailer == nil {
 		return nil, errors.New("poller: mailer is nil")
 	}
+	if log == nil {
+		log = logger.Nop()
+	}
 	return &Poller{
 		repos:    repos,
 		subs:     subs,
 		github:   gh,
 		mailer:   mailer,
 		interval: interval,
-		log:      slog.With("component", "poller"),
+		log:      log,
 		done:     make(chan struct{}),
 	}, nil
 }
@@ -79,21 +84,21 @@ func (p *Poller) Start(ctx context.Context) {
 	defer p.doneOnce.Do(func() { close(p.done) })
 
 	if ctx == nil {
-		p.log.Error("poller start failed: nil context")
+		p.log.Error(context.Background(), "poller_start_failed", "err", errors.New("nil context"))
 		return
 	}
 
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
 
-	p.log.Info("Poller started", "interval", p.interval)
+	p.log.Info(ctx, "poller_started", "interval", p.interval)
 
 	p.scan(ctx)
 
 	for {
 		select {
 		case <-ctx.Done():
-			p.log.Info("Poller stopped")
+			p.log.Info(ctx, "poller_stopped")
 			return
 		case <-ticker.C:
 			p.scan(ctx)
@@ -103,14 +108,14 @@ func (p *Poller) Start(ctx context.Context) {
 
 func (p *Poller) scan(ctx context.Context) {
 	if !p.scanLock.TryLock() {
-		p.log.Info("Previous scan still running, skipping")
+		p.log.Info(ctx, "poller_scan_skipped", "reason", "previous_scan_running")
 		return
 	}
 	defer p.scanLock.Unlock()
 
 	repos, err := p.repos.GetAll(ctx)
 	if err != nil {
-		p.log.Error("Failed to get repos", "err", err)
+		p.log.Error(ctx, "poller_get_repos_failed", "err", err)
 		return
 	}
 
@@ -125,7 +130,7 @@ func (p *Poller) scan(ctx context.Context) {
 func (p *Poller) scanRepository(ctx context.Context, repo repository.Repository) {
 	rel, err := p.github.GetLatestRelease(ctx, repo.Owner, repo.Name)
 	if err != nil {
-		p.log.Error("Failed to get release", "repo", repo.FullName(), "err", err)
+		p.log.Error(ctx, "poller_get_release_failed", "repo", repo.FullName(), "err", err)
 		return
 	}
 	if rel == nil {
@@ -138,11 +143,10 @@ func (p *Poller) scanRepository(ctx context.Context, repo repository.Repository)
 		return
 	}
 
-	p.log.Info("New release detected", "tag", rel.TagName, "repo", repo.FullName())
+	p.log.Info(ctx, "new_release_detected", "tag", rel.TagName, "repo", repo.FullName())
 
-	// Persist tag before notifying — see ADR-0007 (at-most-once).
 	if err := p.repos.UpdateLastSeen(ctx, repo.ID, rel.TagName); err != nil {
-		p.log.Error("Failed to update last seen tag", "repo", repo.FullName(), "err", err)
+		p.log.Error(ctx, "poller_update_last_seen_failed", "repo", repo.FullName(), "err", err)
 		return
 	}
 
@@ -151,20 +155,20 @@ func (p *Poller) scanRepository(ctx context.Context, repo repository.Repository)
 
 func (p *Poller) updateLastChecked(ctx context.Context, repo repository.Repository) {
 	if err := p.repos.UpdateLastChecked(ctx, repo.ID); err != nil {
-		p.log.Error("Failed to update last_checked_at", "repo", repo.FullName(), "err", err)
+		p.log.Error(ctx, "poller_update_last_checked_failed", "repo", repo.FullName(), "err", err)
 	}
 }
 
 func (p *Poller) notifySubscribers(ctx context.Context, repo repository.Repository, rel *Release) {
 	emails, err := p.subs.GetEmailsByRepo(ctx, repo.Owner, repo.Name)
 	if err != nil {
-		p.log.Error("Failed to get subscribers", "repo", repo.FullName(), "err", err)
+		p.log.Error(ctx, "poller_get_subscribers_failed", "repo", repo.FullName(), "err", err)
 		return
 	}
 
 	for _, email := range emails {
 		if err := p.mailer.SendReleaseNotification(ctx, email, repo.FullName(), rel); err != nil {
-			p.log.Error("Failed to notify subscriber", "repo", repo.FullName(), "err", err)
+			p.log.Error(ctx, "poller_notify_subscriber_failed", "repo", repo.FullName(), "err", err)
 		}
 	}
 }

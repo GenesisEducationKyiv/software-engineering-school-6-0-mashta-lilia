@@ -5,7 +5,6 @@ import (
 	"errors"
 	"github-release-notifier/internal/config"
 	"github-release-notifier/internal/platform/logger"
-	"log/slog"
 )
 
 type App struct {
@@ -31,33 +30,30 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("app: nil logger")
 	}
 
-	logger.SetDefault(a.logger)
-
 	if a.cfg.DBSSLMode == "disable" {
-		slog.Warn("DB_SSLMODE=disable — Postgres credentials and PII " +
-			"will travel in cleartext; set to require/verify-full in production")
+		a.logger.Warn(ctx, "db_sslmode_disable", "risk", "postgres credentials and pii travel in cleartext")
 	}
 
-	db, err := openAndMigrateDB(ctx, a.cfg)
+	db, err := openAndMigrateDB(ctx, a.cfg, a.logger)
 	if err != nil {
 		return err
 	}
-	defer closeQuietly("database", db.Close)
+	defer closeQuietly(ctx, a.logger, "database", db.Close)
 
 	rdb := newRedisClient(a.cfg)
-	defer closeQuietly("redis", rdb.Close)
+	defer closeQuietly(ctx, a.logger, "redis", rdb.Close)
 
 	deps, err := buildDependencies(ctx, a.cfg, db, rdb, a.logger)
 	if err != nil {
 		return err
 	}
-	defer closeQuietly("dependencies", deps.Close)
+	defer closeQuietly(ctx, a.logger, "dependencies", deps.Close)
 
-	return runHTTPServer(ctx, a.cfg, deps)
+	return runHTTPServer(ctx, a.cfg, deps, a.logger)
 }
 
-func closeQuietly(name string, closer func() error) {
+func closeQuietly(ctx context.Context, log logger.Logger, name string, closer func() error) {
 	if err := closer(); err != nil {
-		slog.Error("Failed to close resource", "resource", name, "err", err)
+		log.Error(ctx, "close_resource_failed", "resource", name, "err", err)
 	}
 }

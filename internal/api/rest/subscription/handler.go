@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/subscription"
-	"log/slog"
 	"net/http"
 )
 
@@ -18,25 +18,30 @@ type subscriptionService interface {
 
 type Handler struct {
 	svc subscriptionService
+	log logger.Logger
 }
 
-func NewHandler(svc subscriptionService) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc subscriptionService, logs ...logger.Logger) *Handler {
+	log := logger.Nop()
+	if len(logs) > 0 && logs[0] != nil {
+		log = logs[0]
+	}
+	return &Handler{svc: svc, log: log}
 }
 
 type errorResponse struct {
 	Error string `json:"error"`
 }
 
-func respondJSON(w http.ResponseWriter, status int, data any) {
+func (h *Handler) respondJSON(ctx context.Context, w http.ResponseWriter, status int, data any) {
 	// Buffer first so an encode failure can still flip the status to 500.
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(data); err != nil {
-		slog.Error("Failed to encode response", "err", err)
+		h.log.Error(ctx, "response_encode_failed", "err", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		if _, writeErr := w.Write([]byte(`{"error":"internal server error"}` + "\n")); writeErr != nil {
-			slog.Error("Failed to write fallback response", "err", writeErr)
+			h.log.Error(ctx, "fallback_response_write_failed", "err", writeErr)
 		}
 		return
 	}
@@ -44,10 +49,10 @@ func respondJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if _, err := w.Write(buf.Bytes()); err != nil {
-		slog.Error("Failed to write response", "err", err)
+		h.log.Error(ctx, "response_write_failed", "err", err)
 	}
 }
 
-func respondError(w http.ResponseWriter, status int, msg string) {
-	respondJSON(w, status, errorResponse{Error: msg})
+func (h *Handler) respondError(ctx context.Context, w http.ResponseWriter, status int, msg string) {
+	h.respondJSON(ctx, w, status, errorResponse{Error: msg})
 }

@@ -33,10 +33,8 @@ func New(cfg Config) Logger {
 	return newWithWriter(cfg, os.Stdout)
 }
 
-func SetDefault(l Logger) {
-	if log, ok := l.(*slogLogger); ok {
-		slog.SetDefault(log.logger)
-	}
+func Nop() Logger {
+	return nopLogger{}
 }
 
 func (l *slogLogger) Debug(ctx context.Context, msg string, kv ...any) {
@@ -154,3 +152,15 @@ func (h traceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 func (h traceHandler) WithGroup(name string) slog.Handler {
 	return traceHandler{handler: h.handler.WithGroup(name)}
 }
+
+type nopLogger struct{}
+
+func (nopLogger) Debug(context.Context, string, ...any) {}
+
+func (nopLogger) Info(context.Context, string, ...any) {}
+
+func (nopLogger) Warn(context.Context, string, ...any) {}
+
+func (nopLogger) Error(context.Context, string, ...any) {}
+
+func (n nopLogger) With(...any) Logger { return n }

@@ -3,34 +3,42 @@ package health
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net/http"
+
+	"github-release-notifier/internal/platform/logger"
 )
 
 type checker interface {
 	Check(ctx context.Context) error
 }
 
-func Handler(c checker) http.HandlerFunc {
+func Handler(c checker, logs ...logger.Logger) http.HandlerFunc {
+	log := optionalLogger(logs...)
 	if c == nil {
-		// Misconfigured wiring — fail closed instead of panicking on the first request.
-		return func(w http.ResponseWriter, _ *http.Request) {
-			respond(w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
+		return func(w http.ResponseWriter, r *http.Request) {
+			respond(r.Context(), log, w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
 		}
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := c.Check(r.Context()); err != nil {
-			respond(w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
+			respond(r.Context(), log, w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
 			return
 		}
-		respond(w, http.StatusOK, map[string]string{"status": "healthy"})
+		respond(r.Context(), log, w, http.StatusOK, map[string]string{"status": "healthy"})
 	}
 }
 
-func respond(w http.ResponseWriter, status int, data any) {
+func respond(ctx context.Context, log logger.Logger, w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		slog.Error("Failed to encode health response", "err", err)
+		log.Error(ctx, "health_response_encode_failed", "err", err)
 	}
+}
+
+func optionalLogger(logs ...logger.Logger) logger.Logger {
+	if len(logs) > 0 && logs[0] != nil {
+		return logs[0]
+	}
+	return logger.Nop()
 }

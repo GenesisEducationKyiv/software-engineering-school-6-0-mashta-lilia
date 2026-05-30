@@ -16,7 +16,6 @@ import (
 	"github-release-notifier/internal/release"
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/subscription"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -48,25 +47,25 @@ func newRedisClient(cfg *config.Config) *redis.Client {
 func buildDependencies(
 	ctx context.Context, cfg *config.Config, db *sql.DB, rdb *redis.Client, log logger.Logger,
 ) (*dependencies, error) {
-	subRepo, err := subscription.NewRepoWithContext(ctx, db)
+	subRepo, err := subscription.NewRepoWithContext(ctx, db, log.With("component", "subscription_repo"))
 	if err != nil {
 		return nil, fmt.Errorf("creating subscription repo: %w", err)
 	}
-	repoStore, err := repository.NewStoreWithContext(ctx, db)
+	repoStore, err := repository.NewStoreWithContext(ctx, db, log.With("component", "repository_store"))
 	if err != nil {
-		closeQuietly("subscription repo", subRepo.Close)
+		closeQuietly(ctx, log, "subscription repo", subRepo.Close)
 		return nil, fmt.Errorf("creating tracked repo store: %w", err)
 	}
 	storageReady := false
 	defer func() {
 		if !storageReady {
-			closeQuietly("subscription repo", subRepo.Close)
-			closeQuietly("tracked repo store", repoStore.Close)
+			closeQuietly(ctx, log, "subscription repo", subRepo.Close)
+			closeQuietly(ctx, log, "tracked repo store", repoStore.Close)
 		}
 	}()
 
 	base := github.NewClient(cfg.GitHubToken)
-	ghClient := selectGitHubClient(ctx, base, rdb, cfg.RedisCacheTTL)
+	ghClient := selectGitHubClient(ctx, base, rdb, cfg.RedisCacheTTL, log)
 
 	mailTemplates := mailer.NewTemplateBuilder(cfg.BaseURL)
 	mail, err := mailer.NewSMTPMailer(
@@ -81,14 +80,14 @@ func buildDependencies(
 	tokenGen := token.New()
 	subService := subscription.NewService(subRepo, repoStore, ghClient, mail, tokenGen)
 
-	poller, err := release.NewPoller(repoStore, subRepo, ghClient, mail, cfg.ScanInterval)
+	poller, err := release.NewPoller(repoStore, subRepo, ghClient, mail, cfg.ScanInterval, log.With("component", "poller"))
 	if err != nil {
 		return nil, fmt.Errorf("creating poller: %w", err)
 	}
 
-	handler := subhandler.NewHandler(subService)
+	handler := subhandler.NewHandler(subService, log.With("component", "subscription_handler"))
 	healthChecker := health.NewDBChecker(db)
-	subscribeLimiter := middleware.NewRateLimiter(rateLimitRequests, time.Minute, cfg.TrustedProxy)
+	subscribeLimiter := middleware.NewRateLimiter(rateLimitRequests, time.Minute, cfg.TrustedProxy, log)
 
 	router := rest.NewRouter(handler, healthChecker, cfg.APIKey, subscribeLimiter, "swagger.yaml", log)
 
@@ -119,13 +118,14 @@ type githubClient interface {
 
 func selectGitHubClient( //nolint:ireturn // composition root chooses between concrete impls
 	ctx context.Context, base *github.Client, rdb *redis.Client, ttl time.Duration,
+	log logger.Logger,
 ) githubClient {
 	pingCtx, cancel := context.WithTimeout(ctx, redisPingTimeout)
 	defer cancel()
 	if err := rdb.Ping(pingCtx).Err(); err != nil {
-		slog.Warn("Redis unavailable, caching disabled", "err", err)
+		log.Warn(ctx, "redis_unavailable", "err", err, "cache_enabled", false)
 		return base
 	}
-	slog.Info("Redis connected, caching enabled")
-	return github.NewCachedClient(base, rdb, ttl)
+	log.Info(ctx, "redis_connected", "cache_enabled", true)
+	return github.NewCachedClient(base, rdb, ttl, log.With("component", "github_cache"))
 }

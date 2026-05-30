@@ -5,22 +5,16 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"io"
-	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/repository"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestMain(m *testing.M) {
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	m.Run()
-}
 
 func mustNewPoller(
 	t *testing.T,
@@ -28,7 +22,7 @@ func mustNewPoller(
 	gh *mockGitHubReleaseClient, mailer *mockReleaseNotifier, interval time.Duration,
 ) *Poller {
 	t.Helper()
-	p, err := NewPoller(repos, subs, gh, mailer, interval)
+	p, err := NewPoller(repos, subs, gh, mailer, interval, logger.Nop())
 	require.NoError(t, err)
 	return p
 }
@@ -37,7 +31,7 @@ func TestNewPoller_RejectsNonPositiveInterval(t *testing.T) {
 	t.Parallel()
 	for _, d := range []time.Duration{0, -time.Second} {
 		t.Run(d.String(), func(t *testing.T) {
-			_, err := NewPoller(nil, nil, nil, nil, d)
+			_, err := NewPoller(nil, nil, nil, nil, d, logger.Nop())
 			assert.Error(t, err)
 		})
 	}

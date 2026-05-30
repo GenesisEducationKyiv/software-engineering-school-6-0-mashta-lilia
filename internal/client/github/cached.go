@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/release"
-	"log/slog"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,10 +32,15 @@ type CachedClient struct {
 	base  baseClient
 	redis *redis.Client
 	ttl   time.Duration
+	log   logger.Logger
 }
 
-func NewCachedClient(base baseClient, rdb *redis.Client, ttl time.Duration) *CachedClient {
-	return &CachedClient{base: base, redis: rdb, ttl: ttl}
+func NewCachedClient(base baseClient, rdb *redis.Client, ttl time.Duration, logs ...logger.Logger) *CachedClient {
+	log := logger.Nop()
+	if len(logs) > 0 && logs[0] != nil {
+		log = logs[0]
+	}
+	return &CachedClient{base: base, redis: rdb, ttl: ttl, log: log}
 }
 
 func (c *CachedClient) RepoExists(ctx context.Context, owner, name string) (bool, error) {
@@ -47,7 +52,7 @@ func (c *CachedClient) RepoExists(ctx context.Context, owner, name string) (bool
 	}
 	if !errors.Is(err, redis.Nil) {
 		redisCacheErrors.WithLabelValues("get_repo").Inc()
-		slog.Debug("Redis GET failed for repo_exists", "err", err)
+		c.log.Debug(ctx, "redis_get_failed", "op", "repo_exists", "err", err)
 	}
 
 	exists, err := c.base.RepoExists(ctx, owner, name)
@@ -59,7 +64,7 @@ func (c *CachedClient) RepoExists(ctx context.Context, owner, name string) (bool
 	if exists {
 		if setErr := c.redis.Set(ctx, key, "1", c.ttl).Err(); setErr != nil {
 			redisCacheErrors.WithLabelValues("set_repo").Inc()
-			slog.Debug("Redis SET failed for repo_exists", "err", setErr)
+			c.log.Debug(ctx, "redis_set_failed", "op", "repo_exists", "err", setErr)
 		}
 	}
 
@@ -77,10 +82,10 @@ func (c *CachedClient) GetLatestRelease(ctx context.Context, owner, name string)
 			return &rel, nil
 		}
 		redisCacheErrors.WithLabelValues("unmarshal_release").Inc()
-		slog.Debug("Redis cached release JSON unmarshal failed", "err", unmarshalErr)
+		c.log.Debug(ctx, "redis_unmarshal_failed", "op", "release", "err", unmarshalErr)
 	} else if !errors.Is(err, redis.Nil) {
 		redisCacheErrors.WithLabelValues("get_release").Inc()
-		slog.Debug("Redis GET failed for release", "err", err)
+		c.log.Debug(ctx, "redis_get_failed", "op", "release", "err", err)
 	}
 
 	rel, err := c.base.GetLatestRelease(ctx, owner, name)
@@ -94,11 +99,11 @@ func (c *CachedClient) GetLatestRelease(ctx context.Context, owner, name string)
 	if data, marshalErr := json.Marshal(rel); marshalErr == nil {
 		if setErr := c.redis.Set(ctx, key, data, c.ttl).Err(); setErr != nil {
 			redisCacheErrors.WithLabelValues("set_release").Inc()
-			slog.Debug("Redis SET failed for release", "err", setErr)
+			c.log.Debug(ctx, "redis_set_failed", "op", "release", "err", setErr)
 		}
 	} else {
 		redisCacheErrors.WithLabelValues("marshal_release").Inc()
-		slog.Debug("Redis release JSON marshal failed", "err", marshalErr)
+		c.log.Debug(ctx, "redis_marshal_failed", "op", "release", "err", marshalErr)
 	}
 
 	return rel, nil

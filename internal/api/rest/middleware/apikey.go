@@ -1,19 +1,21 @@
 package middleware
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
-	"log/slog"
+	"github-release-notifier/internal/platform/logger"
 	"net/http"
 )
 
 // Empty apiKey fails closed; never silently bypass auth on a PII endpoint.
-func APIKeyAuth(apiKey string) func(http.Handler) http.Handler {
+func APIKeyAuth(apiKey string, logs ...logger.Logger) func(http.Handler) http.Handler {
+	log := optionalLogger(logs...)
 	if apiKey == "" {
 		return func(_ http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				writeAuthError(w, "API key authentication is not configured")
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeAuthError(r.Context(), log, w, "API key authentication is not configured")
 			})
 		}
 	}
@@ -25,7 +27,7 @@ func APIKeyAuth(apiKey string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			got := sha256.Sum256([]byte(r.Header.Get("X-API-Key")))
 			if subtle.ConstantTimeCompare(got[:], expected[:]) != 1 {
-				writeAuthError(w, "invalid or missing API key")
+				writeAuthError(r.Context(), log, w, "invalid or missing API key")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -33,10 +35,10 @@ func APIKeyAuth(apiKey string) func(http.Handler) http.Handler {
 	}
 }
 
-func writeAuthError(w http.ResponseWriter, msg string) {
+func writeAuthError(ctx context.Context, log logger.Logger, w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
-		slog.Error("Failed to encode auth error response", "err", err)
+		log.Error(ctx, "auth_error_encode_failed", "err", err)
 	}
 }
