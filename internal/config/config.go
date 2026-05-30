@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log/slog"
 	"net/url"
 	"os"
 	"strconv"
@@ -14,6 +13,7 @@ const (
 	defaultSMTPPort     = 587
 	defaultScanInterval = 5 * time.Minute
 	defaultCacheTTL     = 10 * time.Minute
+	defaultServiceName  = "github-release-notifier"
 )
 
 type Config struct {
@@ -45,7 +45,8 @@ type Config struct {
 
 	TrustedProxy bool
 
-	LogLevel slog.Level
+	LogLevel    string
+	ServiceName string
 }
 
 func (c *Config) DatabaseURL() string {
@@ -114,7 +115,8 @@ func NewFromEnv() (*Config, error) {
 
 		TrustedProxy: trustedProxy,
 
-		LogLevel: logLevel,
+		LogLevel:    logLevel,
+		ServiceName: envOrDefault("SERVICE_NAME", defaultServiceName),
 	}, nil
 }
 
@@ -170,17 +172,17 @@ func envBool(key string, fallback bool) (bool, error) {
 	return b, nil
 }
 
-func parseLogLevel(raw string) (slog.Level, error) {
+func parseLogLevel(raw string) (string, error) {
 	switch strings.ToLower(raw) {
 	case "debug":
-		return slog.LevelDebug, nil
+		return "debug", nil
 	case "info":
-		return slog.LevelInfo, nil
+		return "info", nil
 	case "warn", "warning":
-		return slog.LevelWarn, nil
+		return "warn", nil
 	case "error":
-		return slog.LevelError, nil
+		return "error", nil
 	default:
-		return 0, fmt.Errorf("env LOG_LEVEL: unknown level %q (want debug|info|warn|error)", raw)
+		return "", fmt.Errorf("env LOG_LEVEL: unknown level %q (want debug|info|warn|error)", raw)
 	}
 }

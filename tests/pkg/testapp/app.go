@@ -9,6 +9,7 @@ import (
 	"github-release-notifier/internal/api/rest/middleware"
 	"github-release-notifier/internal/client/mailer"
 	"github-release-notifier/internal/platform/health"
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/platform/token"
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/subscription"
@@ -93,7 +94,8 @@ func New(ctx context.Context) (*App, func(), error) {
 	svc := subscription.NewService(subRepo, repoStore, gh, mail, token.New())
 	handler := subhandler.NewHandler(svc)
 	hc := health.NewDBChecker(db)
-	router := rest.NewRouter(handler, hc, APIKey, rl, "")
+	log := logger.New(logger.Config{Level: "warn", ServiceName: "test"})
+	router := rest.NewRouter(handler, hc, APIKey, rl, "", log)
 	srv := httptest.NewServer(router)
 	cleanups = append(cleanups, srv.Close)
 

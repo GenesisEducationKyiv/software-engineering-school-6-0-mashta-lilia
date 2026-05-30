@@ -38,14 +38,14 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "config: %v\n", err)
 		return 1
 	}
-	l := logger.New(cfg.LogLevel)
-	l.Info("Starting", "commit", commit, "build_time", buildTime)
+	l := logger.New(logger.Config{Level: cfg.LogLevel, ServiceName: cfg.ServiceName})
+	l.Info(context.Background(), "starting", "commit", commit, "build_time", buildTime)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	if err := app.New(cfg, l).Run(ctx); err != nil {
-		l.Error("App stopped unexpectedly", "err", fmt.Errorf("app: run: %w", err))
+		l.Error(ctx, "app_stopped_unexpectedly", "err", fmt.Errorf("app: run: %w", err))
 		return 1
 	}
 	return 0

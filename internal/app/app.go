@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"github-release-notifier/internal/config"
+	"github-release-notifier/internal/platform/logger"
 	"log/slog"
 )
 
 type App struct {
 	cfg    *config.Config
-	logger *slog.Logger
+	logger logger.Logger
 }
 
-func New(cfg *config.Config, l *slog.Logger) *App {
+func New(cfg *config.Config, l logger.Logger) *App {
 	return &App{cfg: cfg, logger: l}
 }
 
@@ -30,8 +31,7 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("app: nil logger")
 	}
 
-	// Required so package-level slog.* calls honor the configured level.
-	slog.SetDefault(a.logger)
+	logger.SetDefault(a.logger)
 
 	if a.cfg.DBSSLMode == "disable" {
 		slog.Warn("DB_SSLMODE=disable — Postgres credentials and PII " +
@@ -47,7 +47,7 @@ func (a *App) Run(ctx context.Context) error {
 	rdb := newRedisClient(a.cfg)
 	defer closeQuietly("redis", rdb.Close)
 
-	deps, err := buildDependencies(ctx, a.cfg, db, rdb)
+	deps, err := buildDependencies(ctx, a.cfg, db, rdb, a.logger)
 	if err != nil {
 		return err
 	}

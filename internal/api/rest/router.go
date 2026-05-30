@@ -6,6 +6,7 @@ import (
 	"github-release-notifier/internal/api/rest/health"
 	"github-release-notifier/internal/api/rest/middleware"
 	"github-release-notifier/internal/api/rest/subscription"
+	"github-release-notifier/internal/platform/logger"
 	"log/slog"
 	"net/http"
 
@@ -24,11 +25,12 @@ func NewRouter(
 	apiKey string,
 	subscribeLimiter *middleware.RateLimiter,
 	swaggerPath string,
+	log logger.Logger,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
-	r.Use(chimw.RequestID)
-	r.Use(middleware.AccessLog)
+	r.Use(middleware.TraceID)
+	r.Use(middleware.AccessLog(log))
 	r.Use(chimw.Recoverer)
 	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.Metrics)

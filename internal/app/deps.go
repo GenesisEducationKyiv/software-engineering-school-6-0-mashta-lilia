@@ -11,6 +11,7 @@ import (
 	"github-release-notifier/internal/client/mailer"
 	"github-release-notifier/internal/config"
 	"github-release-notifier/internal/platform/health"
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/platform/token"
 	"github-release-notifier/internal/release"
 	"github-release-notifier/internal/repository"
@@ -45,7 +46,7 @@ func newRedisClient(cfg *config.Config) *redis.Client {
 }
 
 func buildDependencies(
-	ctx context.Context, cfg *config.Config, db *sql.DB, rdb *redis.Client,
+	ctx context.Context, cfg *config.Config, db *sql.DB, rdb *redis.Client, log logger.Logger,
 ) (*dependencies, error) {
 	subRepo, err := subscription.NewRepoWithContext(ctx, db)
 	if err != nil {
@@ -89,7 +90,7 @@ func buildDependencies(
 	healthChecker := health.NewDBChecker(db)
 	subscribeLimiter := middleware.NewRateLimiter(rateLimitRequests, time.Minute, cfg.TrustedProxy)
 
-	router := rest.NewRouter(handler, healthChecker, cfg.APIKey, subscribeLimiter, "swagger.yaml")
+	router := rest.NewRouter(handler, healthChecker, cfg.APIKey, subscribeLimiter, "swagger.yaml", log)
 
 	storageReady = true
 	return &dependencies{
