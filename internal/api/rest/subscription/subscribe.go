@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+
+	"github-release-notifier/internal/platform/logger"
 )
 
 const maxSubscribeBodyBytes = 1 << 20 // 1 MiB cap; body only needs email + repo
@@ -35,10 +37,12 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.log.Debug(r.Context(), "subscribe_request", "body", bodyForLog(map[string]any{
-		"email": req.Email,
-		"repo":  req.Repo,
-	}))
+	if h.log.Enabled(r.Context(), logger.LevelDebug) {
+		h.log.Debug(r.Context(), "subscribe_request", "body", bodyForLog(map[string]any{
+			"email": req.Email,
+			"repo":  req.Repo,
+		}))
+	}
 
 	if err := h.svc.Subscribe(r.Context(), req.Email, req.Repo); err != nil {
 		h.writeServiceError(r.Context(), w, err)

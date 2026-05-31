@@ -22,11 +22,7 @@ type Handler struct {
 }
 
 func NewHandler(svc subscriptionService, logs ...logger.Logger) *Handler {
-	log := logger.Nop()
-	if len(logs) > 0 && logs[0] != nil {
-		log = logs[0]
-	}
-	return &Handler{svc: svc, log: log}
+	return &Handler{svc: svc, log: logger.Or(logs...)}
 }
 
 type errorResponse struct {

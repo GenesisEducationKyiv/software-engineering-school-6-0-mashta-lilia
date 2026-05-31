@@ -66,8 +66,8 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total[1m])) by (route)",
-          "legendFormat": "{{route}}",
+          "expr": "sum(rate(http_requests_total[1m])) by (path)",
+          "legendFormat": "{{path}}",
           "refId": "A"
         }
       ],

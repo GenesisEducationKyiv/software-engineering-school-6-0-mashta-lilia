@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github-release-notifier/internal/platform/tracectx"
 	"github-release-notifier/internal/release"
 	"net/http"
 	"net/url"
@@ -84,6 +85,10 @@ func (c *Client) doRequest(ctx context.Context, rawURL string) (*http.Response, 
 		req.Header.Set("Accept", "application/vnd.github.v3+json")
 		if c.token != "" {
 			req.Header.Set("Authorization", "Bearer "+c.token)
+		}
+		if traceID, ok := tracectx.FromContext(ctx); ok && len(traceID) == 32 {
+			req.Header.Set("Traceparent", "00-"+traceID+"-0000000000000000-01")
+			req.Header.Set("X-Request-ID", traceID)
 		}
 
 		resp, err := c.httpClient.Do(req)

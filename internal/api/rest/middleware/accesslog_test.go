@@ -45,6 +45,8 @@ func (l *recordingLogger) With(_ ...any) logger.Logger {
 	return l
 }
 
+func (l *recordingLogger) Enabled(context.Context, logger.Level) bool { return true }
+
 func (l *recordingLogger) record(ctx context.Context, msg string, kv ...any) {
 	fields := make(map[string]any, len(kv)/2)
 	for i := 0; i+1 < len(kv); i += 2 {
@@ -87,7 +89,7 @@ func TestAccessLog_RedactsTokenFromConfirmPath(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + "/api/confirm/super-secret-bearer-token")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Len(t, log.entries, 1)
 	logged := log.entries[0].fields["route"].(string)
@@ -110,7 +112,7 @@ func TestAccessLog_RedactsEmailQueryParam(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + "/api/subscriptions?email=alice%40example.com")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Len(t, log.entries, 1)
 	logged := log.entries[0].fields["route"].(string)

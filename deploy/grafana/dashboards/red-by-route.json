@@ -66,8 +66,8 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{route=~\"$route\"}[1m])) by (route)",
-          "legendFormat": "{{route}}",
+          "expr": "sum(rate(http_requests_total{path=~\"$path\"}[1m])) by (path)",
+          "legendFormat": "{{path}}",
           "refId": "A"
         }
       ],
@@ -119,8 +119,8 @@
       },
       "targets": [
         {
-          "expr": "100 * sum(rate(http_requests_total{route=~\"$route\",status=~\"5..\"}[5m])) by (route) / sum(rate(http_requests_total{route=~\"$route\"}[5m])) by (route)",
-          "legendFormat": "{{route}}",
+          "expr": "100 * sum(rate(http_requests_total{path=~\"$path\",status=~\"5..\"}[5m])) by (path) / sum(rate(http_requests_total{path=~\"$path\"}[5m])) by (path)",
+          "legendFormat": "{{path}}",
           "refId": "A"
         }
       ],
@@ -171,8 +171,8 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{route=~\"$route\"}[5m])) by (le, route))",
-          "legendFormat": "{{route}} p95",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{path=~\"$path\"}[5m])) by (le, path))",
+          "legendFormat": "{{path}} p95",
           "refId": "A"
         }
       ],
@@ -223,8 +223,8 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{route=~\"$route\"}[5m])) by (le, route))",
-          "legendFormat": "{{route}} p99",
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{path=~\"$path\"}[5m])) by (le, path))",
+          "legendFormat": "{{path}} p99",
           "refId": "A"
         }
       ],
@@ -300,15 +300,15 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(http_requests_total, route)",
+        "definition": "label_values(http_requests_total, path)",
         "hide": 0,
         "includeAll": true,
-        "label": "Route",
+        "label": "Path",
         "multi": true,
-        "name": "route",
+        "name": "path",
         "options": [],
         "query": {
-          "query": "label_values(http_requests_total, route)",
+          "query": "label_values(http_requests_total, path)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,

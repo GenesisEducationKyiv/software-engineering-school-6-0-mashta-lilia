@@ -30,7 +30,7 @@ func TestIntegration_List_RejectsMissingAPIKey(t *testing.T) {
 	testdb.TruncateAll(t, app.DB)
 
 	resp := doGet(t, app.Server.URL+"/api/subscriptions?email=alice@example.com", nil)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
@@ -43,7 +43,7 @@ func TestIntegration_List_RejectsWrongAPIKey(t *testing.T) {
 		app.Server.URL+"/api/subscriptions?email=alice@example.com",
 		map[string]string{"X-API-Key": "wrong-key"},
 	)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
@@ -66,7 +66,7 @@ func TestIntegration_List_HappyPath_ReturnsActiveOnly(t *testing.T) {
 		app.Server.URL+"/api/subscriptions?"+q.Encode(),
 		map[string]string{"X-API-Key": app.APIKey},
 	)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var subs []subscription.Subscription
@@ -86,7 +86,7 @@ func TestIntegration_List_RequiresEmailQueryParam(t *testing.T) {
 		app.Server.URL+"/api/subscriptions",
 		map[string]string{"X-API-Key": app.APIKey},
 	)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
@@ -99,6 +99,6 @@ func TestIntegration_List_InvalidEmail(t *testing.T) {
 		app.Server.URL+"/api/subscriptions?email=not-an-email",
 		map[string]string{"X-API-Key": app.APIKey},
 	)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }

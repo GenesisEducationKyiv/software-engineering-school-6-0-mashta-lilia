@@ -11,12 +11,22 @@ import (
 	"unicode"
 )
 
+type Level int
+
+const (
+	LevelDebug Level = -4
+	LevelInfo  Level = 0
+	LevelWarn  Level = 4
+	LevelError Level = 8
+)
+
 type Logger interface {
 	Debug(ctx context.Context, msg string, kv ...any)
 	Info(ctx context.Context, msg string, kv ...any)
 	Warn(ctx context.Context, msg string, kv ...any)
 	Error(ctx context.Context, msg string, kv ...any)
 	With(kv ...any) Logger
+	Enabled(ctx context.Context, level Level) bool
 }
 
 type Config struct {
@@ -38,6 +48,14 @@ func Nop() Logger {
 	return nopLogger{}
 }
 
+//nolint:ireturn // Accepts injected logger or a no-op fallback.
+func Or(logs ...Logger) Logger {
+	if len(logs) > 0 && logs[0] != nil {
+		return logs[0]
+	}
+	return Nop()
+}
+
 func (l *slogLogger) Debug(ctx context.Context, msg string, kv ...any) {
 	l.logger.DebugContext(ctx, msg, kv...)
 }
@@ -57,6 +75,10 @@ func (l *slogLogger) Error(ctx context.Context, msg string, kv ...any) {
 //nolint:ireturn // Method satisfies Logger.
 func (l *slogLogger) With(kv ...any) Logger {
 	return &slogLogger{logger: l.logger.With(kv...)}
+}
+
+func (l *slogLogger) Enabled(ctx context.Context, level Level) bool {
+	return l.logger.Enabled(ctx, slog.Level(level))
 }
 
 func newWithWriter(cfg Config, w io.Writer) *slogLogger {
@@ -89,12 +111,23 @@ func replaceAttr(_ []string, attr slog.Attr) slog.Attr {
 	case slog.TimeKey:
 		attr.Key = "timestamp"
 		attr.Value = slog.StringValue(attr.Value.Time().UTC().Format(time.RFC3339Nano))
+		return attr
 	case slog.LevelKey:
 		attr.Value = slog.StringValue(strings.ToLower(attr.Value.String()))
+		return attr
 	case "err":
 		attr.Key = "error"
 	default:
 		attr.Key = toSnakeCase(attr.Key)
+	}
+	if isSensitiveKey(attr.Key) {
+		attr.Value = slog.StringValue(redactedValue)
+		return attr
+	}
+	if attr.Value.Kind() == slog.KindAny {
+		if redacted := redactValue(attr.Value.Any()); redacted != nil {
+			attr.Value = slog.AnyValue(redacted)
+		}
 	}
 	return attr
 }
@@ -140,10 +173,13 @@ func (h traceHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h traceHandler) Handle(ctx context.Context, record slog.Record) error {
-	if traceID, ok := tracectx.FromContext(ctx); ok && traceID != "" {
-		record.AddAttrs(slog.String("trace_id", traceID))
+	traceID, ok := tracectx.FromContext(ctx)
+	if !ok || traceID == "" {
+		return h.handler.Handle(ctx, record)
 	}
-	return h.handler.Handle(ctx, record)
+	cloned := record.Clone()
+	cloned.AddAttrs(slog.String("trace_id", traceID))
+	return h.handler.Handle(ctx, cloned)
 }
 
 func (h traceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
@@ -166,3 +202,5 @@ func (nopLogger) Error(context.Context, string, ...any) {}
 
 //nolint:ireturn // Method satisfies Logger.
 func (n nopLogger) With(...any) Logger { return n }
+
+func (nopLogger) Enabled(context.Context, Level) bool { return false }

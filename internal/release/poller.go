@@ -5,10 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/internal/platform/tracectx"
 	"github-release-notifier/internal/repository"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+const notifyWorkers = 8
 
 type repoScanReader interface {
 	GetAll(ctx context.Context) ([]repository.Repository, error)
@@ -105,12 +110,14 @@ func (p *Poller) Start(ctx context.Context) {
 	}
 }
 
-func (p *Poller) scan(ctx context.Context) {
+func (p *Poller) scan(parentCtx context.Context) {
 	if !p.scanLock.TryLock() {
-		p.log.Info(ctx, "poller_scan_skipped", "reason", "previous_scan_running")
+		p.log.Info(parentCtx, "poller_scan_skipped", "reason", "previous_scan_running")
 		return
 	}
 	defer p.scanLock.Unlock()
+
+	ctx := tracectx.WithTraceID(parentCtx, uuid.NewString())
 
 	repos, err := p.repos.GetAll(ctx)
 	if err != nil {
@@ -165,9 +172,43 @@ func (p *Poller) notifySubscribers(ctx context.Context, repo repository.Reposito
 		return
 	}
 
-	for _, email := range emails {
-		if err := p.mailer.SendReleaseNotification(ctx, email, repo.FullName(), rel); err != nil {
-			p.log.Error(ctx, "poller_notify_subscriber_failed", "repo", repo.FullName(), "err", err)
+	workers := notifyWorkers
+	if len(emails) < workers {
+		workers = len(emails)
+	}
+	if workers <= 1 {
+		for _, email := range emails {
+			p.sendOne(ctx, repo, rel, email)
 		}
+		return
+	}
+
+	jobs := make(chan string)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for email := range jobs {
+				p.sendOne(ctx, repo, rel, email)
+			}
+		}()
+	}
+	for _, email := range emails {
+		select {
+		case <-ctx.Done():
+			close(jobs)
+			wg.Wait()
+			return
+		case jobs <- email:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+}
+
+func (p *Poller) sendOne(ctx context.Context, repo repository.Repository, rel *Release, email string) {
+	if err := p.mailer.SendReleaseNotification(ctx, email, repo.FullName(), rel); err != nil {
+		p.log.Error(ctx, "poller_notify_subscriber_failed", "repo", repo.FullName(), "err", err)
 	}
 }

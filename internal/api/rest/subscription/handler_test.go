@@ -75,7 +75,7 @@ func TestSubscribe_Success(t *testing.T) {
 	resp, err := http.Post(srv.URL+"/api/subscribe", "application/json",
 		strings.NewReader(`{"email":"a@b.com","repo":"golang/go"}`))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	m.AssertExpectations(t)
@@ -88,7 +88,7 @@ func TestSubscribe_MalformedJSON(t *testing.T) {
 	resp, err := http.Post(srv.URL+"/api/subscribe", "application/json",
 		strings.NewReader(`{not valid json`))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	m.AssertNotCalled(t, "Subscribe", mock.Anything, mock.Anything, mock.Anything)
@@ -101,7 +101,7 @@ func TestSubscribe_UnknownFieldsRejected(t *testing.T) {
 	resp, err := http.Post(srv.URL+"/api/subscribe", "application/json",
 		strings.NewReader(`{"email":"a@b.com","repo":"x/y","extra":"nope"}`))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	m.AssertNotCalled(t, "Subscribe", mock.Anything, mock.Anything, mock.Anything)
@@ -114,7 +114,7 @@ func TestSubscribe_TrailingGarbageRejected(t *testing.T) {
 	resp, err := http.Post(srv.URL+"/api/subscribe", "application/json",
 		strings.NewReader(`{"email":"a@b.com","repo":"x/y"}{"another":"object"}`))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode,
 		"trailing data after JSON object should be rejected")
@@ -145,7 +145,7 @@ func TestSubscribe_ErrorMapping(t *testing.T) {
 			resp, err := http.Post(srv.URL+"/api/subscribe", "application/json",
 				strings.NewReader(`{"email":"a@b.com","repo":"x/y"}`))
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := readAll(t, resp)
 			require.NoError(t, err)
@@ -162,7 +162,7 @@ func TestConfirm_Success(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + "/api/confirm/the-token")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	m.AssertExpectations(t)
@@ -178,7 +178,7 @@ func TestConfirm_TokenNotFound_LeaksNoDifferenceFromInactive(t *testing.T) {
 		require.NoError(t, err)
 		body, readErr := readAll(t, resp)
 		require.NoError(t, readErr)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode, "err=%v", e)
 		assert.Equal(t, "invalid or expired token", decodeError(t, body), "err=%v", e)
@@ -192,7 +192,7 @@ func TestUnsubscribe_Success(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + "/api/unsubscribe/the-token")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	m.AssertExpectations(t)
@@ -205,7 +205,7 @@ func TestUnsubscribe_TokenNotFound(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + "/api/unsubscribe/anything")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
@@ -216,7 +216,7 @@ func TestList_RequiresEmailQuery(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + "/api/subscriptions")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	m.AssertNotCalled(t, "GetSubscriptions", mock.Anything, mock.Anything)
@@ -232,7 +232,7 @@ func TestList_Success(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + "/api/subscriptions?email=a@b.com")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	body, err := readAll(t, resp)
@@ -252,7 +252,7 @@ func TestList_InvalidEmailFromService(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + "/api/subscriptions?email=not-an-email")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	m.AssertExpectations(t)

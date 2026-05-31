@@ -27,7 +27,7 @@ func TestIntegration_Subscribe_HappyPath(t *testing.T) {
 		strings.NewReader(`{"email":"alice@example.com","repo":"golang/go"}`),
 	)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -58,7 +58,7 @@ func TestIntegration_Subscribe_RepoNotFoundOnGitHub(t *testing.T) {
 		strings.NewReader(`{"email":"alice@example.com","repo":"ghost/repo"}`),
 	)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
@@ -77,6 +77,6 @@ func TestIntegration_Subscribe_DuplicateActiveSubscription(t *testing.T) {
 		strings.NewReader(`{"email":"alice@example.com","repo":"golang/go"}`),
 	)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 }

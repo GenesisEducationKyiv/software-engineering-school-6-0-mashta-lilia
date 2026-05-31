@@ -29,10 +29,8 @@ filebeat.autodiscover:
 #           add_error_key: true
 
 processors:
-  - add_docker_metadata:
-      host: "unix:///var/run/docker.sock"
   - drop_fields:
-      fields: ["agent", "ecs", "input", "host", "container", "docker", "log", "stream"]
+      fields: ["agent", "ecs", "input", "host", "log", "stream"]
       ignore_missing: true
 
 output.elasticsearch:

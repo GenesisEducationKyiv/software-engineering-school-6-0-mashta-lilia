@@ -12,7 +12,7 @@ type checker interface {
 }
 
 func Handler(c checker, logs ...logger.Logger) http.HandlerFunc {
-	log := optionalLogger(logs...)
+	log := logger.Or(logs...)
 	if c == nil {
 		return func(w http.ResponseWriter, r *http.Request) {
 			respond(
@@ -39,12 +39,4 @@ func respond(ctx context.Context, log logger.Logger, w http.ResponseWriter, stat
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.Error(ctx, "health_response_encode_failed", "err", err)
 	}
-}
-
-//nolint:ireturn // Accepts injected logger or a no-op fallback.
-func optionalLogger(logs ...logger.Logger) logger.Logger {
-	if len(logs) > 0 && logs[0] != nil {
-		return logs[0]
-	}
-	return logger.Nop()
 }

@@ -18,7 +18,7 @@ func TestIntegration_Root_ReturnsServiceInfo(t *testing.T) {
 
 	resp, err := http.Get(app.Server.URL + "/")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
@@ -35,7 +35,7 @@ func TestIntegration_Health_OK(t *testing.T) {
 
 	resp, err := http.Get(app.Server.URL + "/health")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	var body map[string]string
@@ -49,7 +49,7 @@ func TestIntegration_Metrics_Exposed(t *testing.T) {
 
 	resp, err := http.Get(app.Server.URL + "/metrics")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	body, err := io.ReadAll(resp.Body)
@@ -64,7 +64,7 @@ func TestIntegration_SecurityHeaders_PresentEverywhere(t *testing.T) {
 
 	resp, err := http.Get(app.Server.URL + "/")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
 	assert.Equal(t, "DENY", resp.Header.Get("X-Frame-Options"))

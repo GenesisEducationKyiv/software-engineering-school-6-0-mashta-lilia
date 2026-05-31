@@ -40,3 +40,16 @@ func TestRedact_DoesNotMutateInput(t *testing.T) {
 	assert.Equal(t, "alice@example.com", in["email"])
 	assert.Equal(t, "key-123", in["nested"].(map[string]any)["api_key"])
 }
+
+func TestRedact_HTTPHeaderShape(t *testing.T) {
+	in := map[string][]string{
+		"Authorization": {"Bearer abc123"},
+		"User-Agent":    {"curl/8"},
+	}
+
+	got := Redact("", in).(map[string][]string)
+
+	assert.Equal(t, []string{redactedValue}, got["Authorization"])
+	assert.Equal(t, []string{"curl/8"}, got["User-Agent"])
+	assert.Equal(t, []string{"Bearer abc123"}, in["Authorization"])
+}

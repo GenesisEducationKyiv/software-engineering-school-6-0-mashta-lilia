@@ -43,6 +43,16 @@ func redactValue(val any) any {
 			cp[k] = nested
 		}
 		return cp
+	case map[string][]string:
+		cp := make(map[string][]string, len(v))
+		for k, nested := range v {
+			if isSensitiveKey(k) {
+				cp[k] = []string{redactedValue}
+				continue
+			}
+			cp[k] = append([]string(nil), nested...)
+		}
+		return cp
 	case []any:
 		cp := make([]any, len(v))
 		for i, nested := range v {
