@@ -193,4 +193,3 @@ func (s *Store) requireRowsUpdated(ctx context.Context, result sql.Result, actio
 	}
 	return nil
 }
-

@@ -3,10 +3,9 @@ package subscription
 import (
 	"encoding/json"
 	"errors"
+	"github-release-notifier/internal/platform/logger"
 	"io"
 	"net/http"
-
-	"github-release-notifier/internal/platform/logger"
 )
 
 const maxSubscribeBodyBytes = 1 << 20 // 1 MiB cap; body only needs email + repo

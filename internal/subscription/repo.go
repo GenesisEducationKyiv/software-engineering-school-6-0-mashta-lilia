@@ -149,7 +149,8 @@ func (r *Repo) Create(ctx context.Context, sub *Subscription) error {
 	if err := r.ensurePrepared(ctx); err != nil {
 		return err
 	}
-	if err := r.stmtCreate.QueryRowContext(ctx,
+	if err := r.stmtCreate.QueryRowContext(
+		ctx,
 		sub.Email, sub.RepoOwner, sub.RepoName, sub.Token, sub.Status,
 	).Scan(&sub.ID, &sub.CreatedAt, &sub.UpdatedAt); err != nil {
 		// Authoritative guard for concurrent dupes (the service pre-check is a soft optimization).
@@ -281,4 +282,3 @@ func closeStmt(name string, stmt *sql.Stmt) error {
 	}
 	return nil
 }
-
