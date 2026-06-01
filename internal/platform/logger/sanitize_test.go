@@ -17,9 +17,33 @@ func TestRedact_SensitiveKeys(t *testing.T) {
 		"jwt",
 		"card",
 		"cvv",
+		"apiKey",
+		"api-key",
+		"x-api-key",
+		"X-API-Key",
+		"authToken",
+		"auth_token",
+		"userEmail",
+		"User-Password",
 	} {
 		t.Run(key, func(t *testing.T) {
 			assert.Equal(t, redactedValue, Redact(key, "secret-value"))
+		})
+	}
+}
+
+func TestRedact_BenignKeys(t *testing.T) {
+	for _, key := range []string{
+		"repo",
+		"owner",
+		"tokenizer",
+		"tokensize",
+		"keyword",
+		"emailer",
+	} {
+		t.Run(key, func(t *testing.T) {
+			assert.Equal(t, "not-a-secret", Redact(key, "not-a-secret"),
+				"benign key must not be over-redacted")
 		})
 	}
 }

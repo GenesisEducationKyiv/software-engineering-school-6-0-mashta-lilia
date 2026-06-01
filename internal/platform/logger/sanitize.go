@@ -65,11 +65,13 @@ func redactValue(val any) any {
 }
 
 func isSensitiveKey(key string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(key))
-	if normalized == "api_key" || normalized == "apikey" {
+	trimmed := strings.TrimSpace(key)
+	normalized := strings.ToLower(trimmed)
+	stripped := stripKeySeparators(normalized)
+	if strings.Contains(stripped, "apikey") {
 		return true
 	}
-	for _, part := range keyParts(normalized) {
+	for _, part := range keyParts(trimmed) {
 		if _, ok := sensitiveKeys[part]; ok {
 			return true
 		}
@@ -77,21 +79,33 @@ func isSensitiveKey(key string) bool {
 	return false
 }
 
+var keySeparators = strings.NewReplacer("-", "", "_", "", ".", "", " ", "")
+
+func stripKeySeparators(s string) string { return keySeparators.Replace(s) }
+
 func keyParts(key string) []string {
 	var parts []string
 	var b strings.Builder
-	for _, r := range key {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			b.WriteRune(unicode.ToLower(r))
-			continue
-		}
+	flush := func() {
 		if b.Len() > 0 {
-			parts = append(parts, b.String())
+			parts = append(parts, strings.ToLower(b.String()))
 			b.Reset()
 		}
 	}
-	if b.Len() > 0 {
-		parts = append(parts, b.String())
+	runes := []rune(key)
+	for i, r := range runes {
+		if i > 0 && unicode.IsUpper(r) {
+			prev := runes[i-1]
+			if unicode.IsLower(prev) || unicode.IsDigit(prev) {
+				flush()
+			}
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			continue
+		}
+		flush()
 	}
+	flush()
 	return parts
 }

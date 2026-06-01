@@ -70,9 +70,32 @@ func TestAccessLog_LogsRequestMetadata(t *testing.T) {
 	entry := log.entries[0]
 	assert.Equal(t, "http_request", entry.msg)
 	assert.Equal(t, "GET", entry.fields["method"])
-	assert.Equal(t, "/health", entry.fields["route"])
+	assert.Equal(t, "unmatched_path", entry.fields["route"])
 	assert.Equal(t, "203.0.113.5", entry.fields["remote_ip"])
 	assert.EqualValues(t, http.StatusOK, entry.fields["status"])
+}
+
+func TestAccessLog_UnmatchedPathDoesNotLeakRawURL(t *testing.T) {
+	log := &recordingLogger{}
+
+	r := chi.NewRouter()
+	r.Use(middleware.AccessLog(log))
+	r.Get("/known", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/confirm/super-secret-bearer-token")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	require.Len(t, log.entries, 1)
+	logged := log.entries[0].fields["route"].(string)
+	assert.NotContains(t, logged, "super-secret-bearer-token",
+		"raw URL must not appear in logs when chi has no matching route")
+	assert.Equal(t, "unmatched_path", logged)
 }
 
 func TestAccessLog_RedactsTokenFromConfirmPath(t *testing.T) {

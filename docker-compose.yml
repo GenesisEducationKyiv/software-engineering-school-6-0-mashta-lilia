@@ -84,7 +84,7 @@ services:
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: "-Xms1g -Xmx1g"
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     volumes:
       - esdata:/usr/share/elasticsearch/data
     networks:
@@ -110,7 +110,7 @@ services:
     environment:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
     ports:
-      - "5601:5601"
+      - "127.0.0.1:5601:5601"
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -161,9 +161,10 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     depends_on:
       app:
         condition: service_healthy
@@ -182,10 +183,11 @@ services:
   grafana:
     image: grafana/grafana:10.4.0
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
     networks:
@@ -206,3 +208,5 @@ networks:
 volumes:
   pgdata:
   esdata:
+  prometheus_data:
+  grafana_data:
