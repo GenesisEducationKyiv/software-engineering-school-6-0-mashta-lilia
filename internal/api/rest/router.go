@@ -25,7 +25,7 @@ func NewRouter(
 	apiKey string,
 	subscribeLimiter *middleware.RateLimiter,
 	swaggerPath string,
-	log logger.Logger,
+	log *logger.Logger,
 ) *chi.Mux {
 	r := chi.NewRouter()
 

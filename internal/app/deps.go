@@ -46,7 +46,7 @@ func newRedisClient(cfg *config.Config) *redis.Client {
 }
 
 func buildDependencies(
-	ctx context.Context, cfg *config.Config, db *sql.DB, rdb *redis.Client, log logger.Logger,
+	ctx context.Context, cfg *config.Config, db *sql.DB, rdb *redis.Client, log *logger.Logger,
 ) (*dependencies, error) {
 	subRepo, err := subscription.NewRepoWithContext(ctx, db)
 	if err != nil {

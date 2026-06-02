@@ -11,56 +11,44 @@ import (
 	"unicode"
 )
 
-type Logger interface {
-	Debug(ctx context.Context, msg string, kv ...any)
-	Info(ctx context.Context, msg string, kv ...any)
-	Warn(ctx context.Context, msg string, kv ...any)
-	Error(ctx context.Context, msg string, kv ...any)
-	With(kv ...any) Logger
-}
-
 type Config struct {
 	Level       string
 	ServiceName string
 }
 
-type slogLogger struct {
+type Logger struct {
 	logger *slog.Logger
 }
 
-//nolint:ireturn // ADR requires callers to depend on the logger interface, not slog.
-func New(cfg Config) Logger {
+func New(cfg Config) *Logger {
 	return newWithWriter(cfg, os.Stdout)
 }
 
-func SetDefault(l Logger) {
-	if log, ok := l.(*slogLogger); ok {
-		slog.SetDefault(log.logger)
-	}
+func SetDefault(l *Logger) {
+	slog.SetDefault(l.logger)
 }
 
-func (l *slogLogger) Debug(ctx context.Context, msg string, kv ...any) {
+func (l *Logger) Debug(ctx context.Context, msg string, kv ...any) {
 	l.logger.DebugContext(ctx, msg, kv...)
 }
 
-func (l *slogLogger) Info(ctx context.Context, msg string, kv ...any) {
+func (l *Logger) Info(ctx context.Context, msg string, kv ...any) {
 	l.logger.InfoContext(ctx, msg, kv...)
 }
 
-func (l *slogLogger) Warn(ctx context.Context, msg string, kv ...any) {
+func (l *Logger) Warn(ctx context.Context, msg string, kv ...any) {
 	l.logger.WarnContext(ctx, msg, kv...)
 }
 
-func (l *slogLogger) Error(ctx context.Context, msg string, kv ...any) {
+func (l *Logger) Error(ctx context.Context, msg string, kv ...any) {
 	l.logger.ErrorContext(ctx, msg, kv...)
 }
 
-//nolint:ireturn // Method satisfies Logger.
-func (l *slogLogger) With(kv ...any) Logger {
-	return &slogLogger{logger: l.logger.With(kv...)}
+func (l *Logger) With(kv ...any) *Logger {
+	return &Logger{logger: l.logger.With(kv...)}
 }
 
-func newWithWriter(cfg Config, w io.Writer) *slogLogger {
+func newWithWriter(cfg Config, w io.Writer) *Logger {
 	handler := slog.NewJSONHandler(w, &slog.HandlerOptions{
 		Level:       parseLevel(cfg.Level),
 		ReplaceAttr: replaceAttr,
@@ -69,7 +57,7 @@ func newWithWriter(cfg Config, w io.Writer) *slogLogger {
 	base := slog.New(handlerWithTrace.WithAttrs([]slog.Attr{
 		slog.String("service", cfg.ServiceName),
 	}))
-	return &slogLogger{logger: base}
+	return &Logger{logger: base}
 }
 
 func parseLevel(raw string) slog.Level {

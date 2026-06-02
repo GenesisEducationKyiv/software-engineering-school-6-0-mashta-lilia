@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github-release-notifier/internal/api/rest/middleware"
-	"github-release-notifier/internal/platform/logger"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
@@ -25,24 +24,8 @@ type recordingLogger struct {
 	entries []logEntry
 }
 
-func (l *recordingLogger) Debug(ctx context.Context, msg string, kv ...any) {
-	l.record(ctx, msg, kv...)
-}
-
 func (l *recordingLogger) Info(ctx context.Context, msg string, kv ...any) {
 	l.record(ctx, msg, kv...)
-}
-
-func (l *recordingLogger) Warn(ctx context.Context, msg string, kv ...any) {
-	l.record(ctx, msg, kv...)
-}
-
-func (l *recordingLogger) Error(ctx context.Context, msg string, kv ...any) {
-	l.record(ctx, msg, kv...)
-}
-
-func (l *recordingLogger) With(_ ...any) logger.Logger {
-	return l
 }
 
 func (l *recordingLogger) record(ctx context.Context, msg string, kv ...any) {

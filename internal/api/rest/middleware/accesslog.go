@@ -10,8 +10,14 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
+// Logger is the minimal logging surface AccessLog depends on. Declared here so
+// the consumer accepts an interface while the logger package returns a struct.
+type Logger interface {
+	Info(ctx context.Context, msg string, kv ...any)
+}
+
 // Tokens in path and the email query param are credentials/PII; never log them raw.
-func AccessLog(log logger.Logger) func(http.Handler) http.Handler {
+func AccessLog(log Logger) func(http.Handler) http.Handler {
 	if log == nil {
 		log = logger.New(logger.Config{Level: "info"})
 	}

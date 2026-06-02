@@ -10,10 +10,10 @@ import (
 
 type App struct {
 	cfg    *config.Config
-	logger logger.Logger
+	logger *logger.Logger
 }
 
-func New(cfg *config.Config, l logger.Logger) *App {
+func New(cfg *config.Config, l *logger.Logger) *App {
 	return &App{cfg: cfg, logger: l}
 }
 
