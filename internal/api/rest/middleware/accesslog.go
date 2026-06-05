@@ -10,23 +10,17 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-// Logger is the minimal logging surface AccessLog depends on. Declared here so
-// the consumer accepts an interface while the logger package returns a struct.
-type Logger interface {
-	Info(ctx context.Context, msg string, kv ...any)
-}
-
 // Tokens in path and the email query param are credentials/PII; never log them raw.
-func AccessLog(log Logger) func(http.Handler) http.Handler {
-	if log == nil {
-		log = logger.New(logger.Config{Level: "info"})
+func AccessLog(l *logger.Logger) func(http.Handler) http.Handler {
+	if l == nil {
+		l = logger.New(logger.Config{Level: "info"})
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			start := time.Now()
 			defer func(ctx context.Context) {
-				log.Info(ctx, "http",
+				l.Info(ctx, "http",
 					"method", r.Method,
 					"path", redactPath(r),
 					"status", ww.Status(),

@@ -24,6 +24,12 @@ func New(cfg Config) *Logger {
 	return newWithWriter(cfg, os.Stdout)
 }
 
+// NewWithWriter builds a Logger that emits to w. Useful for capturing output in
+// tests; production code should use New.
+func NewWithWriter(cfg Config, w io.Writer) *Logger {
+	return newWithWriter(cfg, w)
+}
+
 func SetDefault(l *Logger) {
 	slog.SetDefault(l.logger)
 }
