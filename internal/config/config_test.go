@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +18,7 @@ func setBaseEnv(t *testing.T) {
 		"SERVER_PORT", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSLMODE",
 		"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
 		"GITHUB_TOKEN", "SCAN_INTERVAL", "BASE_URL", "REDIS_ADDR", "REDIS_PASSWORD",
-		"REDIS_DB", "REDIS_CACHE_TTL", "TRUSTED_PROXY", "LOG_LEVEL",
+		"REDIS_DB", "REDIS_CACHE_TTL", "TRUSTED_PROXY", "LOG_LEVEL", "SERVICE_NAME",
 	} {
 		t.Setenv(k, "")
 	}
@@ -39,7 +38,8 @@ func TestNewFromEnv_DefaultsAreApplied(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, cfg.ScanInterval)
 	assert.Equal(t, 10*time.Minute, cfg.RedisCacheTTL)
 	assert.False(t, cfg.TrustedProxy)
-	assert.Equal(t, slog.LevelInfo, cfg.LogLevel)
+	assert.Equal(t, "info", cfg.LogLevel)
+	assert.Equal(t, "github-release-notifier", cfg.ServiceName)
 	assert.Equal(t, "test-api-key", cfg.APIKey)
 }
 
@@ -91,12 +91,12 @@ func TestNewFromEnv_RejectsUnknownLogLevel(t *testing.T) {
 }
 
 func TestNewFromEnv_AcceptsAllLogLevels(t *testing.T) {
-	cases := map[string]slog.Level{
-		"debug":   slog.LevelDebug,
-		"info":    slog.LevelInfo,
-		"warn":    slog.LevelWarn,
-		"warning": slog.LevelWarn,
-		"error":   slog.LevelError,
+	cases := map[string]string{
+		"debug":   "debug",
+		"info":    "info",
+		"warn":    "warn",
+		"warning": "warn",
+		"error":   "error",
 	}
 	for level, want := range cases {
 		t.Run(level, func(t *testing.T) {

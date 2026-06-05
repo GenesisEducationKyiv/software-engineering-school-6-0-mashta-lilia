@@ -1,7 +1,8 @@
 package middleware
 
 import (
-	"log/slog"
+	"context"
+	"github-release-notifier/internal/platform/logger"
 	"net/http"
 	"time"
 
@@ -10,22 +11,27 @@ import (
 )
 
 // Tokens in path and the email query param are credentials/PII; never log them raw.
-func AccessLog(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-		start := time.Now()
-		defer func() {
-			slog.Info("http",
-				"method", r.Method,
-				"path", redactPath(r),
-				"status", ww.Status(),
-				"bytes", ww.BytesWritten(),
-				"duration_ms", time.Since(start).Milliseconds(),
-				"remote", r.RemoteAddr,
-			)
-		}()
-		next.ServeHTTP(ww, r)
-	})
+func AccessLog(l *logger.Logger) func(http.Handler) http.Handler {
+	if l == nil {
+		l = logger.New(logger.Config{Level: "info"})
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			start := time.Now()
+			defer func(ctx context.Context) {
+				l.Info(ctx, "http",
+					"method", r.Method,
+					"path", redactPath(r),
+					"status", ww.Status(),
+					"bytes", ww.BytesWritten(),
+					"duration_ms", time.Since(start).Milliseconds(),
+					"remote", r.RemoteAddr,
+				)
+			}(r.Context())
+			next.ServeHTTP(ww, r)
+		})
+	}
 }
 
 func redactPath(r *http.Request) string {

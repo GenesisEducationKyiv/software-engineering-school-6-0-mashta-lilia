@@ -1,0 +1,45 @@
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      hints.enabled: false
+      templates:
+        - condition:
+            equals:
+              docker.container.labels.com.docker.compose.service: app
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
+              json.message_key: msg
+              json.keys_under_root: true
+              json.add_error_key: true
+
+# Windows Docker Desktop fallback:
+# Disable the autodiscover block above and enable this filestream input after
+# mounting a shared app-logs volume at /var/log/app in both app and filebeat.
+# filebeat.inputs:
+#   - type: filestream
+#     id: app-json-file
+#     paths:
+#       - /var/log/app/*.log
+#     parsers:
+#       - ndjson:
+#           message_key: msg
+#           keys_under_root: true
+#           add_error_key: true
+
+processors:
+  - add_docker_metadata:
+      host: "unix:///var/run/docker.sock"
+  - drop_fields:
+      fields: ["agent", "ecs", "input", "host", "container", "docker", "log", "stream"]
+      ignore_missing: true
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+  index: "app-logs-%{+yyyy.MM.dd}"
+
+setup.ilm.enabled: false
+setup.template.name: "app-logs"
+setup.template.pattern: "app-logs-*"
+logging.level: info

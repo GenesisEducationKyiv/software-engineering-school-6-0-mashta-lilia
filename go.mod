@@ -6,6 +6,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/golang-migrate/migrate/v4 v4.18.0
+	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.12.3
 	github.com/prometheus/client_golang v1.14.0
 	github.com/redis/go-redis/v9 v9.18.0
@@ -39,7 +40,6 @@ require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
