@@ -10,9 +10,15 @@ import (
 )
 
 // Empty apiKey fails closed; never silently bypass auth on a PII endpoint.
-func APIKeyAuth(apiKey string, logs ...logger.Logger) func(http.Handler) http.Handler {
-	log := optionalLogger(logs...)
+func APIKeyAuth(apiKey string, log *logger.Logger) func(http.Handler) http.Handler {
+	if log == nil {
+		log = logger.Nop()
+	}
 	if apiKey == "" {
+		// Surface the misconfiguration in the logs; otherwise it only shows up as
+		// a confusing 401 in client reports.
+		log.Warn(context.Background(), "api_key_auth_not_configured",
+			"detail", "X-API-Key auth is enabled but no API key is set; all requests will be rejected")
 		return func(_ http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				writeAuthError(r.Context(), log, w, "API key authentication is not configured")
@@ -35,7 +41,7 @@ func APIKeyAuth(apiKey string, logs ...logger.Logger) func(http.Handler) http.Ha
 	}
 }
 
-func writeAuthError(ctx context.Context, log logger.Logger, w http.ResponseWriter, msg string) {
+func writeAuthError(ctx context.Context, log *logger.Logger, w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github-release-notifier/internal/api/rest/middleware"
+	"github-release-notifier/internal/platform/logger"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +18,7 @@ import (
 
 func newLimiter(t *testing.T, limit int, window time.Duration, trustProxy bool) *middleware.RateLimiter {
 	t.Helper()
-	rl := middleware.NewRateLimiter(limit, window, trustProxy)
+	rl := middleware.NewRateLimiter(limit, window, trustProxy, logger.Nop())
 	t.Cleanup(rl.Stop)
 	return rl
 }
@@ -111,7 +112,7 @@ func TestRateLimiter_WindowResets(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const window = 200 * time.Millisecond
 
-		rl := middleware.NewRateLimiter(1, window, false)
+		rl := middleware.NewRateLimiter(1, window, false, logger.Nop())
 		defer rl.Stop()
 		h := rl.Limit(okHandler())
 
@@ -167,7 +168,7 @@ func TestRateLimiter_UntrustedProxy_IgnoresXForwardedFor(t *testing.T) {
 
 func TestRateLimiter_Stop_IsIdempotent(t *testing.T) {
 	t.Parallel()
-	rl := middleware.NewRateLimiter(1, time.Minute, false)
+	rl := middleware.NewRateLimiter(1, time.Minute, false, logger.Nop())
 	rl.Stop()
 	assert.NotPanics(t, rl.Stop, "Stop must be safe to call twice")
 }

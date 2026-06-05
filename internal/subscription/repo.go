@@ -54,22 +54,28 @@ type Repo struct {
 	stmtGetEmailsByRepo  *sql.Stmt
 	stmtUpdateStatus     *sql.Stmt
 	stmtExists           *sql.Stmt
-	log                  logger.Logger
+	log                  *logger.Logger
 }
 
-func NewRepo(db *sql.DB, logs ...logger.Logger) *Repo {
-	return &Repo{db: db, log: optionalLogger(logs...)}
+func NewRepo(db *sql.DB, log *logger.Logger) *Repo {
+	if log == nil {
+		log = logger.Nop()
+	}
+	return &Repo{db: db, log: log}
 }
 
-func NewRepoWithContext(ctx context.Context, db *sql.DB, logs ...logger.Logger) (*Repo, error) {
+func NewRepoWithContext(ctx context.Context, db *sql.DB, log *logger.Logger) (*Repo, error) {
 	if ctx == nil {
 		return nil, errors.New("subscription repo: nil context")
 	}
 	if db == nil {
 		return nil, errors.New("subscription repo: nil db")
 	}
+	if log == nil {
+		log = logger.Nop()
+	}
 
-	r := &Repo{db: db, log: optionalLogger(logs...)}
+	r := &Repo{db: db, log: log}
 	if err := r.ensurePrepared(ctx); err != nil {
 		return nil, errors.Join(err, r.Close())
 	}
@@ -302,12 +308,4 @@ func closeStmt(name string, stmt *sql.Stmt) error {
 		return fmt.Errorf("closing %s statement: %w", name, err)
 	}
 	return nil
-}
-
-//nolint:ireturn // Accepts injected logger or a no-op fallback.
-func optionalLogger(logs ...logger.Logger) logger.Logger {
-	if len(logs) > 0 && logs[0] != nil {
-		return logs[0]
-	}
-	return logger.Nop()
 }

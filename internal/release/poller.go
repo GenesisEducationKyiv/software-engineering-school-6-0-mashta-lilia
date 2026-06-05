@@ -34,7 +34,7 @@ type Poller struct {
 	github   githubReleaseClient
 	mailer   releaseNotifier
 	interval time.Duration
-	log      logger.Logger
+	log      *logger.Logger
 	scanLock sync.Mutex
 	done     chan struct{}
 	doneOnce sync.Once
@@ -46,7 +46,7 @@ func NewPoller(
 	gh githubReleaseClient,
 	mailer releaseNotifier,
 	interval time.Duration,
-	log logger.Logger,
+	log *logger.Logger,
 ) (*Poller, error) {
 	if interval <= 0 {
 		return nil, fmt.Errorf("poller interval must be > 0, got %s", interval)

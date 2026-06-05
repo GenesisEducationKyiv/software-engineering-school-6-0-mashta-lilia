@@ -62,10 +62,11 @@ func New(ctx context.Context) (*App, func(), error) {
 	cleanups = append(cleanups, mpCleanup)
 
 	gh := testgithub.New()
-	rl := middleware.NewRateLimiter(rateLimitRequests, rateLimitWindow, false)
+	log := logger.New(logger.Config{Level: "warn", ServiceName: "test"})
+	rl := middleware.NewRateLimiter(rateLimitRequests, rateLimitWindow, false, log)
 	cleanups = append(cleanups, rl.Stop)
 
-	subRepo, err := subscription.NewRepoWithContext(ctx, db)
+	subRepo, err := subscription.NewRepoWithContext(ctx, db, log)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("subscription repo: %w", err)
 	}
@@ -75,7 +76,7 @@ func New(ctx context.Context) (*App, func(), error) {
 		}
 	})
 
-	repoStore, err := repository.NewStoreWithContext(ctx, db)
+	repoStore, err := repository.NewStoreWithContext(ctx, db, log)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("tracked repo store: %w", err)
 	}
@@ -92,9 +93,8 @@ func New(ctx context.Context) (*App, func(), error) {
 	}
 
 	svc := subscription.NewService(subRepo, repoStore, gh, mail, token.New())
-	handler := subhandler.NewHandler(svc)
+	handler := subhandler.NewHandler(svc, log)
 	hc := health.NewDBChecker(db)
-	log := logger.New(logger.Config{Level: "warn", ServiceName: "test"})
 	router := rest.NewRouter(handler, hc, APIKey, rl, "", log)
 	srv := httptest.NewServer(router)
 	cleanups = append(cleanups, srv.Close)

@@ -35,22 +35,28 @@ type Store struct {
 	stmtGetAll            *sql.Stmt
 	stmtUpdateLastSeen    *sql.Stmt
 	stmtUpdateLastChecked *sql.Stmt
-	log                   logger.Logger
+	log                   *logger.Logger
 }
 
-func NewStore(db *sql.DB, logs ...logger.Logger) *Store {
-	return &Store{db: db, log: optionalLogger(logs...)}
+func NewStore(db *sql.DB, log *logger.Logger) *Store {
+	if log == nil {
+		log = logger.Nop()
+	}
+	return &Store{db: db, log: log}
 }
 
-func NewStoreWithContext(ctx context.Context, db *sql.DB, logs ...logger.Logger) (*Store, error) {
+func NewStoreWithContext(ctx context.Context, db *sql.DB, log *logger.Logger) (*Store, error) {
 	if ctx == nil {
 		return nil, errors.New("repository store: nil context")
 	}
 	if db == nil {
 		return nil, errors.New("repository store: nil db")
 	}
+	if log == nil {
+		log = logger.Nop()
+	}
 
-	store := &Store{db: db, log: optionalLogger(logs...)}
+	store := &Store{db: db, log: log}
 	if err := store.ensurePrepared(ctx); err != nil {
 		return nil, errors.Join(err, store.Close())
 	}
@@ -199,12 +205,4 @@ func (s *Store) requireRowsUpdated(ctx context.Context, result sql.Result, actio
 		return fmt.Errorf("%s: tracked repository %d not found", action, id)
 	}
 	return nil
-}
-
-//nolint:ireturn // Accepts injected logger or a no-op fallback.
-func optionalLogger(logs ...logger.Logger) logger.Logger {
-	if len(logs) > 0 && logs[0] != nil {
-		return logs[0]
-	}
-	return logger.Nop()
 }

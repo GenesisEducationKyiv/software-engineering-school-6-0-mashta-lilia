@@ -11,55 +11,56 @@ import (
 	"unicode"
 )
 
-type Logger interface {
-	Debug(ctx context.Context, msg string, kv ...any)
-	Info(ctx context.Context, msg string, kv ...any)
-	Warn(ctx context.Context, msg string, kv ...any)
-	Error(ctx context.Context, msg string, kv ...any)
-	With(kv ...any) Logger
-}
-
 type Config struct {
 	Level       string
 	ServiceName string
 }
 
-type slogLogger struct {
+type Logger struct {
 	logger *slog.Logger
 }
 
-//nolint:ireturn // ADR requires callers to depend on the logger interface, not slog.
-func New(cfg Config) Logger {
+func New(cfg Config) *Logger {
 	return newWithWriter(cfg, os.Stdout)
 }
 
-//nolint:ireturn // Convenience constructor for optional logger dependencies.
-func Nop() Logger {
-	return nopLogger{}
+// NewWithWriter builds a Logger that emits to w. Useful for capturing output in
+// tests; production code should use New.
+func NewWithWriter(cfg Config, w io.Writer) *Logger {
+	return newWithWriter(cfg, w)
 }
 
-func (l *slogLogger) Debug(ctx context.Context, msg string, kv ...any) {
+// Nop returns a Logger that discards everything it is given. Useful as a
+// fallback when an optional logger dependency is not supplied.
+func Nop() *Logger {
+	return newWithWriter(Config{}, io.Discard)
+}
+
+func SetDefault(l *Logger) {
+	slog.SetDefault(l.logger)
+}
+
+func (l *Logger) Debug(ctx context.Context, msg string, kv ...any) {
 	l.logger.DebugContext(ctx, msg, kv...)
 }
 
-func (l *slogLogger) Info(ctx context.Context, msg string, kv ...any) {
+func (l *Logger) Info(ctx context.Context, msg string, kv ...any) {
 	l.logger.InfoContext(ctx, msg, kv...)
 }
 
-func (l *slogLogger) Warn(ctx context.Context, msg string, kv ...any) {
+func (l *Logger) Warn(ctx context.Context, msg string, kv ...any) {
 	l.logger.WarnContext(ctx, msg, kv...)
 }
 
-func (l *slogLogger) Error(ctx context.Context, msg string, kv ...any) {
+func (l *Logger) Error(ctx context.Context, msg string, kv ...any) {
 	l.logger.ErrorContext(ctx, msg, kv...)
 }
 
-//nolint:ireturn // Method satisfies Logger.
-func (l *slogLogger) With(kv ...any) Logger {
-	return &slogLogger{logger: l.logger.With(kv...)}
+func (l *Logger) With(kv ...any) *Logger {
+	return &Logger{logger: l.logger.With(kv...)}
 }
 
-func newWithWriter(cfg Config, w io.Writer) *slogLogger {
+func newWithWriter(cfg Config, w io.Writer) *Logger {
 	handler := slog.NewJSONHandler(w, &slog.HandlerOptions{
 		Level:       parseLevel(cfg.Level),
 		ReplaceAttr: replaceAttr,
@@ -68,7 +69,7 @@ func newWithWriter(cfg Config, w io.Writer) *slogLogger {
 	base := slog.New(handlerWithTrace.WithAttrs([]slog.Attr{
 		slog.String("service", cfg.ServiceName),
 	}))
-	return &slogLogger{logger: base}
+	return &Logger{logger: base}
 }
 
 func parseLevel(raw string) slog.Level {
@@ -153,16 +154,3 @@ func (h traceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 func (h traceHandler) WithGroup(name string) slog.Handler {
 	return traceHandler{handler: h.handler.WithGroup(name)}
 }
-
-type nopLogger struct{}
-
-func (nopLogger) Debug(context.Context, string, ...any) {}
-
-func (nopLogger) Info(context.Context, string, ...any) {}
-
-func (nopLogger) Warn(context.Context, string, ...any) {}
-
-func (nopLogger) Error(context.Context, string, ...any) {}
-
-//nolint:ireturn // Method satisfies Logger.
-func (n nopLogger) With(...any) Logger { return n }

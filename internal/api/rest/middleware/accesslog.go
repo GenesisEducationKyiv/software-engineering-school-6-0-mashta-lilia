@@ -12,16 +12,16 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func AccessLog(log logger.Logger) func(http.Handler) http.Handler {
-	if log == nil {
-		log = logger.Nop()
+func AccessLog(l *logger.Logger) func(http.Handler) http.Handler {
+	if l == nil {
+		l = logger.Nop()
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			start := time.Now()
 			defer func(ctx context.Context) {
-				log.Info(ctx, "http_request",
+				l.Info(ctx, "http_request",
 					"method", r.Method,
 					"route", routePattern(r),
 					"status", ww.Status(),
@@ -54,12 +54,16 @@ func remoteIP(remoteAddr string) string {
 	return host
 }
 
+// redactedValue replaces header values that look like they carry credentials.
+const redactedValue = "<redacted>"
+
+// sanitizeHeaderValue guards against a header (e.g. User-Agent) smuggling
+// credentials into the logs. Redaction lives here, with the consumer, rather
+// than in the logger.
 func sanitizeHeaderValue(value string) string {
 	lower := strings.ToLower(value)
 	if strings.Contains(lower, "authorization") || strings.Contains(lower, "bearer ") {
-		if redacted, ok := logger.Redact("authorization", value).(string); ok {
-			return redacted
-		}
+		return redactedValue
 	}
 	return value
 }

@@ -18,13 +18,12 @@ type subscriptionService interface {
 
 type Handler struct {
 	svc subscriptionService
-	log logger.Logger
+	log *logger.Logger
 }
 
-func NewHandler(svc subscriptionService, logs ...logger.Logger) *Handler {
-	log := logger.Nop()
-	if len(logs) > 0 && logs[0] != nil {
-		log = logs[0]
+func NewHandler(svc subscriptionService, log *logger.Logger) *Handler {
+	if log == nil {
+		log = logger.Nop()
 	}
 	return &Handler{svc: svc, log: log}
 }

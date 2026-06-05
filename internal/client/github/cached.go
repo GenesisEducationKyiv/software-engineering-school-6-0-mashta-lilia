@@ -32,15 +32,14 @@ type CachedClient struct {
 	base  baseClient
 	redis *redis.Client
 	ttl   time.Duration
-	log   logger.Logger
+	log   *logger.Logger
 }
 
 func NewCachedClient(
-	base baseClient, rdb *redis.Client, ttl time.Duration, logs ...logger.Logger,
+	base baseClient, rdb *redis.Client, ttl time.Duration, log *logger.Logger,
 ) *CachedClient {
-	log := logger.Nop()
-	if len(logs) > 0 && logs[0] != nil {
-		log = logs[0]
+	if log == nil {
+		log = logger.Nop()
 	}
 	return &CachedClient{base: base, redis: rdb, ttl: ttl, log: log}
 }

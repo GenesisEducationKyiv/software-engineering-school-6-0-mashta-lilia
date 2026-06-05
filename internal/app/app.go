@@ -9,10 +9,10 @@ import (
 
 type App struct {
 	cfg    *config.Config
-	logger logger.Logger
+	logger *logger.Logger
 }
 
-func New(cfg *config.Config, l logger.Logger) *App {
+func New(cfg *config.Config, l *logger.Logger) *App {
 	return &App{cfg: cfg, logger: l}
 }
 
@@ -52,7 +52,7 @@ func (a *App) Run(ctx context.Context) error {
 	return runHTTPServer(ctx, a.cfg, deps, a.logger)
 }
 
-func closeQuietly(ctx context.Context, log logger.Logger, name string, closer func() error) {
+func closeQuietly(ctx context.Context, log *logger.Logger, name string, closer func() error) {
 	if err := closer(); err != nil {
 		log.Error(ctx, "close_resource_failed", "resource", name, "err", err)
 	}
