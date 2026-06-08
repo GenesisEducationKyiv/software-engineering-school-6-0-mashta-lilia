@@ -30,6 +30,12 @@ func NewWithWriter(cfg Config, w io.Writer) *Logger {
 	return newWithWriter(cfg, w)
 }
 
+// Nop returns a Logger that discards everything it is given. Useful as a
+// fallback when an optional logger dependency is not supplied.
+func Nop() *Logger {
+	return newWithWriter(Config{}, io.Discard)
+}
+
 func SetDefault(l *Logger) {
 	slog.SetDefault(l.logger)
 }

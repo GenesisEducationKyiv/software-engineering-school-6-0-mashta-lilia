@@ -20,22 +20,32 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var req subscribeRequest
 	if err := dec.Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		h.log.Error(r.Context(), "subscribe_decode_failed", "err", err)
+		h.respondError(r.Context(), w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	var extra interface{}
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		if err == nil {
+			err = errors.New("unexpected trailing data")
+		}
+		h.log.Error(r.Context(), "subscribe_decode_failed", "err", err)
+		h.respondError(r.Context(), w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+
+	h.log.Debug(r.Context(), "subscribe_request", "body", bodyForLog(map[string]any{
+		"email": req.Email,
+		"repo":  req.Repo,
+	}))
 
 	if err := h.svc.Subscribe(r.Context(), req.Email, req.Repo); err != nil {
-		writeServiceError(w, err)
+		h.writeServiceError(r.Context(), w, err)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{
+	h.respondJSON(r.Context(), w, http.StatusOK, map[string]string{
 		"message": "Subscription created. Please confirm via email.",
 	})
 }

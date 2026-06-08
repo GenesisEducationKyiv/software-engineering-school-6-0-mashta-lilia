@@ -3,7 +3,7 @@ package middleware
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
+	"github-release-notifier/internal/platform/logger"
 	"net"
 	"net/http"
 	"strings"
@@ -26,15 +26,20 @@ type RateLimiter struct {
 	done         chan struct{}
 	stopOnce     sync.Once
 	trustedProxy bool
+	log          *logger.Logger
 }
 
-func NewRateLimiter(limit int, window time.Duration, trustedProxy bool) *RateLimiter {
+func NewRateLimiter(limit int, window time.Duration, trustedProxy bool, log *logger.Logger) *RateLimiter {
+	if log == nil {
+		log = logger.Nop()
+	}
 	rl := &RateLimiter{
 		visitors:     make(map[string]*visitor),
 		limit:        limit,
 		window:       window,
 		done:         make(chan struct{}),
 		trustedProxy: trustedProxy,
+		log:          log,
 	}
 	go rl.cleanup()
 	return rl
@@ -85,7 +90,7 @@ func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 			if err := json.NewEncoder(w).Encode(
 				map[string]string{"error": "rate limit exceeded"},
 			); err != nil {
-				slog.Error("Failed to encode rate limit response", "err", err)
+				rl.log.Error(r.Context(), "rate_limit_response_encode_failed", "err", err)
 			}
 			return
 		}
