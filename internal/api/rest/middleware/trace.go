@@ -33,18 +33,36 @@ func traceIDFromRequest(r *http.Request) string {
 }
 
 func parseTraceparent(header string) string {
-	parts := strings.Split(strings.TrimSpace(header), "-")
-	if len(parts) < traceparentParts {
+	trimmed := strings.TrimSpace(header)
+	if trimmed == "" {
+		return ""
+	}
+	parts := strings.Split(trimmed, "-")
+	if len(parts) != traceparentParts {
+		return ""
+	}
+	if len(parts[0]) != 2 || !isHex(parts[0]) {
+		return ""
+	}
+	spanID := strings.ToLower(parts[2])
+	if len(spanID) != 16 || !isHex(spanID) || spanID == "0000000000000000" {
+		return ""
+	}
+	if len(parts[3]) != 2 || !isHex(parts[3]) {
 		return ""
 	}
 	traceID := strings.ToLower(parts[1])
-	if len(traceID) != 32 || traceID == "00000000000000000000000000000000" {
+	if len(traceID) != 32 || traceID == "00000000000000000000000000000000" || !isHex(traceID) {
 		return ""
 	}
-	for _, r := range traceID {
+	return traceID
+}
+
+func isHex(s string) bool {
+	for _, r := range s {
 		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return ""
+			return false
 		}
 	}
-	return traceID
+	return true
 }

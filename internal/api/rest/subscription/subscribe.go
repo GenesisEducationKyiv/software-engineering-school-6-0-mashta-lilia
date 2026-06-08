@@ -3,6 +3,7 @@ package subscription
 import (
 	"encoding/json"
 	"errors"
+	"github-release-notifier/internal/platform/logger"
 	"io"
 	"net/http"
 )
@@ -35,10 +36,12 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.log.Debug(r.Context(), "subscribe_request", "body", bodyForLog(map[string]any{
-		"email": req.Email,
-		"repo":  req.Repo,
-	}))
+	if h.log.Enabled(r.Context(), logger.LevelDebug) {
+		h.log.Debug(r.Context(), "subscribe_request", "body", bodyForLog(map[string]any{
+			"email": req.Email,
+			"repo":  req.Repo,
+		}))
+	}
 
 	if err := h.svc.Subscribe(r.Context(), req.Email, req.Repo); err != nil {
 		h.writeServiceError(r.Context(), w, err)

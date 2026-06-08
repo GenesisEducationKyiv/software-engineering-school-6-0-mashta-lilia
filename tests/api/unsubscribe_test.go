@@ -20,7 +20,7 @@ func TestIntegration_Unsubscribe_FlipsActiveToUnsubscribed(t *testing.T) {
 
 	resp, err := http.Get(app.Server.URL + "/api/unsubscribe/tok-unsub-1")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, subscription.StatusUnsubscribed, testdb.StatusOf(t, app.DB, "tok-unsub-1"))
@@ -32,7 +32,7 @@ func TestIntegration_Unsubscribe_UnknownToken_Returns404(t *testing.T) {
 
 	resp, err := http.Get(app.Server.URL + "/api/unsubscribe/does-not-exist")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
@@ -46,7 +46,7 @@ func TestIntegration_Unsubscribe_AlreadyUnsubscribed_IsIdempotent(t *testing.T) 
 
 	resp, err := http.Get(app.Server.URL + "/api/unsubscribe/tok-unsub-2")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, subscription.StatusUnsubscribed, testdb.StatusOf(t, app.DB, "tok-unsub-2"))

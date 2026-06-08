@@ -155,7 +155,8 @@ func (r *Repo) Create(ctx context.Context, sub *Subscription) error {
 	if err := r.ensurePrepared(ctx); err != nil {
 		return err
 	}
-	if err := r.stmtCreate.QueryRowContext(ctx,
+	if err := r.stmtCreate.QueryRowContext(
+		ctx,
 		sub.Email, sub.RepoOwner, sub.RepoName, sub.Token, sub.Status,
 	).Scan(&sub.ID, &sub.CreatedAt, &sub.UpdatedAt); err != nil {
 		// Authoritative guard for concurrent dupes (the service pre-check is a soft optimization).
@@ -165,11 +166,7 @@ func (r *Repo) Create(ctx context.Context, sub *Subscription) error {
 			pqErr.Constraint == emailRepoActiveIndex {
 			return ErrAlreadyExists
 		}
-		r.log.Error(
-			ctx, "subscription_create_failed",
-			"repo_owner", sub.RepoOwner, "repo_name", sub.RepoName, "err", err,
-		)
-		return fmt.Errorf("creating subscription: %w", err)
+		return fmt.Errorf("creating subscription owner=%s name=%s: %w", sub.RepoOwner, sub.RepoName, err)
 	}
 	return nil
 }
@@ -187,7 +184,6 @@ func (r *Repo) GetByToken(ctx context.Context, token string) (*Subscription, err
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		r.log.Error(ctx, "subscription_get_by_token_failed", "err", err)
 		return nil, fmt.Errorf("querying subscription by token: %w", err)
 	}
 	return sub, nil
@@ -206,11 +202,7 @@ func (r *Repo) GetEmailsByRepo(ctx context.Context, owner, name string) ([]strin
 	}
 	rows, err := r.stmtGetEmailsByRepo.QueryContext(ctx, owner, name, StatusActive)
 	if err != nil {
-		r.log.Error(
-			ctx, "subscription_get_emails_by_repo_failed",
-			"repo_owner", owner, "repo_name", name, "err", err,
-		)
-		return nil, fmt.Errorf("querying subscriber emails: %w", err)
+		return nil, fmt.Errorf("querying subscriber emails owner=%s name=%s: %w", owner, name, err)
 	}
 	defer rows.Close() //nolint:errcheck // rows close error is safe to ignore
 
@@ -218,20 +210,12 @@ func (r *Repo) GetEmailsByRepo(ctx context.Context, owner, name string) ([]strin
 	for rows.Next() {
 		var email string
 		if err := rows.Scan(&email); err != nil {
-			r.log.Error(
-				ctx, "subscription_email_scan_failed",
-				"repo_owner", owner, "repo_name", name, "err", err,
-			)
-			return nil, fmt.Errorf("scanning subscriber email: %w", err)
+			return nil, fmt.Errorf("scanning subscriber email owner=%s name=%s: %w", owner, name, err)
 		}
 		emails = append(emails, email)
 	}
 	if err := rows.Err(); err != nil {
-		r.log.Error(
-			ctx, "subscription_email_iterate_failed",
-			"repo_owner", owner, "repo_name", name, "err", err,
-		)
-		return nil, fmt.Errorf("iterating subscriber emails: %w", err)
+		return nil, fmt.Errorf("iterating subscriber emails owner=%s name=%s: %w", owner, name, err)
 	}
 	return emails, nil
 }
@@ -242,13 +226,11 @@ func (r *Repo) UpdateStatus(ctx context.Context, id int64, status Status) error 
 	}
 	result, err := r.stmtUpdateStatus.ExecContext(ctx, status, id)
 	if err != nil {
-		r.log.Error(ctx, "subscription_update_status_failed", "id", id, "status", status, "err", err)
-		return fmt.Errorf("updating subscription status: %w", err)
+		return fmt.Errorf("updating subscription status id=%d status=%s: %w", id, status, err)
 	}
 	n, err := result.RowsAffected()
 	if err != nil {
-		r.log.Error(ctx, "subscription_rows_affected_failed", "id", id, "status", status, "err", err)
-		return fmt.Errorf("getting rows affected: %w", err)
+		return fmt.Errorf("getting rows affected id=%d status=%s: %w", id, status, err)
 	}
 	if n == 0 {
 		r.log.Warn(ctx, "subscription_update_no_rows", "id", id, "status", status)
@@ -265,8 +247,7 @@ func (r *Repo) Exists(ctx context.Context, email, owner, name string) (bool, err
 	if err := r.stmtExists.QueryRowContext(
 		ctx, email, owner, name, StatusUnsubscribed,
 	).Scan(&exists); err != nil {
-		r.log.Error(ctx, "subscription_exists_failed", "repo_owner", owner, "repo_name", name, "err", err)
-		return false, fmt.Errorf("checking subscription existence: %w", err)
+		return false, fmt.Errorf("checking subscription existence owner=%s name=%s: %w", owner, name, err)
 	}
 	return exists, nil
 }
@@ -276,7 +257,6 @@ func (r *Repo) scan(
 ) ([]Subscription, error) {
 	rows, err := stmt.QueryContext(ctx, args...)
 	if err != nil {
-		r.log.Error(ctx, "subscription_query_failed", "err", err)
 		return nil, fmt.Errorf("querying subscriptions: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck // rows close error is safe to ignore
@@ -288,15 +268,14 @@ func (r *Repo) scan(
 			&sub.ID, &sub.Email, &sub.RepoOwner, &sub.RepoName,
 			&sub.Token, &sub.Status, &sub.CreatedAt, &sub.UpdatedAt,
 		); err != nil {
-			r.log.Error(ctx, "subscription_scan_failed", "err", err)
 			return nil, fmt.Errorf("scanning subscription row: %w", err)
 		}
 		subs = append(subs, sub)
 	}
 	if err := rows.Err(); err != nil {
-		r.log.Error(ctx, "subscription_iterate_failed", "err", err)
 		return nil, fmt.Errorf("iterating subscription rows: %w", err)
 	}
+	_ = ctx
 	return subs, nil
 }
 

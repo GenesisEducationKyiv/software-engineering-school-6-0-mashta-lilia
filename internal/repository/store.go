@@ -125,8 +125,7 @@ func (s *Store) Upsert(ctx context.Context, owner, name string) error {
 		return err
 	}
 	if _, err := s.stmtUpsert.ExecContext(ctx, owner, name); err != nil {
-		s.log.Error(ctx, "repository_upsert_failed", "owner", owner, "name", name, "err", err)
-		return fmt.Errorf("inserting tracked repository: %w", err)
+		return fmt.Errorf("inserting tracked repository owner=%s name=%s: %w", owner, name, err)
 	}
 	return nil
 }
@@ -137,7 +136,6 @@ func (s *Store) GetAll(ctx context.Context) ([]Repository, error) {
 	}
 	rows, err := s.stmtGetAll.QueryContext(ctx)
 	if err != nil {
-		s.log.Error(ctx, "repository_get_all_failed", "err", err)
 		return nil, fmt.Errorf("querying tracked repositories: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck // rows close error is safe to ignore
@@ -148,13 +146,11 @@ func (s *Store) GetAll(ctx context.Context) ([]Repository, error) {
 		if err := rows.Scan(
 			&repo.ID, &repo.Owner, &repo.Name, &repo.LastSeenTag, &repo.LastCheckedAt, &repo.CreatedAt,
 		); err != nil {
-			s.log.Error(ctx, "repository_scan_failed", "err", err)
 			return nil, fmt.Errorf("scanning tracked repository row: %w", err)
 		}
 		repos = append(repos, repo)
 	}
 	if err := rows.Err(); err != nil {
-		s.log.Error(ctx, "repository_iterate_failed", "err", err)
 		return nil, fmt.Errorf("iterating tracked repository rows: %w", err)
 	}
 	return repos, nil
@@ -166,8 +162,7 @@ func (s *Store) UpdateLastSeen(ctx context.Context, id int64, tag string) error 
 	}
 	result, err := s.stmtUpdateLastSeen.ExecContext(ctx, tag, id)
 	if err != nil {
-		s.log.Error(ctx, "repository_update_last_seen_failed", "id", id, "err", err)
-		return fmt.Errorf("updating last seen tag: %w", err)
+		return fmt.Errorf("updating last seen tag id=%d: %w", id, err)
 	}
 	return s.requireRowsUpdated(ctx, result, "updating last seen tag", id)
 }
@@ -178,8 +173,7 @@ func (s *Store) UpdateLastChecked(ctx context.Context, id int64) error {
 	}
 	result, err := s.stmtUpdateLastChecked.ExecContext(ctx, id)
 	if err != nil {
-		s.log.Error(ctx, "repository_update_last_checked_failed", "id", id, "err", err)
-		return fmt.Errorf("updating last checked timestamp: %w", err)
+		return fmt.Errorf("updating last checked timestamp id=%d: %w", id, err)
 	}
 	return s.requireRowsUpdated(ctx, result, "updating last checked timestamp", id)
 }
@@ -197,8 +191,7 @@ func closeStmt(name string, stmt *sql.Stmt) error {
 func (s *Store) requireRowsUpdated(ctx context.Context, result sql.Result, action string, id int64) error {
 	n, err := result.RowsAffected()
 	if err != nil {
-		s.log.Error(ctx, "repository_rows_affected_failed", "action", action, "id", id, "err", err)
-		return fmt.Errorf("%s: getting rows affected: %w", action, err)
+		return fmt.Errorf("%s: getting rows affected id=%d: %w", action, id, err)
 	}
 	if n == 0 {
 		s.log.Warn(ctx, "repository_update_no_rows", "action", action, "id", id)

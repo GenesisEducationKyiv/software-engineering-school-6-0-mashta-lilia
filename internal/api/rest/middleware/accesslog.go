@@ -37,13 +37,12 @@ func AccessLog(l *logger.Logger) func(http.Handler) http.Handler {
 }
 
 func routePattern(r *http.Request) string {
-	path := r.URL.Path
 	if rc := chi.RouteContext(r.Context()); rc != nil {
 		if pattern := rc.RoutePattern(); pattern != "" {
-			path = pattern
+			return pattern
 		}
 	}
-	return path
+	return "unmatched_path"
 }
 
 func remoteIP(remoteAddr string) string {
