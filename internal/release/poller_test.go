@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -40,6 +41,9 @@ func TestNewPoller_RejectsNonPositiveInterval(t *testing.T) {
 func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
 	t.Parallel()
 	var updatedTag string
+	// Subscribers are notified concurrently, so guard the slice and assert
+	// membership rather than order.
+	var notifiedMu sync.Mutex
 	var notifiedEmails []string
 
 	repos := &mockRepoScanReader{
@@ -68,7 +72,9 @@ func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
 	}
 	mailer := &mockReleaseNotifier{
 		SendReleaseNotificationFn: func(_ context.Context, email, _ string, _ *Release) error {
+			notifiedMu.Lock()
 			notifiedEmails = append(notifiedEmails, email)
+			notifiedMu.Unlock()
 			return nil
 		},
 	}
@@ -77,7 +83,7 @@ func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
 	poller.scan(context.Background())
 
 	assert.Equal(t, "v1.22", updatedTag)
-	assert.Equal(t, []string{"alice@example.com", "bob@example.com"}, notifiedEmails)
+	assert.ElementsMatch(t, []string{"alice@example.com", "bob@example.com"}, notifiedEmails)
 }
 
 func TestPoller_SameTag_NoNotification(t *testing.T) {
