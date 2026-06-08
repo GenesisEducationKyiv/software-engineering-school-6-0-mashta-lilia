@@ -48,10 +48,36 @@ func TestAccessLog_LogsRequestMetadata(t *testing.T) {
 	entries := decodeLogEntries(t, buf)
 	require.Len(t, entries, 1)
 	entry := entries[0]
+	assert.Equal(t, "http_request", entry["msg"])
 	assert.Equal(t, "GET", entry["method"])
-	assert.Equal(t, "/health", entry["path"])
-	assert.Equal(t, "203.0.113.5:55555", entry["remote"])
+	// No chi router is wired in this test, so there is no matched route pattern.
+	assert.Equal(t, "unmatched_path", entry["route"])
+	assert.Equal(t, "203.0.113.5", entry["remote_ip"])
 	assert.EqualValues(t, http.StatusOK, entry["status"])
+}
+
+func TestAccessLog_UnmatchedPathDoesNotLeakRawURL(t *testing.T) {
+	log, buf := newBufferedLogger()
+
+	r := chi.NewRouter()
+	r.Use(middleware.AccessLog(log))
+	r.Get("/known", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/confirm/super-secret-bearer-token")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	entries := decodeLogEntries(t, buf)
+	require.Len(t, entries, 1)
+	logged := entries[0]["route"].(string)
+	assert.NotContains(t, logged, "super-secret-bearer-token",
+		"raw URL must not appear in logs when chi has no matching route")
+	assert.Equal(t, "unmatched_path", logged)
 }
 
 func TestAccessLog_RedactsTokenFromConfirmPath(t *testing.T) {
@@ -68,11 +94,11 @@ func TestAccessLog_RedactsTokenFromConfirmPath(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + "/api/confirm/super-secret-bearer-token")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	entries := decodeLogEntries(t, buf)
 	require.Len(t, entries, 1)
-	logged := entries[0]["path"].(string)
+	logged := entries[0]["route"].(string)
 	assert.NotContains(t, logged, "super-secret-bearer-token",
 		"raw confirm token must not appear in logs")
 	assert.Contains(t, logged, "/api/confirm/{token}")
@@ -92,16 +118,29 @@ func TestAccessLog_RedactsEmailQueryParam(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + "/api/subscriptions?email=alice%40example.com")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	entries := decodeLogEntries(t, buf)
 	require.Len(t, entries, 1)
-	logged := entries[0]["path"].(string)
+	logged := entries[0]["route"].(string)
 	assert.NotContains(t, strings.ToLower(logged), "alice@example.com",
 		"raw email PII must not appear in logs")
-	assert.True(t,
-		strings.Contains(logged, "<redacted>") || strings.Contains(logged, "%3Credacted%3E"),
-		"redacted placeholder missing from log entry: %s", logged)
+	assert.Equal(t, "/api/subscriptions", logged)
+}
+
+func TestAccessLog_RedactsSecretLikeUserAgent(t *testing.T) {
+	log, buf := newBufferedLogger()
+	h := middleware.AccessLog(log)(accessOKHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
+	req.Header.Set("User-Agent", "Authorization: Bearer secret")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	entries := decodeLogEntries(t, buf)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "<redacted>", entries[0]["user_agent"])
 }
 
 func accessOKHandler() http.Handler {

@@ -55,6 +55,29 @@ func TestLogger_WithKeepsTraceHandler(t *testing.T) {
 	assert.Equal(t, "trace-456", entry["trace_id"])
 }
 
+func TestLogger_RedactsSensitiveKey_InlineAndViaWith(t *testing.T) {
+	buf := &bytes.Buffer{}
+	log := newWithWriter(Config{Level: "debug", ServiceName: "test-service"}, buf).
+		With("token", "super-secret-bearer")
+
+	log.Info(context.Background(), "auth_check", "email", "alice@example.com", "ok", true)
+
+	entry := decodeEntry(t, buf)
+	assert.Equal(t, redactedValue, entry["token"], "With-bound sensitive value must be redacted")
+	assert.Equal(t, redactedValue, entry["email"], "inline sensitive value must be redacted")
+	assert.Equal(t, true, entry["ok"])
+}
+
+func TestLogger_EnabledRespectsLevel(t *testing.T) {
+	buf := &bytes.Buffer{}
+	log := newWithWriter(Config{Level: "info", ServiceName: "test-service"}, buf)
+
+	assert.False(t, log.Enabled(context.Background(), LevelDebug),
+		"Debug must be filtered when level=info so callers skip expensive prep")
+	assert.True(t, log.Enabled(context.Background(), LevelInfo))
+	assert.True(t, log.Enabled(context.Background(), LevelError))
+}
+
 func decodeEntry(t *testing.T, buf *bytes.Buffer) map[string]any {
 	t.Helper()
 	var entry map[string]any
