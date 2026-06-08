@@ -9,7 +9,7 @@ import (
 	"github-release-notifier/internal/platform/postgres"
 )
 
-func openAndMigrateDB(ctx context.Context, cfg *config.Config, log logger.Logger) (*sql.DB, error) {
+func openAndMigrateDB(ctx context.Context, cfg *config.Config, log *logger.Logger) (*sql.DB, error) {
 	// Migrate via a short-lived pool first so failures happen before wiring the long-lived one.
 	res, err := postgres.RunMigrationsWithContext(ctx, cfg.DatabaseURL(), "file://migrations")
 	if err != nil {

@@ -18,11 +18,14 @@ type subscriptionService interface {
 
 type Handler struct {
 	svc subscriptionService
-	log logger.Logger
+	log *logger.Logger
 }
 
-func NewHandler(svc subscriptionService, logs ...logger.Logger) *Handler {
-	return &Handler{svc: svc, log: logger.Or(logs...)}
+func NewHandler(svc subscriptionService, log *logger.Logger) *Handler {
+	if log == nil {
+		log = logger.Nop()
+	}
+	return &Handler{svc: svc, log: log}
 }
 
 type errorResponse struct {

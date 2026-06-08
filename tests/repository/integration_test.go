@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/subscription"
 	"github-release-notifier/tests/pkg/testdb"
@@ -51,7 +52,7 @@ func TestIntegration_Store_Upsert(t *testing.T) {
 	}
 	truncateTables(t)
 
-	store := repository.NewStore(testDB)
+	store := repository.NewStore(testDB, logger.Nop())
 	ctx := context.Background()
 
 	require.NoError(t, store.Upsert(ctx, "golang", "go"))
@@ -79,7 +80,7 @@ func TestIntegration_Store_UpdateLastSeen(t *testing.T) {
 	}
 	truncateTables(t)
 
-	store := repository.NewStore(testDB)
+	store := repository.NewStore(testDB, logger.Nop())
 	ctx := context.Background()
 
 	require.NoError(t, store.Upsert(ctx, "golang", "go"))
@@ -107,7 +108,7 @@ func TestIntegration_Store_GetAll(t *testing.T) {
 	}
 	truncateTables(t)
 
-	store := repository.NewStore(testDB)
+	store := repository.NewStore(testDB, logger.Nop())
 	ctx := context.Background()
 
 	repos, err := store.GetAll(ctx)
@@ -124,7 +125,7 @@ func TestIntegration_Store_GetAll(t *testing.T) {
 
 func createTrackedRepo(t *testing.T, owner, name string) {
 	t.Helper()
-	store := repository.NewStore(testDB)
+	store := repository.NewStore(testDB, logger.Nop())
 	require.NoError(t, store.Upsert(context.Background(), owner, name))
 }
 
@@ -135,7 +136,7 @@ func TestIntegration_SubscriptionRepo_CreateAndGetByToken(t *testing.T) {
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	repo := subscription.NewRepo(testDB)
+	repo := subscription.NewRepo(testDB, logger.Nop())
 	ctx := context.Background()
 
 	sub := &subscription.Subscription{
@@ -165,7 +166,7 @@ func TestIntegration_SubscriptionRepo_GetByToken_NotFound(t *testing.T) {
 	}
 	truncateTables(t)
 
-	repo := subscription.NewRepo(testDB)
+	repo := subscription.NewRepo(testDB, logger.Nop())
 	ctx := context.Background()
 
 	_, err := repo.GetByToken(ctx, "nonexistent-token")
@@ -180,7 +181,7 @@ func TestIntegration_SubscriptionRepo_UpdateStatus_TriggersUpdatedAt(t *testing.
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	repo := subscription.NewRepo(testDB)
+	repo := subscription.NewRepo(testDB, logger.Nop())
 	ctx := context.Background()
 
 	sub := &subscription.Subscription{
@@ -212,7 +213,7 @@ func TestIntegration_SubscriptionRepo_Exists(t *testing.T) {
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	repo := subscription.NewRepo(testDB)
+	repo := subscription.NewRepo(testDB, logger.Nop())
 	ctx := context.Background()
 
 	exists, err := repo.Exists(ctx, "user@example.com", "golang", "go")
@@ -245,7 +246,7 @@ func TestIntegration_SubscriptionRepo_PartialUniqueIndex(t *testing.T) {
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	repo := subscription.NewRepo(testDB)
+	repo := subscription.NewRepo(testDB, logger.Nop())
 	ctx := context.Background()
 
 	sub1 := &subscription.Subscription{
@@ -277,7 +278,7 @@ func TestIntegration_SubscriptionRepo_ForeignKeyConstraint(t *testing.T) {
 	}
 	truncateTables(t)
 
-	repo := subscription.NewRepo(testDB)
+	repo := subscription.NewRepo(testDB, logger.Nop())
 	ctx := context.Background()
 
 	sub := &subscription.Subscription{
@@ -296,7 +297,7 @@ func TestIntegration_SubscriptionRepo_GetActiveByEmail(t *testing.T) {
 	createTrackedRepo(t, "golang", "go")
 	createTrackedRepo(t, "rust-lang", "rust")
 
-	repo := subscription.NewRepo(testDB)
+	repo := subscription.NewRepo(testDB, logger.Nop())
 	ctx := context.Background()
 
 	sub1 := &subscription.Subscription{
@@ -326,7 +327,7 @@ func TestIntegration_SubscriptionRepo_GetEmailsByRepo(t *testing.T) {
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	repo := subscription.NewRepo(testDB)
+	repo := subscription.NewRepo(testDB, logger.Nop())
 	ctx := context.Background()
 
 	for i, tc := range []struct {
@@ -362,7 +363,7 @@ func TestIntegration_CascadeDelete_RemovesSubscriptions(t *testing.T) {
 	truncateTables(t)
 	createTrackedRepo(t, "golang", "go")
 
-	subRepo := subscription.NewRepo(testDB)
+	subRepo := subscription.NewRepo(testDB, logger.Nop())
 	ctx := context.Background()
 
 	sub := &subscription.Subscription{

@@ -24,7 +24,7 @@ func NewRouter(
 	apiKey string,
 	subscribeLimiter *middleware.RateLimiter,
 	swaggerPath string,
-	log logger.Logger,
+	log *logger.Logger,
 ) *chi.Mux {
 	if log == nil {
 		log = logger.Nop()
@@ -50,7 +50,7 @@ func NewRouter(
 	return r
 }
 
-func root(log logger.Logger) http.HandlerFunc {
+func root(log *logger.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(r.Context(), log, w, http.StatusOK, map[string]string{
 			"service": "GitHub Release Notification API",
@@ -67,7 +67,7 @@ func serveFile(path string) http.HandlerFunc {
 	}
 }
 
-func writeJSON(ctx context.Context, log logger.Logger, w http.ResponseWriter, status int, data any) {
+func writeJSON(ctx context.Context, log *logger.Logger, w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {

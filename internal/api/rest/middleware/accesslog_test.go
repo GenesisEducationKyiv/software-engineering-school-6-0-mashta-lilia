@@ -1,7 +1,8 @@
 package middleware_test
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,49 +16,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type logEntry struct {
-	ctx    context.Context
-	msg    string
-	fields map[string]any
+func newBufferedLogger() (*logger.Logger, *bytes.Buffer) {
+	buf := &bytes.Buffer{}
+	return logger.NewWithWriter(logger.Config{Level: "info"}, buf), buf
 }
 
-type recordingLogger struct {
-	entries []logEntry
-}
-
-func (l *recordingLogger) Debug(ctx context.Context, msg string, kv ...any) {
-	l.record(ctx, msg, kv...)
-}
-
-func (l *recordingLogger) Info(ctx context.Context, msg string, kv ...any) {
-	l.record(ctx, msg, kv...)
-}
-
-func (l *recordingLogger) Warn(ctx context.Context, msg string, kv ...any) {
-	l.record(ctx, msg, kv...)
-}
-
-func (l *recordingLogger) Error(ctx context.Context, msg string, kv ...any) {
-	l.record(ctx, msg, kv...)
-}
-
-func (l *recordingLogger) With(_ ...any) logger.Logger {
-	return l
-}
-
-func (l *recordingLogger) Enabled(context.Context, logger.Level) bool { return true }
-
-func (l *recordingLogger) record(ctx context.Context, msg string, kv ...any) {
-	fields := make(map[string]any, len(kv)/2)
-	for i := 0; i+1 < len(kv); i += 2 {
-		key, _ := kv[i].(string)
-		fields[key] = kv[i+1]
+func decodeLogEntries(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	t.Helper()
+	var entries []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var entry map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &entry))
+		entries = append(entries, entry)
 	}
-	l.entries = append(l.entries, logEntry{ctx: ctx, msg: msg, fields: fields})
+	return entries
 }
 
 func TestAccessLog_LogsRequestMetadata(t *testing.T) {
-	log := &recordingLogger{}
+	log, buf := newBufferedLogger()
 	h := middleware.AccessLog(log)(accessOKHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
@@ -66,17 +45,19 @@ func TestAccessLog_LogsRequestMetadata(t *testing.T) {
 
 	h.ServeHTTP(rec, req)
 
-	require.Len(t, log.entries, 1)
-	entry := log.entries[0]
-	assert.Equal(t, "http_request", entry.msg)
-	assert.Equal(t, "GET", entry.fields["method"])
-	assert.Equal(t, "unmatched_path", entry.fields["route"])
-	assert.Equal(t, "203.0.113.5", entry.fields["remote_ip"])
-	assert.EqualValues(t, http.StatusOK, entry.fields["status"])
+	entries := decodeLogEntries(t, buf)
+	require.Len(t, entries, 1)
+	entry := entries[0]
+	assert.Equal(t, "http_request", entry["msg"])
+	assert.Equal(t, "GET", entry["method"])
+	// No chi router is wired in this test, so there is no matched route pattern.
+	assert.Equal(t, "unmatched_path", entry["route"])
+	assert.Equal(t, "203.0.113.5", entry["remote_ip"])
+	assert.EqualValues(t, http.StatusOK, entry["status"])
 }
 
 func TestAccessLog_UnmatchedPathDoesNotLeakRawURL(t *testing.T) {
-	log := &recordingLogger{}
+	log, buf := newBufferedLogger()
 
 	r := chi.NewRouter()
 	r.Use(middleware.AccessLog(log))
@@ -91,15 +72,16 @@ func TestAccessLog_UnmatchedPathDoesNotLeakRawURL(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
-	require.Len(t, log.entries, 1)
-	logged := log.entries[0].fields["route"].(string)
+	entries := decodeLogEntries(t, buf)
+	require.Len(t, entries, 1)
+	logged := entries[0]["route"].(string)
 	assert.NotContains(t, logged, "super-secret-bearer-token",
 		"raw URL must not appear in logs when chi has no matching route")
 	assert.Equal(t, "unmatched_path", logged)
 }
 
 func TestAccessLog_RedactsTokenFromConfirmPath(t *testing.T) {
-	log := &recordingLogger{}
+	log, buf := newBufferedLogger()
 
 	r := chi.NewRouter()
 	r.Use(middleware.AccessLog(log))
@@ -114,15 +96,16 @@ func TestAccessLog_RedactsTokenFromConfirmPath(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
-	require.Len(t, log.entries, 1)
-	logged := log.entries[0].fields["route"].(string)
+	entries := decodeLogEntries(t, buf)
+	require.Len(t, entries, 1)
+	logged := entries[0]["route"].(string)
 	assert.NotContains(t, logged, "super-secret-bearer-token",
 		"raw confirm token must not appear in logs")
 	assert.Contains(t, logged, "/api/confirm/{token}")
 }
 
 func TestAccessLog_RedactsEmailQueryParam(t *testing.T) {
-	log := &recordingLogger{}
+	log, buf := newBufferedLogger()
 
 	r := chi.NewRouter()
 	r.Use(middleware.AccessLog(log))
@@ -137,15 +120,16 @@ func TestAccessLog_RedactsEmailQueryParam(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
-	require.Len(t, log.entries, 1)
-	logged := log.entries[0].fields["route"].(string)
+	entries := decodeLogEntries(t, buf)
+	require.Len(t, entries, 1)
+	logged := entries[0]["route"].(string)
 	assert.NotContains(t, strings.ToLower(logged), "alice@example.com",
 		"raw email PII must not appear in logs")
 	assert.Equal(t, "/api/subscriptions", logged)
 }
 
 func TestAccessLog_RedactsSecretLikeUserAgent(t *testing.T) {
-	log := &recordingLogger{}
+	log, buf := newBufferedLogger()
 	h := middleware.AccessLog(log)(accessOKHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
@@ -154,8 +138,9 @@ func TestAccessLog_RedactsSecretLikeUserAgent(t *testing.T) {
 
 	h.ServeHTTP(rec, req)
 
-	require.Len(t, log.entries, 1)
-	assert.Equal(t, "<redacted>", log.entries[0].fields["user_agent"])
+	entries := decodeLogEntries(t, buf)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "<redacted>", entries[0]["user_agent"])
 }
 
 func accessOKHandler() http.Handler {

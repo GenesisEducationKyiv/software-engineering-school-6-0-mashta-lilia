@@ -11,8 +11,10 @@ type checker interface {
 	Check(ctx context.Context) error
 }
 
-func Handler(c checker, logs ...logger.Logger) http.HandlerFunc {
-	log := logger.Or(logs...)
+func Handler(c checker, log *logger.Logger) http.HandlerFunc {
+	if log == nil {
+		log = logger.Nop()
+	}
 	if c == nil {
 		return func(w http.ResponseWriter, r *http.Request) {
 			respond(
@@ -33,7 +35,7 @@ func Handler(c checker, logs ...logger.Logger) http.HandlerFunc {
 	}
 }
 
-func respond(ctx context.Context, log logger.Logger, w http.ResponseWriter, status int, data any) {
+func respond(ctx context.Context, log *logger.Logger, w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {

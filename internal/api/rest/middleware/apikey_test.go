@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github-release-notifier/internal/api/rest/middleware"
+	"github-release-notifier/internal/platform/logger"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +23,7 @@ func okHandler() http.Handler {
 
 func TestAPIKeyAuth_EmptyKey_FailsClosed(t *testing.T) {
 	t.Parallel()
-	h := middleware.APIKeyAuth("")(okHandler())
+	h := middleware.APIKeyAuth("", logger.Nop())(okHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/subscriptions", http.NoBody)
 	req.Header.Set("X-API-Key", "anything")
@@ -41,7 +42,7 @@ func TestAPIKeyAuth_EmptyKey_FailsClosed(t *testing.T) {
 
 func TestAPIKeyAuth_MissingHeader(t *testing.T) {
 	t.Parallel()
-	h := middleware.APIKeyAuth("expected-key")(okHandler())
+	h := middleware.APIKeyAuth("expected-key", logger.Nop())(okHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/subscriptions", http.NoBody)
 	rec := httptest.NewRecorder()
@@ -56,7 +57,7 @@ func TestAPIKeyAuth_MissingHeader(t *testing.T) {
 
 func TestAPIKeyAuth_WrongKey(t *testing.T) {
 	t.Parallel()
-	h := middleware.APIKeyAuth("expected-key")(okHandler())
+	h := middleware.APIKeyAuth("expected-key", logger.Nop())(okHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/subscriptions", http.NoBody)
 	req.Header.Set("X-API-Key", "wrong-key")
@@ -69,7 +70,7 @@ func TestAPIKeyAuth_WrongKey(t *testing.T) {
 
 func TestAPIKeyAuth_CorrectKey(t *testing.T) {
 	t.Parallel()
-	h := middleware.APIKeyAuth("expected-key")(okHandler())
+	h := middleware.APIKeyAuth("expected-key", logger.Nop())(okHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/subscriptions", http.NoBody)
 	req.Header.Set("X-API-Key", "expected-key")
@@ -83,7 +84,7 @@ func TestAPIKeyAuth_CorrectKey(t *testing.T) {
 
 func TestAPIKeyAuth_RejectsKeysOfDifferingLength(t *testing.T) {
 	t.Parallel()
-	h := middleware.APIKeyAuth("expected-key-1234567890")(okHandler())
+	h := middleware.APIKeyAuth("expected-key-1234567890", logger.Nop())(okHandler())
 
 	for _, attempt := range []string{"x", "x-very-very-very-long-and-still-wrong"} {
 		req := httptest.NewRequest(http.MethodGet, "/api/subscriptions", http.NoBody)

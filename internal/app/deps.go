@@ -45,7 +45,7 @@ func newRedisClient(cfg *config.Config) *redis.Client {
 }
 
 func buildDependencies(
-	ctx context.Context, cfg *config.Config, db *sql.DB, rdb *redis.Client, log logger.Logger,
+	ctx context.Context, cfg *config.Config, db *sql.DB, rdb *redis.Client, log *logger.Logger,
 ) (*dependencies, error) {
 	subRepo, err := subscription.NewRepoWithContext(ctx, db, log.With("component", "subscription_repo"))
 	if err != nil {
@@ -120,7 +120,7 @@ type githubClient interface {
 
 func selectGitHubClient( //nolint:ireturn // composition root chooses between concrete impls
 	ctx context.Context, base *github.Client, rdb *redis.Client, ttl time.Duration,
-	log logger.Logger,
+	log *logger.Logger,
 ) githubClient {
 	pingCtx, cancel := context.WithTimeout(ctx, redisPingTimeout)
 	defer cancel()

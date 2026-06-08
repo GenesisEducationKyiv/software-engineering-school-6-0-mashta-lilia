@@ -26,17 +26,20 @@ type RateLimiter struct {
 	done         chan struct{}
 	stopOnce     sync.Once
 	trustedProxy bool
-	log          logger.Logger
+	log          *logger.Logger
 }
 
-func NewRateLimiter(limit int, window time.Duration, trustedProxy bool, logs ...logger.Logger) *RateLimiter {
+func NewRateLimiter(limit int, window time.Duration, trustedProxy bool, log *logger.Logger) *RateLimiter {
+	if log == nil {
+		log = logger.Nop()
+	}
 	rl := &RateLimiter{
 		visitors:     make(map[string]*visitor),
 		limit:        limit,
 		window:       window,
 		done:         make(chan struct{}),
 		trustedProxy: trustedProxy,
-		log:          optionalLogger(logs...),
+		log:          log,
 	}
 	go rl.cleanup()
 	return rl

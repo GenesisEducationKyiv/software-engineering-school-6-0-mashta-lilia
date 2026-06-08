@@ -35,22 +35,28 @@ type Store struct {
 	stmtGetAll            *sql.Stmt
 	stmtUpdateLastSeen    *sql.Stmt
 	stmtUpdateLastChecked *sql.Stmt
-	log                   logger.Logger
+	log                   *logger.Logger
 }
 
-func NewStore(db *sql.DB, logs ...logger.Logger) *Store {
-	return &Store{db: db, log: logger.Or(logs...)}
+func NewStore(db *sql.DB, log *logger.Logger) *Store {
+	if log == nil {
+		log = logger.Nop()
+	}
+	return &Store{db: db, log: log}
 }
 
-func NewStoreWithContext(ctx context.Context, db *sql.DB, logs ...logger.Logger) (*Store, error) {
+func NewStoreWithContext(ctx context.Context, db *sql.DB, log *logger.Logger) (*Store, error) {
 	if ctx == nil {
 		return nil, errors.New("repository store: nil context")
 	}
 	if db == nil {
 		return nil, errors.New("repository store: nil db")
 	}
+	if log == nil {
+		log = logger.Nop()
+	}
 
-	store := &Store{db: db, log: logger.Or(logs...)}
+	store := &Store{db: db, log: log}
 	if err := store.ensurePrepared(ctx); err != nil {
 		return nil, errors.Join(err, store.Close())
 	}

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	resthandler "github-release-notifier/internal/api/rest/subscription"
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/subscription"
 
 	"github.com/go-chi/chi/v5"
@@ -53,7 +54,7 @@ func newRouterWithHandler(h *resthandler.Handler) http.Handler {
 func newServer(t *testing.T) (*serviceMock, *httptest.Server) {
 	t.Helper()
 	m := &serviceMock{}
-	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(m)))
+	srv := httptest.NewServer(newRouterWithHandler(resthandler.NewHandler(m, logger.Nop())))
 	t.Cleanup(srv.Close)
 	return m, srv
 }

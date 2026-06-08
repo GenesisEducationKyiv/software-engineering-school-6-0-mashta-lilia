@@ -32,13 +32,16 @@ type CachedClient struct {
 	base  baseClient
 	redis *redis.Client
 	ttl   time.Duration
-	log   logger.Logger
+	log   *logger.Logger
 }
 
 func NewCachedClient(
-	base baseClient, rdb *redis.Client, ttl time.Duration, logs ...logger.Logger,
+	base baseClient, rdb *redis.Client, ttl time.Duration, log *logger.Logger,
 ) *CachedClient {
-	return &CachedClient{base: base, redis: rdb, ttl: ttl, log: logger.Or(logs...)}
+	if log == nil {
+		log = logger.Nop()
+	}
+	return &CachedClient{base: base, redis: rdb, ttl: ttl, log: log}
 }
 
 func (c *CachedClient) RepoExists(ctx context.Context, owner, name string) (bool, error) {

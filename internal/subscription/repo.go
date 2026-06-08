@@ -54,22 +54,28 @@ type Repo struct {
 	stmtGetEmailsByRepo  *sql.Stmt
 	stmtUpdateStatus     *sql.Stmt
 	stmtExists           *sql.Stmt
-	log                  logger.Logger
+	log                  *logger.Logger
 }
 
-func NewRepo(db *sql.DB, logs ...logger.Logger) *Repo {
-	return &Repo{db: db, log: logger.Or(logs...)}
+func NewRepo(db *sql.DB, log *logger.Logger) *Repo {
+	if log == nil {
+		log = logger.Nop()
+	}
+	return &Repo{db: db, log: log}
 }
 
-func NewRepoWithContext(ctx context.Context, db *sql.DB, logs ...logger.Logger) (*Repo, error) {
+func NewRepoWithContext(ctx context.Context, db *sql.DB, log *logger.Logger) (*Repo, error) {
 	if ctx == nil {
 		return nil, errors.New("subscription repo: nil context")
 	}
 	if db == nil {
 		return nil, errors.New("subscription repo: nil db")
 	}
+	if log == nil {
+		log = logger.Nop()
+	}
 
-	r := &Repo{db: db, log: logger.Or(logs...)}
+	r := &Repo{db: db, log: log}
 	if err := r.ensurePrepared(ctx); err != nil {
 		return nil, errors.Join(err, r.Close())
 	}

@@ -17,7 +17,7 @@ const (
 	shutdownTimeout  = 10 * time.Second
 )
 
-func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies, log logger.Logger) error {
+func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies, log *logger.Logger) error {
 	srv := &http.Server{
 		Addr:         ":" + cfg.ServerPort,
 		Handler:      deps.router,
@@ -65,13 +65,13 @@ func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies, 
 	return nil
 }
 
-func waitForPoller(deps *dependencies, log logger.Logger) {
+func waitForPoller(deps *dependencies, log *logger.Logger) {
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	waitForPollerWithContext(ctx, deps, log)
 }
 
-func waitForPollerWithContext(ctx context.Context, deps *dependencies, log logger.Logger) {
+func waitForPollerWithContext(ctx context.Context, deps *dependencies, log *logger.Logger) {
 	select {
 	case <-deps.poller.Done():
 	case <-ctx.Done():
