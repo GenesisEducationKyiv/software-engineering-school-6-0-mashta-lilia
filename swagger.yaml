@@ -1,0 +1,267 @@
+openapi: 3.0.3
+info:
+  title: GitHub Release Notification API
+  description: API for subscribing to email notifications about new releases of GitHub repositories
+  version: 1.0.0
+
+paths:
+  /api/subscribe:
+    post:
+      summary: Subscribe to release notifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - repo
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                repo:
+                  type: string
+                  example: golang/go
+      responses:
+        "200":
+          description: Subscription created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Subscription created. Please confirm via email."
+        "400":
+          description: Invalid input (bad email or repo format)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Repository not found on GitHub
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Subscription already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many requests
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the rate limit resets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Failed to send confirmation email (service temporarily unavailable)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/confirm/{token}:
+    get:
+      summary: Confirm email subscription
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Subscription confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Subscription confirmed successfully."
+        "404":
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/unsubscribe/{token}:
+    get:
+      summary: Unsubscribe from release notifications
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successfully unsubscribed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Successfully unsubscribed."
+        "404":
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/subscriptions:
+    get:
+      summary: Get all active subscriptions for an email
+      description: Returns only subscriptions with status "active". Pending and unsubscribed entries are excluded.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+      responses:
+        "200":
+          description: List of active subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActiveSubscription"
+        "400":
+          description: Missing or invalid email parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /health:
+    get:
+      summary: Health check
+      description: Returns the health status of the service by pinging the database.
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+        "503":
+          description: Service is unhealthy (database unreachable)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unhealthy
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Exposes service metrics in Prometheus text format. Includes http_requests_total (counter), http_request_duration_seconds (histogram), and http_requests_in_flight (gauge).
+      responses:
+        "200":
+          description: Prometheus metrics in text exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+        repo_owner:
+          type: string
+        repo_name:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, unsubscribed]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ActiveSubscription:
+      description: A subscription with status "active" only, as returned by the list endpoint.
+      allOf:
+        - $ref: "#/components/schemas/Subscription"
+        - type: object
+          properties:
+            status:
+              type: string
+              enum: [active]

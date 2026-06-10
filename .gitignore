@@ -1,0 +1,24 @@
+bin/
+.env
+*.exe
+vendor/
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+*.out
+coverage.html
+
+# ops config (local cache)
+.ops/
+.golangci.yaml

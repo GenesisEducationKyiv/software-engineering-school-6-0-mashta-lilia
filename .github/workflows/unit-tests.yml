@@ -1,0 +1,28 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run unit tests
+        # -short skips testcontainers-backed integration tests, which live
+        # under tests/ and behind testing.Short() guards.
+        run: go test -short ./... -count=1 -race -cover -coverprofile=coverage.out
+
+      - name: Coverage summary
+        if: always()
+        run: go tool cover -func=coverage.out | tail -1
