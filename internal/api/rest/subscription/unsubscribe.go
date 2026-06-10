@@ -9,16 +9,16 @@ import (
 func (h *Handler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	if token == "" {
-		respondError(w, http.StatusBadRequest, "token is required")
+		h.respondError(r.Context(), w, http.StatusBadRequest, "token is required")
 		return
 	}
 
 	if err := h.svc.Unsubscribe(r.Context(), token); err != nil {
-		writeServiceError(w, err)
+		h.writeServiceError(r.Context(), w, err)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{
+	h.respondJSON(r.Context(), w, http.StatusOK, map[string]string{
 		"message": "Successfully unsubscribed.",
 	})
 }

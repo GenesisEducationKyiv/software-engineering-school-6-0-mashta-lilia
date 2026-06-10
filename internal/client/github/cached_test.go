@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/release"
 
 	"github.com/alicebob/miniredis/v2"
@@ -32,7 +33,7 @@ func setupCachedClient(t *testing.T, handler http.Handler) (*CachedClient, *mini
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { rdb.Close() }) //nolint:errcheck,gosec // close error safe to ignore in test cleanup
 
-	cached := NewCachedClient(base, rdb, 5*time.Minute)
+	cached := NewCachedClient(base, rdb, 5*time.Minute, logger.Nop())
 	return cached, mr
 }
 
@@ -129,7 +130,7 @@ func TestCachedClient_RepoExists_RedisDown_FallsBackToAPI(t *testing.T) {
 	})
 	defer rdb.Close() //nolint:errcheck // close error safe to ignore in test
 
-	cached := NewCachedClient(base, rdb, 5*time.Minute)
+	cached := NewCachedClient(base, rdb, 5*time.Minute, logger.Nop())
 
 	ctx := context.Background()
 
@@ -162,7 +163,7 @@ func TestCachedClient_GetLatestRelease_RedisDown_FallsBackToAPI(t *testing.T) {
 	})
 	defer rdb.Close() //nolint:errcheck // close error safe to ignore in test
 
-	cached := NewCachedClient(base, rdb, 5*time.Minute)
+	cached := NewCachedClient(base, rdb, 5*time.Minute, logger.Nop())
 
 	rel, err := cached.GetLatestRelease(context.Background(), "test", "repo")
 	require.NoError(t, err, "expected graceful degradation when Redis is down")

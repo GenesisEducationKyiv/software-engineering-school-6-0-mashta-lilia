@@ -5,22 +5,17 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"io"
-	"log/slog"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/repository"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestMain(m *testing.M) {
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	m.Run()
-}
 
 func mustNewPoller(
 	t *testing.T,
@@ -28,7 +23,7 @@ func mustNewPoller(
 	gh *mockGitHubReleaseClient, mailer *mockReleaseNotifier, interval time.Duration,
 ) *Poller {
 	t.Helper()
-	p, err := NewPoller(repos, subs, gh, mailer, interval)
+	p, err := NewPoller(repos, subs, gh, mailer, interval, logger.Nop())
 	require.NoError(t, err)
 	return p
 }
@@ -37,7 +32,7 @@ func TestNewPoller_RejectsNonPositiveInterval(t *testing.T) {
 	t.Parallel()
 	for _, d := range []time.Duration{0, -time.Second} {
 		t.Run(d.String(), func(t *testing.T) {
-			_, err := NewPoller(nil, nil, nil, nil, d)
+			_, err := NewPoller(nil, nil, nil, nil, d, logger.Nop())
 			assert.Error(t, err)
 		})
 	}
@@ -46,6 +41,9 @@ func TestNewPoller_RejectsNonPositiveInterval(t *testing.T) {
 func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
 	t.Parallel()
 	var updatedTag string
+	// Subscribers are notified concurrently, so guard the slice and assert
+	// membership rather than order.
+	var notifiedMu sync.Mutex
 	var notifiedEmails []string
 
 	repos := &mockRepoScanReader{
@@ -74,7 +72,9 @@ func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
 	}
 	mailer := &mockReleaseNotifier{
 		SendReleaseNotificationFn: func(_ context.Context, email, _ string, _ *Release) error {
+			notifiedMu.Lock()
 			notifiedEmails = append(notifiedEmails, email)
+			notifiedMu.Unlock()
 			return nil
 		},
 	}
@@ -83,7 +83,7 @@ func TestPoller_NewRelease_NotifiesSubscribers(t *testing.T) {
 	poller.scan(context.Background())
 
 	assert.Equal(t, "v1.22", updatedTag)
-	assert.Equal(t, []string{"alice@example.com", "bob@example.com"}, notifiedEmails)
+	assert.ElementsMatch(t, []string{"alice@example.com", "bob@example.com"}, notifiedEmails)
 }
 
 func TestPoller_SameTag_NoNotification(t *testing.T) {

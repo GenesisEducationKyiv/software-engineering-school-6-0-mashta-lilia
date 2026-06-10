@@ -1,8 +1,9 @@
-.PHONY: run build test test-integration test-e2e test-all lint docker-up docker-down migrate-up migrate-down
+.PHONY: run build test test-integration test-e2e test-all lint docker-up docker-down migrate-up migrate-down kibana-bootstrap
 
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -X main.commit=$(COMMIT) -X main.buildTime=$(BUILD_TIME)
+KIBANA_URL ?= http://localhost:5601
 
 run:
 	go run ./main
@@ -43,3 +44,9 @@ migrate-up:
 
 migrate-down:
 	migrate -path migrations -database "$(DATABASE_URL)" down
+
+kibana-bootstrap:
+	curl -sS -X POST "$(KIBANA_URL)/api/data_views/data_view" \
+		-H "kbn-xsrf: true" \
+		-H "Content-Type: application/json" \
+		-d '{"data_view":{"title":"app-logs-*","name":"app-logs-*","timeFieldName":"timestamp"},"override":true}'
