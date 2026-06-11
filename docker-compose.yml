@@ -5,10 +5,14 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    environment:
+      NOTIFIER_ADDR: notifier:50051
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      notifier:
         condition: service_healthy
     restart: unless-stopped
     networks:
@@ -23,6 +27,100 @@ services:
       resources:
         limits:
           memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  notifier:
+    build:
+      context: .
+      dockerfile: Dockerfile.notifier
+    # Not published to the host: the endpoint is unauthenticated, so only the monolith may reach it.
+    environment:
+      GRPC_ADDR: ":50051"
+      DB_HOST: postgres-notifier
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: notification
+      DB_SSLMODE: disable
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SMTP_FROM: "noreply@example.com"
+      BASE_URL: "http://localhost:8080"
+      LOG_LEVEL: "info"
+      SERVICE_NAME: github-release-notifier-notification
+    depends_on:
+      postgres-notifier:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "50051"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres-notifier:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: notification
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata_notifier:/var/lib/postgresql/data
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d notification"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mailpit:
+    image: axllent/mailpit:v1.18
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8025/api/v1/info"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256m
     logging:
       driver: json-file
       options:
@@ -207,6 +305,7 @@ networks:
 
 volumes:
   pgdata:
+  pgdata_notifier:
   esdata:
   prometheus_data:
   grafana_data:

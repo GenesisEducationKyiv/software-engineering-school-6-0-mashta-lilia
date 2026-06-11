@@ -86,37 +86,57 @@ graph LR
 
 ```mermaid
 graph TB
-    subgraph Service["github-release-notifier (single Go binary)"]
+    subgraph Monolith["monolith: API + poller (main/main.go)"]
         API["api/rest<br/>(Chi router, middleware)"]
         Domains["domain packages<br/>(subscription, release)"]
         Repo["storage<br/>(Postgres queries)"]
         GHC["client/github<br/>(HTTP + Cache decorator)"]
-        Mail["client/mailer<br/>(SMTP)"]
+        NotifyClient["outbound/notification<br/>(gRPC client)"]
 
         API --> Domains
         Domains --> Repo
         Domains --> GHC
-        Domains --> Mail
+        Domains --> NotifyClient
+    end
+
+    subgraph Notification["notification service (services/notification)"]
+        GRPC["inbound/grpcserver"]
+        NotificationApp["app.Service<br/>(dedup -> compose -> send)"]
+        SMTPAdapter["outbound/smtp"]
+        Ledger["outbound/store"]
+
+        GRPC --> NotificationApp
+        NotificationApp --> SMTPAdapter
+        NotificationApp --> Ledger
     end
 
     DB[("PostgreSQL<br/>subscriptions,<br/>tracked_repositories")]
+    NotifyDB[("PostgreSQL<br/>sent_notifications")]
     Cache[("Redis<br/>(optional)<br/>release cache")]
     GitHub["GitHub REST API"]
-    SMTPSrv["SMTP Server"]
+    SMTPSrv["SMTP Server<br/>(Mailpit/provider)"]
 
     Repo --> DB
     GHC --> Cache
     GHC --> GitHub
-    Mail --> SMTPSrv
+    NotifyClient -- "gRPC" --> GRPC
+    Ledger --> NotifyDB
+    SMTPAdapter --> SMTPSrv
 ```
 
-The dependency arrow points **inward**: `api -> domain -> adapters`.
-The domain packages define the interfaces they consume; the outer layers implement them
-(see [ADR 0001](adr/0001-clean-architecture-with-dependency-inversion.md)).
+The dependency arrow still points **inward** inside each deployable. The
+monolith's `subscription` and `release` packages define the notification
+interfaces they consume; `internal/outbound/notification` implements those
+interfaces by calling the extracted service over gRPC. The notification service
+owns its own Postgres database and is structured as a DDD module:
+`model`, `app`, `inbound/grpcserver`, and `outbound/*`.
+
 Redis caching is added as a **decorator** on `GitHubClient` — both the base
 client and `CachedClient` satisfy the same interface, so the domain layer
 never knows whether a cache is in front. The cache is optional: any Redis
-error falls through to the GitHub API.
+error falls through to the GitHub API. The notification split and synchronous
+gRPC/dedup trade-off are recorded in [ADR 0014](adr/0014-extract-notification-microservice.md)
+and [ADR 0015](adr/0015-sync-grpc-and-dedup-ledger.md).
 
 ---
 
@@ -125,12 +145,13 @@ error falls through to the GitHub API.
 | Component       | Responsibility                                       | Technology                  |
 |-----------------|------------------------------------------------------|-----------------------------|
 | API router      | Routing, rate limiting, API-key auth, metrics       | `go-chi/chi/v5` + custom mw |
-| Subscription svc| Validate repo, upsert tracked repo, create sub, send confirmation, status transitions | Go (pure) |
-| Release poller  | Poll tracked repos on a ticker, fan out emails       | Go + `time.Ticker`          |
+| Subscription svc| Validate repo, upsert tracked repo, create sub, request confirmation send, status transitions | Go (pure) |
+| Release poller  | Poll tracked repos on a ticker, fan out notification requests | Go + `time.Ticker`          |
 | Storage adapter | Parameterised SQL against `subscriptions` and `tracked_repositories` | `database/sql` + `lib/pq` |
 | GitHub client   | `GET /repos/.../releases/latest` with retry/backoff  | `net/http` + custom retries |
 | Cache decorator | Cache-aside Redis layer over GitHub client           | `redis/go-redis/v9`         |
-| Mailer          | Send confirmation and notification emails            | `net/smtp`                  |
+| Notification client | Call the notification service over gRPC          | `google.golang.org/grpc`    |
+| Notification service | Deduplicate, compose, and send email notifications | gRPC + `net/smtp` + Postgres |
 | Migrations      | Schema versioning at startup                          | `golang-migrate/migrate/v4` |
 | Metrics         | RED metrics on HTTP, in-flight gauge                 | `prometheus/client_golang`  |
 
@@ -163,7 +184,8 @@ sequenceDiagram
     participant S as Subscription Service
     participant GH as GitHub Client (cached)
     participant DB as Postgres
-    participant M as Mailer
+    participant N as Notifier (gRPC)
+    participant M as SMTP
 
     U->>API: POST /subscribe {email, repo}
     API->>S: Subscribe(email, repo)
@@ -174,12 +196,16 @@ sequenceDiagram
     S->>DB: Exists(subscriptions WHERE active|pending)
     DB-->>S: false
     S->>DB: INSERT subscription (status=pending, token)
-    S->>M: SendConfirmation(email, token)
-    alt SMTP fails
+    S->>N: SendConfirmation(email, token, repo)  [gRPC]
+    N->>N: reserve dedup key (own Postgres ledger)
+    N->>M: send confirmation email
+    alt gRPC transport or SMTP fails (non-OK status)
+        N-->>S: error
         S->>DB: UPDATE status='unsubscribed'  (rollback)
         S-->>API: 503
         API-->>U: 503 Service Unavailable
-    else SMTP ok
+    else delivered=true (or deduped delivered=false: business no-op)
+        N-->>S: OK
         S-->>API: 200
         API-->>U: 200 OK
     end
@@ -199,7 +225,8 @@ sequenceDiagram
     participant P as Poller
     participant DB as Postgres
     participant GH as GitHub Client (cached)
-    participant M as Mailer
+    participant N as Notifier (gRPC)
+    participant M as SMTP
 
     T->>P: tick
     P->>P: TryLock (skip if running)
@@ -213,8 +240,10 @@ sequenceDiagram
             P->>DB: SELECT emails WHERE repo=? AND status='active'
             DB-->>P: [emails]
             loop for each email
-                P->>M: SendReleaseNotification
-                Note right of M: per-recipient errors logged,<br/>do not abort batch
+                P->>N: SendReleaseNotification  [gRPC]
+                N->>N: reserve dedup key (at-most-once)
+                N->>M: send notification email
+                Note right of N: per-recipient errors logged,<br/>do not abort batch
             end
         else same tag or nil
             P->>DB: UPDATE last_checked_at

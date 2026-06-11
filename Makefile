@@ -1,4 +1,4 @@
-.PHONY: run build test test-integration test-e2e test-all lint docker-up docker-down migrate-up migrate-down kibana-bootstrap
+.PHONY: run build proto build-notifier run-notifier test test-integration test-e2e test-all lint docker-up docker-down migrate-up migrate-down kibana-bootstrap
 
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -11,15 +11,25 @@ run:
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/server ./main
 
+proto:
+	buf generate
+
+build-notifier:
+	go build -ldflags "$(LDFLAGS)" -o bin/notifier ./services/notification/cmd/notifier
+
+run-notifier:
+	go run ./services/notification/cmd/notifier
+
 # Unit tests only. Pure Go, no Docker, < 30s. Mirrors unit-tests.yml in CI.
 test:
 	go test -short ./... -v -count=1 -race
 
 # Integration tests. Spins up postgres + mailpit via testcontainers under
 # the hood; the only prerequisite is a running Docker daemon. Mirrors
-# integration-tests.yml in CI.
+# integration-tests.yml in CI. services/notification is included so the
+# notifier's store integration tests (testcontainers) run too.
 test-integration:
-	go test ./tests/... -v -count=1 -timeout 10m -race
+	go test ./tests/... ./services/notification/... -v -count=1 -timeout 10m -race
 
 # Browser-driven E2E. Boots a self-contained docker-compose stack
 # (postgres, redis, mailpit, app), runs Playwright, tears down. Mirrors

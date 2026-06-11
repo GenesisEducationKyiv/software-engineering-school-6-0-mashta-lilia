@@ -8,8 +8,8 @@ import (
 	"github-release-notifier/internal/api/rest"
 	"github-release-notifier/internal/api/rest/middleware"
 	"github-release-notifier/internal/client/github"
-	"github-release-notifier/internal/client/mailer"
 	"github-release-notifier/internal/config"
+	notificationclient "github-release-notifier/internal/outbound/notification"
 	"github-release-notifier/internal/platform/health"
 	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/platform/token"
@@ -51,37 +51,38 @@ func buildDependencies(
 	if err != nil {
 		return nil, fmt.Errorf("creating subscription repo: %w", err)
 	}
+	closers := []func() error{subRepo.Close}
 	repoStore, err := repository.NewStoreWithContext(ctx, db, log.With("component", "repository_store"))
 	if err != nil {
 		closeQuietly(ctx, log, "subscription repo", subRepo.Close)
 		return nil, fmt.Errorf("creating tracked repo store: %w", err)
 	}
-	storageReady := false
+	closers = append(closers, repoStore.Close)
+	depsReady := false
 	defer func() {
-		if !storageReady {
-			closeQuietly(ctx, log, "subscription repo", subRepo.Close)
-			closeQuietly(ctx, log, "tracked repo store", repoStore.Close)
+		if !depsReady {
+			for _, closeFn := range closers {
+				closeQuietly(ctx, log, "dependency", closeFn)
+			}
 		}
 	}()
 
 	base := github.NewClient(cfg.GitHubToken)
 	ghClient := selectGitHubClient(ctx, base, rdb, cfg.RedisCacheTTL, log)
 
-	mailTemplates := mailer.NewTemplateBuilder(cfg.BaseURL)
-	mail, err := mailer.NewSMTPMailer(
-		cfg.SMTPHost, cfg.SMTPPort,
-		cfg.SMTPUser, cfg.SMTPPassword,
-		cfg.SMTPFrom, mailTemplates,
+	notifierConn, notifier, err := notificationclient.Dial(
+		cfg.NotifierAddr, log.With("component", "notification_client"),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("creating mailer: %w", err)
+		return nil, fmt.Errorf("creating notification client: %w", err)
 	}
+	closers = append(closers, notifierConn.Close)
 
 	tokenGen := token.New()
-	subService := subscription.NewService(subRepo, repoStore, ghClient, mail, tokenGen)
+	subService := subscription.NewService(subRepo, repoStore, ghClient, notifier, tokenGen)
 
 	poller, err := release.NewPoller(
-		repoStore, subRepo, ghClient, mail, cfg.ScanInterval, log.With("component", "poller"),
+		repoStore, subRepo, ghClient, notifier, cfg.ScanInterval, log.With("component", "poller"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating poller: %w", err)
@@ -93,12 +94,12 @@ func buildDependencies(
 
 	router := rest.NewRouter(handler, healthChecker, cfg.APIKey, subscribeLimiter, "swagger.yaml", log)
 
-	storageReady = true
+	depsReady = true
 	return &dependencies{
 		router:           router,
 		poller:           poller,
 		subscribeLimiter: subscribeLimiter,
-		closers:          []func() error{subRepo.Close, repoStore.Close},
+		closers:          closers,
 	}, nil
 }
 
