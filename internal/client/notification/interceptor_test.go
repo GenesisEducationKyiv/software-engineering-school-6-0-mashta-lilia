@@ -4,6 +4,7 @@ import (
 	"context"
 	"github-release-notifier/internal/client/notification"
 	"github-release-notifier/internal/platform/tracectx"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,10 +28,16 @@ func TestTraceUnaryClientInterceptor_PropagatesTraceMetadata(t *testing.T) {
 
 	require.NoError(t, interceptor(ctx, "/test.Method", nil, nil, nil, invoker))
 	assert.Equal(t, []string{"1234567890abcdef1234567890abcdef"}, got.Get("x-request-id"))
-	assert.Equal(t,
-		[]string{"00-1234567890abcdef1234567890abcdef-0000000000000000-01"},
-		got.Get("traceparent"),
-	)
+
+	tp := got.Get("traceparent")
+	require.Len(t, tp, 1)
+	parts := strings.Split(tp[0], "-")
+	require.Len(t, parts, 4)
+	assert.Equal(t, "00", parts[0])
+	assert.Equal(t, "1234567890abcdef1234567890abcdef", parts[1])
+	assert.Regexp(t, "^[0-9a-f]{16}$", parts[2])
+	assert.NotEqual(t, "0000000000000000", parts[2], "parent-id must be non-zero per W3C traceparent")
+	assert.Equal(t, "01", parts[3])
 }
 
 func TestTraceUnaryClientInterceptor_WithoutTraceIDAddsNoMetadata(t *testing.T) {

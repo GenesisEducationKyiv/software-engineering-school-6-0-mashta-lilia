@@ -3,7 +3,9 @@ package store_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
+	"fmt"
 	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/services/notification/store"
 	"log/slog"
@@ -127,7 +129,11 @@ func newPostgres(ctx context.Context) (*sql.DB, func(), error) {
 	if err != nil {
 		return nil, terminate, err
 	}
-	if _, err := platformpostgres.RunMigrationsWithContext(ctx, connStr, notificationMigrationsURL()); err != nil {
+	migrationsURL, err := notificationMigrationsURL()
+	if err != nil {
+		return nil, terminate, err
+	}
+	if _, err := platformpostgres.RunMigrationsWithContext(ctx, connStr, migrationsURL); err != nil {
 		return nil, terminate, err
 	}
 	db, err := platformpostgres.NewWithContext(ctx, connStr)
@@ -144,14 +150,14 @@ func newPostgres(ctx context.Context) (*sql.DB, func(), error) {
 	return db, cleanup, nil
 }
 
-func notificationMigrationsURL() string {
+func notificationMigrationsURL() (string, error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		panic("cannot resolve notification store test path")
+		return "", errors.New("cannot resolve notification store test path")
 	}
 	path, err := filepath.Abs(filepath.Join(filepath.Dir(file), "..", "migrations"))
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("resolving notification migrations path: %w", err)
 	}
-	return "file://" + filepath.ToSlash(path)
+	return "file://" + filepath.ToSlash(path), nil
 }

@@ -51,17 +51,18 @@ internal/
   platform/postgres/                -- *sql.DB factory + golang-migrate runner
   platform/token/                   -- token.Generator (crypto/rand → hex)
   client/github/                    -- GitHub REST API client + Redis cache decorator
-  outbound/notification/            -- gRPC client adapter for the notification service
+  client/notification/              -- gRPC client adapter for the notification service
   gen/notification/v1/              -- generated protobuf/gRPC stubs (buf)
   api/rest/                         -- chi router
     subscription/                   -- subscribe/confirm/unsubscribe/list handlers
     health/                         -- /health handler
     middleware/                     -- API-key auth, per-IP rate limiting, metrics
 services/notification/              -- Notification microservice (gRPC, own Postgres)
-  model/                            -- pure notification value types
-  app/                              -- orchestration + dedup ledger policy
-  inbound/grpcserver/               -- gRPC transport mapping
-  outbound/smtp/, outbound/store/   -- SMTP mailer + sent_notifications ledger
+  (package notification)            -- domain: value types + application service + ports
+  app/                              -- composition root (lifecycle, DB, gRPC bootstrap)
+  grpcserver/                       -- gRPC transport mapping
+  smtp/, store/                     -- SMTP mailer + sent_notifications ledger
+  main/                             -- notifier entrypoint
 proto/notification/v1/              -- gRPC contract between monolith and notifier
 migrations/                         -- SQL schema (auto-applied via golang-migrate)
 tests/repository/                   -- Integration tests (testcontainers, real Postgres)
@@ -74,7 +75,7 @@ The project follows **clean architecture** with consumer-side interface placemen
 ### Subscription Lifecycle
 
 ```
-User                    API                     Service                  DB                  Email
+User                    API                     Service                  DB              Notifier
  |                       |                       |                       |                    |
  |-- POST /subscribe --> |                       |                       |                    |
  |                       |-- Subscribe() ------> |                       |                    |
@@ -90,6 +91,8 @@ User                    API                     Service                  DB     
  |-- GET /confirm/tok -> |-- Confirm() --------> |-- UpdateStatus ----> | (status=active)    |
  |<-- 200 OK ----------- |                       |                       |                    |
 ```
+
+> **Notifier boundary:** `SendConfirmation` is a gRPC call to the notification microservice (`internal/client/notification`), which owns SMTP delivery and its own dedup ledger. The monolith no longer sends email directly (see [ADR 0014](docs/adr/0014-extract-notification-microservice.md)).
 
 **Why upsert the tracked repo before creating the subscription?** The `subscriptions` table has a foreign key to `tracked_repositories(owner, name)`. If we create the subscription first, the FK constraint will reject it. The upsert guarantees the FK target exists without creating duplicates (`ON CONFLICT DO NOTHING`).
 
@@ -185,7 +188,7 @@ The `/metrics` endpoint exposes three metrics following the RED method (Rate, Er
 | Structured logging with `log/slog` | Text output is simpler than a full JSON logging pipeline | Standard library logging keeps dependencies low while preserving useful fields. |
 | Sequential email sending in poller | Slow for repos with many subscribers | Simpler to reason about; a worker pool would be the next improvement |
 | In-memory rate limiter | Lost on restart; doesn't work across multiple instances | No external dependency; sufficient for single-instance deployment |
-| Go 1.24 module target | Docker and local builds should use Go 1.24+ | Matches `go.mod`; the Dockerfile uses `golang:1.24-alpine`. |
+| Go 1.25 module target | Docker and local builds should use Go 1.25+ | Matches `go.mod`; the Dockerfiles use `golang:1.25-alpine`. |
 | First poll sends notifications for existing releases | Users may get a notification for a release that was already published | Treating the first detection as "new" is simpler than adding a separate "first seen" flag; the alternative risks silently missing real new releases |
 
 ## API Endpoints
@@ -321,8 +324,7 @@ cp .env.example .env
 │   │   ├── health/              # /health handler
 │   │   └── middleware/          # API key auth, rate limiter, Prometheus metrics
 │   ├── client/
-│   │   └── github/              # GitHub API client + Redis cache decorator
-│   ├── outbound/
+│   │   ├── github/              # GitHub API client + Redis cache decorator
 │   │   └── notification/        # gRPC client adapter for the notifier
 │   ├── gen/notification/v1/     # Generated protobuf/gRPC stubs (buf)
 │   ├── config/                  # Environment-based config
@@ -332,12 +334,13 @@ cp .env.example .env
 │   ├── email/                   # email.Address value object
 │   └── platform/                # health.DBChecker, slog, postgres, token.Generator
 ├── services/notification/       # Notification microservice (gRPC + own Postgres)
-│   ├── model/                   # Pure notification value types
-│   ├── app/                     # Orchestration + dedup ledger policy
-│   ├── inbound/grpcserver/      # gRPC transport mapping
-│   ├── outbound/                # smtp/ mailer + store/ sent_notifications ledger
-│   ├── migrations/              # Notifier schema (auto-applied on startup)
-│   └── cmd/notifier/            # Notifier entrypoint
+│   ├── (package notification)   # Domain: value types + application service + ports
+│   ├── app/                     # Composition root (lifecycle, DB, gRPC bootstrap)
+│   ├── grpcserver/              # gRPC transport mapping
+│   ├── smtp/                    # SMTP mailer + templates
+│   ├── store/                   # sent_notifications dedup ledger (PG)
+│   ├── migrations/              # Notifier schema (embedded, auto-applied on startup)
+│   └── main/                    # Notifier entrypoint
 ├── proto/notification/v1/       # gRPC contract (buf generate)
 ├── tests/repository/            # Integration tests (testcontainers + real Postgres)
 ├── migrations/                  # SQL schema (auto-applied on startup)
