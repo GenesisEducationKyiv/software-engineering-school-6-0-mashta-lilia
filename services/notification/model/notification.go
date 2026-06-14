@@ -2,7 +2,7 @@ package model
 
 type Confirmation struct {
 	Email string
-	Token string
+	Token string `json:"-"`
 	Repo  string
 }
 

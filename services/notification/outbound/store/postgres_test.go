@@ -58,11 +58,11 @@ func TestIntegration_Store_ReserveIsIdempotent(t *testing.T) {
 	store := store.New(testDB, logger.Nop())
 	ctx := context.Background()
 
-	reserved, err := store.Reserve(ctx, "release", "alice@example.com", "release:golang/go:v1:alice@example.com")
+	reserved, err := store.Reserve(ctx, "release", "release:golang/go:v1:alice@example.com")
 	require.NoError(t, err)
 	assert.True(t, reserved)
 
-	reserved, err = store.Reserve(ctx, "release", "alice@example.com", "release:golang/go:v1:alice@example.com")
+	reserved, err = store.Reserve(ctx, "release", "release:golang/go:v1:alice@example.com")
 	require.NoError(t, err)
 	assert.False(t, reserved)
 
@@ -81,18 +81,17 @@ func TestIntegration_Store_ReservePersistsMetadata(t *testing.T) {
 	store := store.New(testDB, logger.Nop())
 	ctx := context.Background()
 
-	reserved, err := store.Reserve(ctx, "confirmation", "alice@example.com", "confirm:tok")
+	reserved, err := store.Reserve(ctx, "confirmation", "confirm:tok")
 	require.NoError(t, err)
 	require.True(t, reserved)
 
-	var kind, recipient, dedupKey string
+	var kind, dedupKey string
 	err = testDB.QueryRowContext(
 		ctx,
-		"SELECT kind, recipient, dedup_key FROM sent_notifications",
-	).Scan(&kind, &recipient, &dedupKey)
+		"SELECT kind, dedup_key FROM sent_notifications",
+	).Scan(&kind, &dedupKey)
 	require.NoError(t, err)
 	assert.Equal(t, "confirmation", kind)
-	assert.Equal(t, "alice@example.com", recipient)
 	assert.Equal(t, "confirm:tok", dedupKey)
 }
 

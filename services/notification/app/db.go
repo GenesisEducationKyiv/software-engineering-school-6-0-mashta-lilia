@@ -7,12 +7,11 @@ import (
 	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/platform/postgres"
 	"github-release-notifier/services/notification/config"
+	"github-release-notifier/services/notification/migrations"
 )
 
-const migrationsPath = "file://services/notification/migrations"
-
 func openAndMigrateDB(ctx context.Context, cfg *config.Config, log *logger.Logger) (*sql.DB, error) {
-	res, err := postgres.RunMigrationsWithContext(ctx, cfg.DatabaseURL(), migrationsPath)
+	res, err := postgres.RunMigrationsFSWithContext(ctx, cfg.DatabaseURL(), migrations.FS, ".")
 	if err != nil {
 		return nil, fmt.Errorf("running migrations: %w", err)
 	}

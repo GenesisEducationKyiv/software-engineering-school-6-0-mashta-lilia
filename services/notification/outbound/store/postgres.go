@@ -10,8 +10,8 @@ import (
 )
 
 const reserveQuery = `
-	INSERT INTO sent_notifications (kind, recipient, dedup_key)
-	VALUES ($1, $2, $3)
+	INSERT INTO sent_notifications (kind, dedup_key)
+	VALUES ($1, $2)
 	ON CONFLICT (dedup_key) DO NOTHING
 	RETURNING id`
 
@@ -48,13 +48,13 @@ func NewWithContext(ctx context.Context, db *sql.DB, log *logger.Logger) (*Store
 	return store, nil
 }
 
-func (s *Store) Reserve(ctx context.Context, kind, recipient, dedupKey string) (bool, error) {
+func (s *Store) Reserve(ctx context.Context, kind, dedupKey string) (bool, error) {
 	if err := s.ensurePrepared(ctx); err != nil {
 		return false, err
 	}
 
 	var id int64
-	err := s.stmtReserve.QueryRowContext(ctx, kind, recipient, dedupKey).Scan(&id)
+	err := s.stmtReserve.QueryRowContext(ctx, kind, dedupKey).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}

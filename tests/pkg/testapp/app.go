@@ -171,7 +171,7 @@ func newNotificationClient(
 		return nil, cleanup, fmt.Errorf("notification listener: %w", err)
 	}
 	server := grpc.NewServer(grpc.UnaryInterceptor(grpcserver.TraceUnaryServerInterceptor()))
-	notificationv1.RegisterNotificationServiceServer(server, grpcserver.New(notificationService))
+	notificationv1.RegisterNotificationServiceServer(server, grpcserver.New(notificationService, log))
 	go func() {
 		if err := server.Serve(listener); err != nil {
 			slog.Warn("notification test server stopped", "err", err)

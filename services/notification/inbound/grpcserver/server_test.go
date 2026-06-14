@@ -3,6 +3,7 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/services/notification/model"
 	"testing"
 
@@ -41,7 +42,7 @@ func (f *fakeService) SendReleaseNotification(
 func TestServer_SendConfirmation_MapsFields(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{delivered: true}
-	srv := New(svc)
+	srv := New(svc, logger.Nop())
 
 	resp, err := srv.SendConfirmation(context.Background(), &notificationv1.SendConfirmationRequest{
 		Email: "alice@example.com",
@@ -69,7 +70,7 @@ func TestServer_SendConfirmation_RejectsMissingFields(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			svc := &fakeService{delivered: true}
-			srv := New(svc)
+			srv := New(svc, logger.Nop())
 
 			resp, err := srv.SendConfirmation(context.Background(), req)
 
@@ -92,7 +93,7 @@ func TestServer_SendReleaseNotification_RejectsMissingFields(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			svc := &fakeService{delivered: true}
-			srv := New(svc)
+			srv := New(svc, logger.Nop())
 
 			resp, err := srv.SendReleaseNotification(context.Background(), req)
 
@@ -107,7 +108,7 @@ func TestServer_SendReleaseNotification_RejectsMissingFields(t *testing.T) {
 func TestServer_SendReleaseNotification_NilReleaseAllowed(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{delivered: true}
-	srv := New(svc)
+	srv := New(svc, logger.Nop())
 
 	resp, err := srv.SendReleaseNotification(
 		context.Background(),
@@ -122,7 +123,7 @@ func TestServer_SendReleaseNotification_NilReleaseAllowed(t *testing.T) {
 func TestServer_ServiceErrorMapsToInternal(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{err: errors.New("smtp down")}
-	srv := New(svc)
+	srv := New(svc, logger.Nop())
 
 	resp, err := srv.SendConfirmation(context.Background(), &notificationv1.SendConfirmationRequest{
 		Email: "a@b.c", Token: "tok", Repo: "golang/go",

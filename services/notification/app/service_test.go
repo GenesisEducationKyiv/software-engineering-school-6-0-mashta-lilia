@@ -32,16 +32,14 @@ func (f *fakeSender) SendReleaseNotification(
 }
 
 type fakeDedupStore struct {
-	reserved  bool
-	err       error
-	kind      string
-	recipient string
-	key       string
+	reserved bool
+	err      error
+	kind     string
+	key      string
 }
 
-func (f *fakeDedupStore) Reserve(_ context.Context, kind, recipient, dedupKey string) (bool, error) {
+func (f *fakeDedupStore) Reserve(_ context.Context, kind, dedupKey string) (bool, error) {
 	f.kind = kind
-	f.recipient = recipient
 	f.key = dedupKey
 	return f.reserved, f.err
 }
@@ -68,7 +66,6 @@ func TestService_SendConfirmation_ReservesThenSends(t *testing.T) {
 	assert.True(t, delivered)
 	assert.Equal(t, 1, sender.confirmationCalls)
 	assert.Equal(t, kindConfirmation, dedup.kind)
-	assert.Equal(t, "alice@example.com", dedup.recipient)
 	assert.Equal(t, sha256Hex("confirm:tok-123"), dedup.key)
 }
 

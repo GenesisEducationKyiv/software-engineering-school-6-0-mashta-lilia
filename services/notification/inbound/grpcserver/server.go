@@ -2,6 +2,7 @@ package grpcserver
 
 import (
 	"context"
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/platform/tracectx"
 	"github-release-notifier/services/notification/model"
 	"strings"
@@ -22,10 +23,14 @@ type applicationService interface {
 type Server struct {
 	notificationv1.UnimplementedNotificationServiceServer
 	service applicationService
+	log     *logger.Logger
 }
 
-func New(service applicationService) *Server {
-	return &Server{service: service}
+func New(service applicationService, log *logger.Logger) *Server {
+	if log == nil {
+		log = logger.Nop()
+	}
+	return &Server{service: service, log: log}
 }
 
 func (s *Server) SendConfirmation(
@@ -44,7 +49,8 @@ func (s *Server) SendConfirmation(
 		Repo:  req.GetRepo(),
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "send confirmation: %v", err)
+		s.log.Error(ctx, "send_confirmation_failed", "err", err)
+		return nil, status.Error(codes.Internal, "failed to send confirmation")
 	}
 	return &notificationv1.SendNotificationResponse{Delivered: delivered}, nil
 }
@@ -63,7 +69,8 @@ func (s *Server) SendReleaseNotification(
 		ctx, req.GetEmail(), req.GetRepo(), releaseFromProto(req.GetRelease()),
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "send release notification: %v", err)
+		s.log.Error(ctx, "send_release_notification_failed", "err", err)
+		return nil, status.Error(codes.Internal, "failed to send release notification")
 	}
 	return &notificationv1.SendNotificationResponse{Delivered: delivered}, nil
 }

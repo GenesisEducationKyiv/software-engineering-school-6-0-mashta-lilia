@@ -45,7 +45,7 @@ func buildDependencies(
 	}
 
 	return &dependencies{
-		notificationServer: grpcserver.New(service),
+		notificationServer: grpcserver.New(service, log.With("component", "notification_server")),
 		closers:            []func() error{ledger.Close},
 	}, nil
 }

@@ -21,7 +21,7 @@ type sender interface {
 }
 
 type dedupStore interface {
-	Reserve(ctx context.Context, kind, recipient, dedupKey string) (bool, error)
+	Reserve(ctx context.Context, kind, dedupKey string) (bool, error)
 }
 
 type Service struct {
@@ -47,7 +47,7 @@ func (s *Service) SendConfirmation(
 	ctx context.Context, confirmation model.Confirmation,
 ) (bool, error) {
 	dedupKey := hashDedupKey("confirm:" + confirmation.Token)
-	return s.reserveAndSend(ctx, kindConfirmation, confirmation.Email, dedupKey, func() error {
+	return s.reserveAndSend(ctx, kindConfirmation, dedupKey, func() error {
 		return s.sender.SendConfirmation(ctx, confirmation)
 	})
 }
@@ -60,7 +60,7 @@ func (s *Service) SendReleaseNotification(
 		tag = rel.TagName
 	}
 	dedupKey := hashDedupKey(fmt.Sprintf("release:%s:%s:%s", repo, tag, email))
-	return s.reserveAndSend(ctx, kindRelease, email, dedupKey, func() error {
+	return s.reserveAndSend(ctx, kindRelease, dedupKey, func() error {
 		return s.sender.SendReleaseNotification(ctx, email, repo, rel)
 	})
 }
@@ -72,9 +72,9 @@ func hashDedupKey(logical string) string {
 }
 
 func (s *Service) reserveAndSend(
-	ctx context.Context, kind, recipient, dedupKey string, send func() error,
+	ctx context.Context, kind, dedupKey string, send func() error,
 ) (bool, error) {
-	reserved, err := s.dedup.Reserve(ctx, kind, recipient, dedupKey)
+	reserved, err := s.dedup.Reserve(ctx, kind, dedupKey)
 	if err != nil {
 		return false, fmt.Errorf("reserving notification: %w", err)
 	}

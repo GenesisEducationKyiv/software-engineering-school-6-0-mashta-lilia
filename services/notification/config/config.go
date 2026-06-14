@@ -51,6 +51,10 @@ func NewFromEnv() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	dbPassword, err := envRequired("DB_PASSWORD")
+	if err != nil {
+		return nil, err
+	}
 
 	return &Config{
 		GRPCAddr: envOrDefault("GRPC_ADDR", defaultGRPCAddr),
@@ -58,7 +62,7 @@ func NewFromEnv() (*Config, error) {
 		DBHost:     envOrDefault("DB_HOST", "localhost"),
 		DBPort:     envOrDefault("DB_PORT", "5432"),
 		DBUser:     envOrDefault("DB_USER", "postgres"),
-		DBPassword: envOrDefault("DB_PASSWORD", "postgres"),
+		DBPassword: dbPassword,
 		DBName:     envOrDefault("DB_NAME", "notification"),
 		DBSSLMode:  envOrDefault("DB_SSLMODE", "require"),
 
@@ -80,6 +84,13 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envRequired(key string) (string, error) {
+	if v := os.Getenv(key); v != "" {
+		return v, nil
+	}
+	return "", fmt.Errorf("env %s must be set", key)
 }
 
 func envInt(key string, fallback int) (int, error) {
