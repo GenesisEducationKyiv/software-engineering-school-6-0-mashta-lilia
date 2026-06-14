@@ -23,6 +23,12 @@ const (
 type Config struct {
 	Level       string
 	ServiceName string
+
+	// Log sampling (optional): keep the first SampleFirst of each (level, message)
+	// per SampleInterval, then every SampleThereafter-th. Zero values use defaults.
+	SampleFirst      int
+	SampleThereafter int
+	SampleInterval   time.Duration
 }
 
 type Logger struct {
@@ -78,8 +84,9 @@ func newWithWriter(cfg Config, w io.Writer) *Logger {
 		Level:       parseLevel(cfg.Level),
 		ReplaceAttr: replaceAttr,
 	})
-	handlerWithTrace := traceHandler{handler: handler}
-	base := slog.New(handlerWithTrace.WithAttrs([]slog.Attr{
+	var rooted slog.Handler = traceHandler{handler: handler}
+	rooted = newSamplingHandler(rooted, newSampler(cfg.SampleFirst, cfg.SampleThereafter, cfg.SampleInterval))
+	base := slog.New(rooted.WithAttrs([]slog.Attr{
 		slog.String("service", cfg.ServiceName),
 	}))
 	return &Logger{logger: base}

@@ -1,0 +1,63 @@
+groups:
+  - name: availability
+    rules:
+      - alert: AppDown
+        expr: up{job="app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "App target is down"
+          description: "Prometheus has been unable to scrape {{ $labels.instance }} for 1m."
+
+  - name: http
+    rules:
+      - alert: HighHTTPErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High 5xx error rate"
+          description: "More than 5% of HTTP requests have failed over the last 5m."
+
+      - alert: HighRequestLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 HTTP latency above 1s"
+          description: "95th percentile request latency has exceeded 1s over the last 5m."
+
+  - name: business
+    rules:
+      - alert: NotificationFailures
+        expr: increase(notification_requests_total{outcome="failed"}[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Notification deliveries are failing"
+          description: "{{ $value }} notification request(s) failed in the last 15m."
+
+      - alert: GitHubRateLimited
+        expr: increase(github_rate_limit_hits_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GitHub API rate-limit hits"
+          description: "The GitHub client received 429 responses in the last 15m."
+
+      - alert: PollerStalled
+        expr: increase(poller_scan_cycles_total[15m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Poller is not completing scan cycles"
+          description: "No poller scan cycle has completed in 15m (scan interval is ~5m)."
