@@ -30,17 +30,33 @@ func (f *fakeSender) SendReleaseNotification(
 	return f.err
 }
 
+// fakeDedupStore tracks reserved keys in a map so repeated keys behave like the
+// real INSERT ... ON CONFLICT DO NOTHING ledger: the first reserve of a key wins
+// and later ones report already-reserved.
 type fakeDedupStore struct {
-	reserved bool
+	reserved map[string]bool
 	err      error
-	kind     string
-	key      string
+	calls    int
+	lastKind string
+	lastKey  string
+}
+
+func newFakeDedupStore() *fakeDedupStore {
+	return &fakeDedupStore{reserved: make(map[string]bool)}
 }
 
 func (f *fakeDedupStore) Reserve(_ context.Context, kind, dedupKey string) (bool, error) {
-	f.kind = kind
-	f.key = dedupKey
-	return f.reserved, f.err
+	f.calls++
+	f.lastKind = kind
+	f.lastKey = dedupKey
+	if f.err != nil {
+		return false, f.err
+	}
+	if f.reserved[dedupKey] {
+		return false, nil
+	}
+	f.reserved[dedupKey] = true
+	return true, nil
 }
 
 func sha256Hex(s string) string {
@@ -51,7 +67,7 @@ func sha256Hex(s string) string {
 func TestService_SendConfirmation_ReservesThenSends(t *testing.T) {
 	t.Parallel()
 	sender := &fakeSender{}
-	dedup := &fakeDedupStore{reserved: true}
+	dedup := newFakeDedupStore()
 	svc, err := NewService(sender, dedup, logger.Nop())
 	require.NoError(t, err)
 
@@ -64,14 +80,15 @@ func TestService_SendConfirmation_ReservesThenSends(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, delivered)
 	assert.Equal(t, 1, sender.confirmationCalls)
-	assert.Equal(t, kindConfirmation, dedup.kind)
-	assert.Equal(t, sha256Hex("confirm:tok-123"), dedup.key)
+	assert.Equal(t, kindConfirmation, dedup.lastKind)
+	assert.Equal(t, sha256Hex("confirm:tok-123"), dedup.lastKey)
 }
 
 func TestService_SendConfirmation_DedupConflictSkipsSend(t *testing.T) {
 	t.Parallel()
 	sender := &fakeSender{}
-	dedup := &fakeDedupStore{reserved: false}
+	dedup := newFakeDedupStore()
+	dedup.reserved[sha256Hex("confirm:tok-123")] = true // already delivered earlier
 	svc, err := NewService(sender, dedup, logger.Nop())
 	require.NoError(t, err)
 
@@ -89,7 +106,7 @@ func TestService_SendConfirmation_DedupConflictSkipsSend(t *testing.T) {
 func TestService_SendReleaseNotification_UsesReleaseDedupKey(t *testing.T) {
 	t.Parallel()
 	sender := &fakeSender{}
-	dedup := &fakeDedupStore{reserved: true}
+	dedup := newFakeDedupStore()
 	svc, err := NewService(sender, dedup, logger.Nop())
 	require.NoError(t, err)
 
@@ -103,15 +120,15 @@ func TestService_SendReleaseNotification_UsesReleaseDedupKey(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, delivered)
 	assert.Equal(t, 1, sender.releaseCalls)
-	assert.Equal(t, kindRelease, dedup.kind)
-	assert.Equal(t, sha256Hex("release:golang/go:v1.22.0:alice@example.com"), dedup.key)
+	assert.Equal(t, kindRelease, dedup.lastKind)
+	assert.Equal(t, sha256Hex("release:golang/go:v1.22.0:alice@example.com"), dedup.lastKey)
 }
 
 func TestService_SendErrorIsReturnedAfterReservation(t *testing.T) {
 	t.Parallel()
 	sendErr := errors.New("smtp down")
 	sender := &fakeSender{err: sendErr}
-	dedup := &fakeDedupStore{reserved: true}
+	dedup := newFakeDedupStore()
 	svc, err := NewService(sender, dedup, logger.Nop())
 	require.NoError(t, err)
 
@@ -125,11 +142,36 @@ func TestService_SendErrorIsReturnedAfterReservation(t *testing.T) {
 	assert.Equal(t, 1, sender.releaseCalls)
 }
 
+// ADR-0015 failure window: Reserve succeeds, the send fails, and a later retry
+// finds the key already reserved -> it returns delivered=false WITHOUT calling
+// SMTP again. Guards against a refactor silently re-sending after a failure.
+func TestService_FailedSendIsNotResentOnRetry(t *testing.T) {
+	t.Parallel()
+	sender := &fakeSender{err: errors.New("smtp down")}
+	dedup := newFakeDedupStore()
+	svc, err := NewService(sender, dedup, logger.Nop())
+	require.NoError(t, err)
+
+	rel := &ReleaseInfo{TagName: "v1.22.0"}
+
+	delivered, err := svc.SendReleaseNotification(context.Background(), "alice@example.com", "golang/go", rel)
+	require.Error(t, err)
+	assert.False(t, delivered)
+	require.Equal(t, 1, sender.releaseCalls)
+
+	delivered, err = svc.SendReleaseNotification(context.Background(), "alice@example.com", "golang/go", rel)
+	require.NoError(t, err)
+	assert.False(t, delivered)
+	assert.Equal(t, 1, sender.releaseCalls, "SMTP must not be retried once the row is reserved")
+	assert.Equal(t, 2, dedup.calls, "the retry still consults the ledger")
+}
+
 func TestService_ReserveErrorSkipsSend(t *testing.T) {
 	t.Parallel()
 	reserveErr := errors.New("db down")
 	sender := &fakeSender{}
-	dedup := &fakeDedupStore{err: reserveErr}
+	dedup := newFakeDedupStore()
+	dedup.err = reserveErr
 	svc, err := NewService(sender, dedup, logger.Nop())
 	require.NoError(t, err)
 

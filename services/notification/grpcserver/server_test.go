@@ -39,6 +39,36 @@ func (f *fakeService) SendReleaseNotification(
 	return f.delivered, f.err
 }
 
+func TestServer_SendReleaseNotification_MapsPopulatedRelease(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{delivered: true}
+	srv := New(svc, logger.Nop())
+
+	resp, err := srv.SendReleaseNotification(
+		context.Background(),
+		&notificationv1.SendReleaseNotificationRequest{
+			Email: "alice@example.com",
+			Repo:  "golang/go",
+			Release: &notificationv1.Release{
+				TagName:     "v1.22.0",
+				Name:        "Go 1.22",
+				HtmlUrl:     "https://github.com/golang/go/releases/tag/v1.22.0",
+				PublishedAt: "2026-06-10T10:00:00Z",
+			},
+		},
+	)
+
+	require.NoError(t, err)
+	assert.True(t, resp.GetDelivered())
+	assert.Equal(t, "alice@example.com", svc.email)
+	assert.Equal(t, "golang/go", svc.repo)
+	require.NotNil(t, svc.release)
+	assert.Equal(t, "v1.22.0", svc.release.TagName)
+	assert.Equal(t, "Go 1.22", svc.release.Name)
+	assert.Equal(t, "https://github.com/golang/go/releases/tag/v1.22.0", svc.release.HTMLURL)
+	assert.Equal(t, "2026-06-10T10:00:00Z", svc.release.PublishedAt)
+}
+
 func TestServer_SendConfirmation_MapsFields(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{delivered: true}

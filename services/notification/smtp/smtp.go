@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/services/notification"
 	"mime"
 	"net"
@@ -19,13 +20,17 @@ type SMTPMailer struct {
 	password  string
 	from      string
 	templates *TemplateBuilder
+	log       *logger.Logger
 }
 
 func NewSMTPMailer(
-	host string, port int, user, password, from string, templates *TemplateBuilder,
+	host string, port int, user, password, from string, templates *TemplateBuilder, log *logger.Logger,
 ) (*SMTPMailer, error) {
 	if templates == nil {
 		return nil, errors.New("smtp mailer: templates is nil")
+	}
+	if log == nil {
+		log = logger.Nop()
 	}
 	return &SMTPMailer{
 		host:      host,
@@ -34,6 +39,7 @@ func NewSMTPMailer(
 		password:  password,
 		from:      from,
 		templates: templates,
+		log:       log,
 	}, nil
 }
 
@@ -105,6 +111,10 @@ func (m *SMTPMailer) deliver(ctx context.Context, msg Message) error {
 	} else if m.user != "" {
 		return errors.New(
 			"SMTP: server does not support STARTTLS; refusing to send credentials over plaintext")
+	} else {
+		m.log.Warn(ctx, "smtp_insecure_send",
+			"reason", "server does not advertise STARTTLS; message sent without encryption",
+			"host", m.host)
 	}
 
 	if m.user != "" {

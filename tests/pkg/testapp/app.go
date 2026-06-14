@@ -155,7 +155,7 @@ func newNotificationClient(
 
 	templates := notificationsmtp.NewTemplateBuilder("http://test.local")
 	mail, err := notificationsmtp.NewSMTPMailer(
-		mp.Host, mp.SMTPPort, "", "", "noreply@test.local", templates,
+		mp.Host, mp.SMTPPort, "", "", "noreply@test.local", templates, log,
 	)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("notification smtp: %w", err)
