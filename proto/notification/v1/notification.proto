@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package notification.v1;
+
+option go_package = "github-release-notifier/internal/gen/notification/v1;notificationv1";
+
+service NotificationService {
+  rpc SendConfirmation(SendConfirmationRequest) returns (SendNotificationResponse);
+  rpc SendReleaseNotification(SendReleaseNotificationRequest) returns (SendNotificationResponse);
+}
+
+message SendConfirmationRequest {
+  string email = 1;
+  string token = 2;
+  string repo = 3;
+}
+
+message Release {
+  string tag_name = 1;
+  string name = 2;
+  string html_url = 3;
+  string published_at = 4;
+}
+
+message SendReleaseNotificationRequest {
+  string email = 1;
+  string repo = 2;
+  Release release = 3;
+}
+
+message SendNotificationResponse {
+  bool delivered = 1;
+}

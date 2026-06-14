@@ -7,26 +7,42 @@ import (
 	"fmt"
 	"github-release-notifier/internal/api/rest"
 	"github-release-notifier/internal/api/rest/middleware"
-	"github-release-notifier/internal/client/mailer"
+	notificationclient "github-release-notifier/internal/client/notification"
+	notificationv1 "github-release-notifier/internal/gen/notification/v1"
 	"github-release-notifier/internal/platform/health"
 	"github-release-notifier/internal/platform/logger"
+	platformpostgres "github-release-notifier/internal/platform/postgres"
 	"github-release-notifier/internal/platform/token"
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/subscription"
+	"github-release-notifier/services/notification"
+	"github-release-notifier/services/notification/grpcserver"
+	notificationsmtp "github-release-notifier/services/notification/smtp"
+	notificationstore "github-release-notifier/services/notification/store"
 	"github-release-notifier/tests/pkg/testdb"
 	"github-release-notifier/tests/pkg/testgithub"
 	"github-release-notifier/tests/pkg/testmailpit"
 	"log/slog"
+	"net"
 	"net/http/httptest"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	subhandler "github-release-notifier/internal/api/rest/subscription"
+
+	"github.com/testcontainers/testcontainers-go"
+	testpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
+	"google.golang.org/grpc"
 )
 
 const (
 	// Set well above per-test traffic so the limiter never becomes a confounder.
-	rateLimitRequests = 100
-	rateLimitWindow   = time.Minute
+	rateLimitRequests       = 100
+	rateLimitWindow         = time.Minute
+	postgresReadyOccurrence = 2
+	postgresStartupTimeout  = 60 * time.Second
 )
 
 const APIKey = "test-api-key-12345"
@@ -86,13 +102,14 @@ func New(ctx context.Context) (*App, func(), error) {
 		}
 	})
 
-	templates := mailer.NewTemplateBuilder("http://test.local")
-	mail, err := mailer.NewSMTPMailer(mp.Host, mp.SMTPPort, "", "", "noreply@test.local", templates)
+	notifier, notifierCleanup, err := newNotificationClient(ctx, mp, log)
+	// Registered before the error check so a partial failure still tears down what started.
+	cleanups = append(cleanups, notifierCleanup)
 	if err != nil {
-		return nil, cleanup, fmt.Errorf("mailer: %w", err)
+		return nil, cleanup, fmt.Errorf("notification client: %w", err)
 	}
 
-	svc := subscription.NewService(subRepo, repoStore, gh, mail, token.New())
+	svc := subscription.NewService(subRepo, repoStore, gh, notifier, token.New())
 	handler := subhandler.NewHandler(svc, log)
 	hc := health.NewDBChecker(db)
 	router := rest.NewRouter(handler, hc, APIKey, rl, "", log)
@@ -107,4 +124,128 @@ func New(ctx context.Context) (*App, func(), error) {
 		RateLimiter: rl,
 		APIKey:      APIKey,
 	}, cleanup, nil
+}
+
+func newNotificationClient(
+	ctx context.Context, mp *testmailpit.Container, log *logger.Logger,
+) (*notificationclient.Client, func(), error) {
+	var cleanups []func()
+	cleanup := func() {
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			cleanups[i]()
+		}
+	}
+
+	notificationDB, notificationDBCleanup, err := newNotificationDB(ctx)
+	// Registered before the error check so a started container is still terminated on later failure.
+	cleanups = append(cleanups, notificationDBCleanup)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("notification db: %w", err)
+	}
+
+	ledger, err := notificationstore.NewWithContext(ctx, notificationDB, log)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("notification store: %w", err)
+	}
+	cleanups = append(cleanups, func() {
+		if err := ledger.Close(); err != nil {
+			slog.Warn("close notification store", "err", err)
+		}
+	})
+
+	templates := notificationsmtp.NewTemplateBuilder("http://test.local")
+	mail, err := notificationsmtp.NewSMTPMailer(
+		mp.Host, mp.SMTPPort, "", "", "noreply@test.local", templates,
+	)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("notification smtp: %w", err)
+	}
+	notificationService, err := notification.NewService(mail, ledger, log)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("notification service: %w", err)
+	}
+
+	var lc net.ListenConfig
+	listener, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("notification listener: %w", err)
+	}
+	server := grpc.NewServer(grpc.UnaryInterceptor(grpcserver.TraceUnaryServerInterceptor()))
+	notificationv1.RegisterNotificationServiceServer(server, grpcserver.New(notificationService, log))
+	go func() {
+		if err := server.Serve(listener); err != nil {
+			slog.Warn("notification test server stopped", "err", err)
+		}
+	}()
+	cleanups = append(cleanups, server.Stop)
+
+	conn, client, err := notificationclient.Dial(listener.Addr().String(), log)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("notification dial: %w", err)
+	}
+	cleanups = append(cleanups, func() {
+		if err := conn.Close(); err != nil {
+			slog.Warn("close notification grpc conn", "err", err)
+		}
+	})
+
+	return client, cleanup, nil
+}
+
+func newNotificationDB(ctx context.Context) (*sql.DB, func(), error) {
+	container, err := testpostgres.Run(
+		ctx,
+		"postgres:16-alpine",
+		testpostgres.WithDatabase("notification"),
+		testpostgres.WithUsername("testuser"),
+		testpostgres.WithPassword("testpass"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(postgresReadyOccurrence).
+				WithStartupTimeout(postgresStartupTimeout),
+		),
+	)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	terminate := func() {
+		if err := container.Terminate(context.Background()); err != nil {
+			slog.Warn("terminate notification postgres", "err", err)
+		}
+	}
+
+	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		return nil, terminate, err
+	}
+	migrationsURL := notificationMigrationsURL()
+	if _, err := platformpostgres.RunMigrationsWithContext(ctx, connStr, migrationsURL); err != nil {
+		return nil, terminate, err
+	}
+	db, err := platformpostgres.NewWithContext(ctx, connStr)
+	if err != nil {
+		return nil, terminate, err
+	}
+
+	cleanup := func() {
+		if err := db.Close(); err != nil {
+			slog.Warn("close notification test db", "err", err)
+		}
+		terminate()
+	}
+	return db, cleanup, nil
+}
+
+func notificationMigrationsURL() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("cannot resolve testapp package directory")
+	}
+	path, err := filepath.Abs(
+		filepath.Join(filepath.Dir(file), "..", "..", "..", "services", "notification", "migrations"),
+	)
+	if err != nil {
+		panic(err)
+	}
+	return "file://" + filepath.ToSlash(path)
 }

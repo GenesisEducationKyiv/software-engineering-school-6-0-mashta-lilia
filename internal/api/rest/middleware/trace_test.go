@@ -1,12 +1,12 @@
 package middleware_test
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"testing"
-
 	"github-release-notifier/internal/api/rest/middleware"
 	"github-release-notifier/internal/platform/tracectx"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -58,17 +58,40 @@ func TestTraceID_GeneratesID(t *testing.T) {
 	assert.Equal(t, got, rec.Header().Get("X-Request-ID"))
 }
 
+func TestTraceID_RejectsUnsafeRequestID(t *testing.T) {
+	cases := map[string]string{
+		"tab inside":    "a\tb",
+		"space inside":  "abc def",
+		"non-ascii":     "ідентифікатор",
+		"over max size": strings.Repeat("a", 65),
+	}
+	for name, header := range cases {
+		t.Run(name, func(t *testing.T) {
+			var got string
+			h := middleware.TraceID(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				got, _ = tracectx.FromContext(r.Context())
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+			req.Header.Set("X-Request-ID", header)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			require.NotEmpty(t, got, "should fall back to generated UUID")
+			assert.NotEqual(t, header, got, "unsafe request id must not be trusted")
+		})
+	}
+}
+
 func TestTraceID_RejectsMalformedTraceparent(t *testing.T) {
 	const validTraceID = "0af7651916cd43dd8448eb211c80319c"
 	cases := map[string]string{
-		"too few parts":      "00-" + validTraceID + "-b7ad6b7169203331",
-		"too many parts":     "00-" + validTraceID + "-b7ad6b7169203331-01-extra",
-		"non-hex version":    "zz-" + validTraceID + "-b7ad6b7169203331-01",
-		"non-hex flags":      "00-" + validTraceID + "-b7ad6b7169203331-zz",
-		"zero span ID":       "00-" + validTraceID + "-0000000000000000-01",
-		"non-hex trace ID":   "00-" + "zz" + validTraceID[2:] + "-b7ad6b7169203331-01",
-		"short trace ID":     "00-" + validTraceID[:31] + "-b7ad6b7169203331-01",
-		"all-zero trace ID":  "00-00000000000000000000000000000000-b7ad6b7169203331-01",
+		"too few parts":     "00-" + validTraceID + "-b7ad6b7169203331",
+		"too many parts":    "00-" + validTraceID + "-b7ad6b7169203331-01-extra",
+		"non-hex version":   "zz-" + validTraceID + "-b7ad6b7169203331-01",
+		"non-hex flags":     "00-" + validTraceID + "-b7ad6b7169203331-zz",
+		"zero span ID":      "00-" + validTraceID + "-0000000000000000-01",
+		"non-hex trace ID":  "00-" + "zz" + validTraceID[2:] + "-b7ad6b7169203331-01",
+		"short trace ID":    "00-" + validTraceID[:31] + "-b7ad6b7169203331-01",
+		"all-zero trace ID": "00-00000000000000000000000000000000-b7ad6b7169203331-01",
 	}
 	for name, header := range cases {
 		t.Run(name, func(t *testing.T) {

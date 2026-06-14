@@ -19,9 +19,10 @@ Built with Go, PostgreSQL, Redis, Chi, and SMTP.
 git clone <repo-url>
 cd github-subscription-api
 cp .env.example .env
-# Edit .env: set GITHUB_TOKEN, SMTP credentials, and API_KEY
+# Edit .env: set GITHUB_TOKEN and API_KEY (SMTP credentials belong to the
+# notification service; docker-compose points it at the bundled mailpit)
 
-# 2. Start everything (Postgres + Redis + app)
+# 2. Start everything (Postgres x2 + Redis + mailpit + notifier + app)
 docker compose up --build
 ```
 
@@ -50,11 +51,18 @@ internal/
   platform/postgres/                -- *sql.DB factory + golang-migrate runner
   platform/token/                   -- token.Generator (crypto/rand → hex)
   client/github/                    -- GitHub REST API client + Redis cache decorator
-  client/mailer/                    -- SMTP client + email templates
+  outbound/notification/            -- gRPC client adapter for the notification service
+  gen/notification/v1/              -- generated protobuf/gRPC stubs (buf)
   api/rest/                         -- chi router
     subscription/                   -- subscribe/confirm/unsubscribe/list handlers
     health/                         -- /health handler
     middleware/                     -- API-key auth, per-IP rate limiting, metrics
+services/notification/              -- Notification microservice (gRPC, own Postgres)
+  model/                            -- pure notification value types
+  app/                              -- orchestration + dedup ledger policy
+  inbound/grpcserver/               -- gRPC transport mapping
+  outbound/smtp/, outbound/store/   -- SMTP mailer + sent_notifications ledger
+proto/notification/v1/              -- gRPC contract between monolith and notifier
 migrations/                         -- SQL schema (auto-applied via golang-migrate)
 tests/repository/                   -- Integration tests (testcontainers, real Postgres)
 ```
@@ -278,13 +286,8 @@ cp .env.example .env
 | `DB_NAME` | `release_notifier` | Database name |
 | `DB_SSLMODE` | `require` | PostgreSQL SSL mode (`disable` in local Docker Compose) |
 | `GITHUB_TOKEN` | -- | GitHub personal access token (optional, increases rate limit) |
-| `SMTP_HOST` | `localhost` | SMTP server host |
-| `SMTP_PORT` | `587` | SMTP server port |
-| `SMTP_USER` | -- | SMTP username |
-| `SMTP_PASSWORD` | -- | SMTP password |
-| `SMTP_FROM` | `noreply@example.com` | Sender email address |
+| `NOTIFIER_ADDR` | `localhost:50051` | Notification service gRPC address (`notifier:50051` in Docker Compose) |
 | `SCAN_INTERVAL` | `5m` | How often to check for new releases |
-| `BASE_URL` | `http://localhost:8080` | Base URL for confirmation/unsubscribe links in emails |
 | `API_KEY` | -- | API key for the `GET /api/subscriptions` endpoint |
 | `REDIS_ADDR` | `localhost:6379` | Redis address (`redis:6379` in Docker Compose) |
 | `REDIS_PASSWORD` | -- | Redis password |
@@ -292,6 +295,19 @@ cp .env.example .env
 | `REDIS_CACHE_TTL` | `10m` | Cache TTL for GitHub API responses |
 | `TRUSTED_PROXY` | `false` | Set to `true` if running behind a reverse proxy to trust `X-Forwarded-For` |
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, or `error` |
+
+### Notification service (separate process)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GRPC_ADDR` | `:50051` | gRPC listen address |
+| `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` | `localhost` / `5432` / `postgres` / `postgres` | Notifier's own PostgreSQL (DB-per-service; `postgres-notifier` in Docker Compose) |
+| `DB_NAME` | `notification` | Notifier database name |
+| `SMTP_HOST` | `localhost` | SMTP server host (`mailpit` in Docker Compose) |
+| `SMTP_PORT` | `587` | SMTP server port |
+| `SMTP_USER` / `SMTP_PASSWORD` | -- | SMTP credentials |
+| `SMTP_FROM` | `noreply@example.com` | Sender email address |
+| `BASE_URL` | `http://localhost:8080` | Base URL for confirmation/unsubscribe links in emails |
 
 ## Project Structure
 
@@ -305,18 +321,29 @@ cp .env.example .env
 │   │   ├── health/              # /health handler
 │   │   └── middleware/          # API key auth, rate limiter, Prometheus metrics
 │   ├── client/
-│   │   ├── github/              # GitHub API client + Redis cache decorator
-│   │   └── mailer/              # SMTP transport + email templates
+│   │   └── github/              # GitHub API client + Redis cache decorator
+│   ├── outbound/
+│   │   └── notification/        # gRPC client adapter for the notifier
+│   ├── gen/notification/v1/     # Generated protobuf/gRPC stubs (buf)
 │   ├── config/                  # Environment-based config
 │   ├── subscription/            # Subscription domain (Service + Repo + types + errors)
 │   ├── release/                 # Release domain (Poller + Release)
 │   ├── repository/              # repository.Repository entity + Ref + Store (PG)
 │   ├── email/                   # email.Address value object
 │   └── platform/                # health.DBChecker, slog, postgres, token.Generator
+├── services/notification/       # Notification microservice (gRPC + own Postgres)
+│   ├── model/                   # Pure notification value types
+│   ├── app/                     # Orchestration + dedup ledger policy
+│   ├── inbound/grpcserver/      # gRPC transport mapping
+│   ├── outbound/                # smtp/ mailer + store/ sent_notifications ledger
+│   ├── migrations/              # Notifier schema (auto-applied on startup)
+│   └── cmd/notifier/            # Notifier entrypoint
+├── proto/notification/v1/       # gRPC contract (buf generate)
 ├── tests/repository/            # Integration tests (testcontainers + real Postgres)
 ├── migrations/                  # SQL schema (auto-applied on startup)
-├── docker-compose.yml           # PostgreSQL 16 + Redis 7 + app
-├── Dockerfile                   # Multi-stage build (Alpine)
-├── Makefile                     # build, test, test-integration, lint, docker-up/down
+├── docker-compose.yml           # PostgreSQL 16 x2 + Redis 7 + mailpit + notifier + app
+├── Dockerfile                   # Multi-stage build (Alpine), monolith
+├── Dockerfile.notifier          # Multi-stage build (Alpine), notification service
+├── Makefile                     # build, proto, test, test-integration, lint, docker-up/down
 └── swagger.yaml                 # OpenAPI 3.0 specification
 ```

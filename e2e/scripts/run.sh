@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end test runner. Boots a self-contained Docker stack (postgres,
-# redis, mailpit, app), installs Playwright deps if needed, runs the
+# notifier postgres, redis, mailpit, notifier, app), installs Playwright deps if needed, runs the
 # browser tests, then tears everything down (even on failure).
 #
 # Prereqs: git, docker (with docker compose), node + npm.
@@ -20,7 +20,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "==> Bringing up e2e stack (postgres, redis, mailpit, app)"
+echo "==> Bringing up e2e stack (postgres, redis, mailpit, notifier, app)"
 docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}" up -d --build --wait
 
 echo "==> Installing npm deps (if needed)"

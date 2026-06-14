@@ -19,6 +19,9 @@ Thumbs.db
 *.out
 coverage.html
 
+# Local Go build cache (sandboxed builds)
+.gocache/
+
 # ops config (local cache)
 .ops/
 .golangci.yaml

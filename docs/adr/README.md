@@ -19,6 +19,8 @@ The format follows [MADR 3.0](https://adr.github.io/madr/).
 | 0011 | Accepted | [Foundational Packages Return Root-Cause Errors](0011-platform-returns-root-cause-errors.md) | Locks the `internal/platform/` no-`%w`, no-`slog`, no-`panic` contract and the `errors.Join` close-failure pattern. |
 | 0012 | Superseded | [Adapter→Domain Sibling Imports Permitted](0012-adapter-to-domain-sibling-imports.md) | Historical carve-out from rulebook §5; superseded by vertical slicing (2026-05-19). |
 | 0013 | Accepted | [Do not commit `vendor/`](0013-vendor-third-party-dependencies.md) | Deviates from rulebook §2; `go.sum` provides the same supply-chain integrity without the diff cost. |
+| 0014 | Accepted | [Extract Notification Microservice](0014-extract-notification-microservice.md) | Records the HW7 service boundary and DB-per-service split. |
+| 0015 | Accepted | [Synchronous gRPC with Dedup Ledger](0015-sync-grpc-and-dedup-ledger.md) | Captures transport/error semantics and the at-most-once failure window. |
 
 ## When to Add a New ADR
 
