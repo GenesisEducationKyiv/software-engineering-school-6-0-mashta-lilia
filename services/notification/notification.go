@@ -1,4 +1,4 @@
-package model
+package notification
 
 type Confirmation struct {
 	Email string

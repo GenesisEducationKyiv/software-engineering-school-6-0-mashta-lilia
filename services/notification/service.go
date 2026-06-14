@@ -1,4 +1,4 @@
-package app
+package notification
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"github-release-notifier/internal/platform/logger"
-	"github-release-notifier/services/notification/model"
 )
 
 const (
@@ -16,8 +15,8 @@ const (
 )
 
 type sender interface {
-	SendConfirmation(ctx context.Context, confirmation model.Confirmation) error
-	SendReleaseNotification(ctx context.Context, email, repo string, rel *model.ReleaseInfo) error
+	SendConfirmation(ctx context.Context, confirmation Confirmation) error
+	SendReleaseNotification(ctx context.Context, email, repo string, rel *ReleaseInfo) error
 }
 
 type dedupStore interface {
@@ -44,7 +43,7 @@ func NewService(sender sender, dedup dedupStore, log *logger.Logger) (*Service, 
 }
 
 func (s *Service) SendConfirmation(
-	ctx context.Context, confirmation model.Confirmation,
+	ctx context.Context, confirmation Confirmation,
 ) (bool, error) {
 	dedupKey := hashDedupKey("confirm:" + confirmation.Token)
 	return s.reserveAndSend(ctx, kindConfirmation, dedupKey, func() error {
@@ -53,7 +52,7 @@ func (s *Service) SendConfirmation(
 }
 
 func (s *Service) SendReleaseNotification(
-	ctx context.Context, email, repo string, rel *model.ReleaseInfo,
+	ctx context.Context, email, repo string, rel *ReleaseInfo,
 ) (bool, error) {
 	tag := ""
 	if rel != nil {

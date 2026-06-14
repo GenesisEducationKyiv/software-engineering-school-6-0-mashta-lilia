@@ -3,37 +3,31 @@ package config
 import (
 	"fmt"
 	"net/url"
-	"os"
-	"strconv"
 	"strings"
-)
 
-const (
-	defaultGRPCAddr    = ":50051"
-	defaultSMTPPort    = 587
-	defaultServiceName = "github-release-notifier-notification"
+	"github.com/kelseyhightower/envconfig"
 )
 
 type Config struct {
-	GRPCAddr string
+	GRPCAddr string `envconfig:"GRPC_ADDR" default:":50051"`
 
-	DBHost     string
-	DBPort     string
-	DBUser     string
-	DBPassword string
-	DBName     string
-	DBSSLMode  string
+	DBHost     string `envconfig:"DB_HOST" default:"localhost"`
+	DBPort     string `envconfig:"DB_PORT" default:"5432"`
+	DBUser     string `envconfig:"DB_USER" default:"postgres"`
+	DBPassword string `envconfig:"DB_PASSWORD" required:"true"`
+	DBName     string `envconfig:"DB_NAME" default:"notification"`
+	DBSSLMode  string `envconfig:"DB_SSLMODE" default:"require"`
 
-	SMTPHost     string
-	SMTPPort     int
-	SMTPUser     string
-	SMTPPassword string
-	SMTPFrom     string
+	SMTPHost     string `envconfig:"SMTP_HOST" default:"localhost"`
+	SMTPPort     int    `envconfig:"SMTP_PORT" default:"587"`
+	SMTPUser     string `envconfig:"SMTP_USER"`
+	SMTPPassword string `envconfig:"SMTP_PASSWORD"`
+	SMTPFrom     string `envconfig:"SMTP_FROM" default:"noreply@example.com"`
 
-	BaseURL string
+	BaseURL string `envconfig:"BASE_URL" default:"http://localhost:8080"`
 
-	LogLevel    string
-	ServiceName string
+	LogLevel    string `envconfig:"LOG_LEVEL" default:"info"`
+	ServiceName string `envconfig:"SERVICE_NAME" default:"github-release-notifier-notification"`
 }
 
 func (c *Config) DatabaseURL() string {
@@ -43,69 +37,19 @@ func (c *Config) DatabaseURL() string {
 }
 
 func NewFromEnv() (*Config, error) {
-	smtpPort, err := envInt("SMTP_PORT", defaultSMTPPort)
+	var cfg Config
+	if err := envconfig.Process("", &cfg); err != nil {
+		return nil, fmt.Errorf("loading notification config: %w", err)
+	}
+	level, err := normalizeLogLevel(cfg.LogLevel)
 	if err != nil {
 		return nil, err
 	}
-	logLevel, err := parseLogLevel(envOrDefault("LOG_LEVEL", "info"))
-	if err != nil {
-		return nil, err
-	}
-	dbPassword, err := envRequired("DB_PASSWORD")
-	if err != nil {
-		return nil, err
-	}
-
-	return &Config{
-		GRPCAddr: envOrDefault("GRPC_ADDR", defaultGRPCAddr),
-
-		DBHost:     envOrDefault("DB_HOST", "localhost"),
-		DBPort:     envOrDefault("DB_PORT", "5432"),
-		DBUser:     envOrDefault("DB_USER", "postgres"),
-		DBPassword: dbPassword,
-		DBName:     envOrDefault("DB_NAME", "notification"),
-		DBSSLMode:  envOrDefault("DB_SSLMODE", "require"),
-
-		SMTPHost:     envOrDefault("SMTP_HOST", "localhost"),
-		SMTPPort:     smtpPort,
-		SMTPUser:     envOrDefault("SMTP_USER", ""),
-		SMTPPassword: envOrDefault("SMTP_PASSWORD", ""),
-		SMTPFrom:     envOrDefault("SMTP_FROM", "noreply@example.com"),
-
-		BaseURL: envOrDefault("BASE_URL", "http://localhost:8080"),
-
-		LogLevel:    logLevel,
-		ServiceName: envOrDefault("SERVICE_NAME", defaultServiceName),
-	}, nil
+	cfg.LogLevel = level
+	return &cfg, nil
 }
 
-func envOrDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func envRequired(key string) (string, error) {
-	if v := os.Getenv(key); v != "" {
-		return v, nil
-	}
-	return "", fmt.Errorf("env %s must be set", key)
-}
-
-func envInt(key string, fallback int) (int, error) {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback, nil
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return 0, fmt.Errorf("env %s: %w", key, err)
-	}
-	return n, nil
-}
-
-func parseLogLevel(raw string) (string, error) {
+func normalizeLogLevel(raw string) (string, error) {
 	switch strings.ToLower(raw) {
 	case "debug":
 		return "debug", nil

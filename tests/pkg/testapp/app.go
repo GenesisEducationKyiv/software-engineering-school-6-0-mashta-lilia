@@ -7,18 +7,18 @@ import (
 	"fmt"
 	"github-release-notifier/internal/api/rest"
 	"github-release-notifier/internal/api/rest/middleware"
+	notificationclient "github-release-notifier/internal/client/notification"
 	notificationv1 "github-release-notifier/internal/gen/notification/v1"
-	notificationclient "github-release-notifier/internal/outbound/notification"
 	"github-release-notifier/internal/platform/health"
 	"github-release-notifier/internal/platform/logger"
 	platformpostgres "github-release-notifier/internal/platform/postgres"
 	"github-release-notifier/internal/platform/token"
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/subscription"
-	notificationapp "github-release-notifier/services/notification/app"
-	"github-release-notifier/services/notification/inbound/grpcserver"
-	notificationsmtp "github-release-notifier/services/notification/outbound/smtp"
-	notificationstore "github-release-notifier/services/notification/outbound/store"
+	"github-release-notifier/services/notification"
+	"github-release-notifier/services/notification/grpcserver"
+	notificationsmtp "github-release-notifier/services/notification/smtp"
+	notificationstore "github-release-notifier/services/notification/store"
 	"github-release-notifier/tests/pkg/testdb"
 	"github-release-notifier/tests/pkg/testgithub"
 	"github-release-notifier/tests/pkg/testmailpit"
@@ -160,7 +160,7 @@ func newNotificationClient(
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("notification smtp: %w", err)
 	}
-	notificationService, err := notificationapp.NewService(mail, ledger, log)
+	notificationService, err := notification.NewService(mail, ledger, log)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("notification service: %w", err)
 	}

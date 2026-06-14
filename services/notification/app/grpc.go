@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/services/notification/config"
-	"github-release-notifier/services/notification/inbound/grpcserver"
+	"github-release-notifier/services/notification/grpcserver"
 	"net"
 	"time"
 

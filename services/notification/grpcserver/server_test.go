@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"github-release-notifier/internal/platform/logger"
-	"github-release-notifier/services/notification/model"
+	"github-release-notifier/services/notification"
 	"testing"
 
 	notificationv1 "github-release-notifier/internal/gen/notification/v1"
@@ -16,23 +16,23 @@ import (
 )
 
 type fakeService struct {
-	confirmation *model.Confirmation
+	confirmation *notification.Confirmation
 	email        string
 	repo         string
-	release      *model.ReleaseInfo
+	release      *notification.ReleaseInfo
 	calls        int
 	delivered    bool
 	err          error
 }
 
-func (f *fakeService) SendConfirmation(_ context.Context, c model.Confirmation) (bool, error) {
+func (f *fakeService) SendConfirmation(_ context.Context, c notification.Confirmation) (bool, error) {
 	f.calls++
 	f.confirmation = &c
 	return f.delivered, f.err
 }
 
 func (f *fakeService) SendReleaseNotification(
-	_ context.Context, email, repo string, rel *model.ReleaseInfo,
+	_ context.Context, email, repo string, rel *notification.ReleaseInfo,
 ) (bool, error) {
 	f.calls++
 	f.email, f.repo, f.release = email, repo, rel

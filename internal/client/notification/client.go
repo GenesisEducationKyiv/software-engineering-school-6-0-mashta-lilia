@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github-release-notifier/internal/platform/logger"
-	"github-release-notifier/internal/platform/tracectx"
 	"github-release-notifier/internal/release"
 	"time"
 
@@ -13,14 +12,11 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
 // Bounds each RPC so a wedged notifier cannot park poller workers forever.
 const callTimeout = 30 * time.Second
-
-const traceIDHexLen = 32 // W3C trace-id hex length
 
 type Client struct {
 	client notificationv1.NotificationServiceClient
@@ -90,28 +86,6 @@ func (c *Client) SendReleaseNotification(
 		c.log.Info(ctx, "notification_deduped", "kind", "release", "repo", repo)
 	}
 	return nil
-}
-
-func TraceUnaryClientInterceptor() grpc.UnaryClientInterceptor {
-	return func(
-		ctx context.Context,
-		method string,
-		req any,
-		reply any,
-		cc *grpc.ClientConn,
-		invoker grpc.UnaryInvoker,
-		opts ...grpc.CallOption,
-	) error {
-		if traceID, ok := tracectx.FromContext(ctx); ok && traceID != "" {
-			ctx = metadata.AppendToOutgoingContext(ctx, "x-request-id", traceID)
-			if len(traceID) == traceIDHexLen {
-				ctx = metadata.AppendToOutgoingContext(
-					ctx, "traceparent", "00-"+traceID+"-0000000000000000-01",
-				)
-			}
-		}
-		return invoker(ctx, method, req, reply, cc, opts...)
-	}
 }
 
 func releaseToProto(rel *release.Release) *notificationv1.Release {

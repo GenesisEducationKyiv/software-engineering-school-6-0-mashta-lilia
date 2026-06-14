@@ -1,4 +1,4 @@
-package app
+package notification
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"github-release-notifier/internal/platform/logger"
-	"github-release-notifier/services/notification/model"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,13 +18,13 @@ type fakeSender struct {
 	err               error
 }
 
-func (f *fakeSender) SendConfirmation(_ context.Context, _ model.Confirmation) error {
+func (f *fakeSender) SendConfirmation(_ context.Context, _ Confirmation) error {
 	f.confirmationCalls++
 	return f.err
 }
 
 func (f *fakeSender) SendReleaseNotification(
-	_ context.Context, _ string, _ string, _ *model.ReleaseInfo,
+	_ context.Context, _ string, _ string, _ *ReleaseInfo,
 ) error {
 	f.releaseCalls++
 	return f.err
@@ -56,7 +55,7 @@ func TestService_SendConfirmation_ReservesThenSends(t *testing.T) {
 	svc, err := NewService(sender, dedup, logger.Nop())
 	require.NoError(t, err)
 
-	delivered, err := svc.SendConfirmation(context.Background(), model.Confirmation{
+	delivered, err := svc.SendConfirmation(context.Background(), Confirmation{
 		Email: "alice@example.com",
 		Token: "tok-123",
 		Repo:  "golang/go",
@@ -76,7 +75,7 @@ func TestService_SendConfirmation_DedupConflictSkipsSend(t *testing.T) {
 	svc, err := NewService(sender, dedup, logger.Nop())
 	require.NoError(t, err)
 
-	delivered, err := svc.SendConfirmation(context.Background(), model.Confirmation{
+	delivered, err := svc.SendConfirmation(context.Background(), Confirmation{
 		Email: "alice@example.com",
 		Token: "tok-123",
 		Repo:  "golang/go",
@@ -98,7 +97,7 @@ func TestService_SendReleaseNotification_UsesReleaseDedupKey(t *testing.T) {
 		context.Background(),
 		"alice@example.com",
 		"golang/go",
-		&model.ReleaseInfo{TagName: "v1.22.0"},
+		&ReleaseInfo{TagName: "v1.22.0"},
 	)
 
 	require.NoError(t, err)
@@ -117,7 +116,7 @@ func TestService_SendErrorIsReturnedAfterReservation(t *testing.T) {
 	require.NoError(t, err)
 
 	delivered, err := svc.SendReleaseNotification(
-		context.Background(), "alice@example.com", "golang/go", &model.ReleaseInfo{TagName: "v1.22.0"},
+		context.Background(), "alice@example.com", "golang/go", &ReleaseInfo{TagName: "v1.22.0"},
 	)
 
 	assert.False(t, delivered)
@@ -134,7 +133,7 @@ func TestService_ReserveErrorSkipsSend(t *testing.T) {
 	svc, err := NewService(sender, dedup, logger.Nop())
 	require.NoError(t, err)
 
-	delivered, err := svc.SendConfirmation(context.Background(), model.Confirmation{
+	delivered, err := svc.SendConfirmation(context.Background(), Confirmation{
 		Email: "alice@example.com",
 		Token: "tok-123",
 		Repo:  "golang/go",

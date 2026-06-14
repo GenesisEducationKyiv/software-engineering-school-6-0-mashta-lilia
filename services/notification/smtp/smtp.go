@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github-release-notifier/services/notification/model"
+	"github-release-notifier/services/notification"
 	"mime"
 	"net"
 	"net/smtp"
@@ -37,7 +37,7 @@ func NewSMTPMailer(
 	}, nil
 }
 
-func (m *SMTPMailer) SendConfirmation(ctx context.Context, confirmation model.Confirmation) error {
+func (m *SMTPMailer) SendConfirmation(ctx context.Context, confirmation notification.Confirmation) error {
 	templates, err := m.templateBuilder()
 	if err != nil {
 		return err
@@ -48,7 +48,7 @@ func (m *SMTPMailer) SendConfirmation(ctx context.Context, confirmation model.Co
 }
 
 func (m *SMTPMailer) SendReleaseNotification(
-	ctx context.Context, email, repo string, rel *model.ReleaseInfo,
+	ctx context.Context, email, repo string, rel *notification.ReleaseInfo,
 ) error {
 	templates, err := m.templateBuilder()
 	if err != nil {

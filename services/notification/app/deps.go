@@ -6,10 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/services/notification"
 	"github-release-notifier/services/notification/config"
-	"github-release-notifier/services/notification/inbound/grpcserver"
-	"github-release-notifier/services/notification/outbound/smtp"
-	"github-release-notifier/services/notification/outbound/store"
+	"github-release-notifier/services/notification/grpcserver"
+	"github-release-notifier/services/notification/smtp"
+	"github-release-notifier/services/notification/store"
 
 	notificationv1 "github-release-notifier/internal/gen/notification/v1"
 )
@@ -38,7 +39,7 @@ func buildDependencies(
 		return nil, fmt.Errorf("creating SMTP mailer: %w", err)
 	}
 
-	service, err := NewService(mail, ledger, log.With("component", "notification_service"))
+	service, err := notification.NewService(mail, ledger, log.With("component", "notification_service"))
 	if err != nil {
 		closeQuietly(ctx, log, "notification store", ledger.Close)
 		return nil, fmt.Errorf("creating notification service: %w", err)

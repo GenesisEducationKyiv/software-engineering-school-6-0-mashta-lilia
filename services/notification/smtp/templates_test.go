@@ -1,8 +1,8 @@
 package smtp_test
 
 import (
-	"github-release-notifier/services/notification/model"
-	"github-release-notifier/services/notification/outbound/smtp"
+	"github-release-notifier/services/notification"
+	"github-release-notifier/services/notification/smtp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -48,7 +48,7 @@ func TestTemplateBuilder_Confirmation_StripsCRLFInjection(t *testing.T) {
 func TestTemplateBuilder_ReleaseNotification_Standard(t *testing.T) {
 	t.Parallel()
 	tb := smtp.NewTemplateBuilder("https://example.com")
-	rel := &model.ReleaseInfo{
+	rel := &notification.ReleaseInfo{
 		TagName: "v1.22.0",
 		Name:    "Go 1.22",
 		HTMLURL: "https://github.com/golang/go/releases/tag/v1.22.0",
@@ -70,7 +70,7 @@ func TestTemplateBuilder_ReleaseNotification_Standard(t *testing.T) {
 func TestTemplateBuilder_ReleaseNotification_StripsCRLFInjection(t *testing.T) {
 	t.Parallel()
 	tb := smtp.NewTemplateBuilder("https://example.com")
-	rel := &model.ReleaseInfo{
+	rel := &notification.ReleaseInfo{
 		TagName: "v1.0\r\nX-Evil: 1",
 		Name:    "ok",
 		HTMLURL: "https://example.com/r",

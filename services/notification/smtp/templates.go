@@ -2,7 +2,7 @@ package smtp
 
 import (
 	"fmt"
-	"github-release-notifier/services/notification/model"
+	"github-release-notifier/services/notification"
 )
 
 type Message struct {
@@ -35,7 +35,7 @@ func (t *TemplateBuilder) Confirmation(email, token, repo string) Message {
 	}
 }
 
-func (t *TemplateBuilder) ReleaseNotification(email, repo string, rel *model.ReleaseInfo) Message {
+func (t *TemplateBuilder) ReleaseNotification(email, repo string, rel *notification.ReleaseInfo) Message {
 	safeEmail := sanitizeHeader(email)
 	safeRepo := sanitizeHeader(repo)
 	if rel == nil {

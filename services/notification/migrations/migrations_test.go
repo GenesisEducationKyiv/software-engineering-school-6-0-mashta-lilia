@@ -1,9 +1,8 @@
 package migrations_test
 
 import (
-	"testing"
-
 	"github-release-notifier/services/notification/migrations"
+	"testing"
 
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/stretchr/testify/require"

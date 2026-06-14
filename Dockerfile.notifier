@@ -10,7 +10,7 @@ ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags "-X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}" \
-    -o /notifier ./services/notification/cmd/notifier
+    -o /notifier ./services/notification/main
 
 FROM alpine:3.19
 

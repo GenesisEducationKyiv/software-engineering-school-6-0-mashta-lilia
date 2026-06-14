@@ -4,7 +4,7 @@ import (
 	"context"
 	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/platform/tracectx"
-	"github-release-notifier/services/notification/model"
+	"github-release-notifier/services/notification"
 	"strings"
 
 	notificationv1 "github-release-notifier/internal/gen/notification/v1"
@@ -16,8 +16,10 @@ import (
 )
 
 type applicationService interface {
-	SendConfirmation(ctx context.Context, confirmation model.Confirmation) (bool, error)
-	SendReleaseNotification(ctx context.Context, email, repo string, rel *model.ReleaseInfo) (bool, error)
+	SendConfirmation(ctx context.Context, confirmation notification.Confirmation) (bool, error)
+	SendReleaseNotification(
+		ctx context.Context, email, repo string, rel *notification.ReleaseInfo,
+	) (bool, error)
 }
 
 type Server struct {
@@ -43,7 +45,7 @@ func (s *Server) SendConfirmation(
 	if req.GetEmail() == "" || req.GetToken() == "" || req.GetRepo() == "" {
 		return nil, status.Error(codes.InvalidArgument, "email, token and repo are required")
 	}
-	delivered, err := s.service.SendConfirmation(ctx, model.Confirmation{
+	delivered, err := s.service.SendConfirmation(ctx, notification.Confirmation{
 		Email: req.GetEmail(),
 		Token: req.GetToken(),
 		Repo:  req.GetRepo(),
@@ -75,11 +77,11 @@ func (s *Server) SendReleaseNotification(
 	return &notificationv1.SendNotificationResponse{Delivered: delivered}, nil
 }
 
-func releaseFromProto(rel *notificationv1.Release) *model.ReleaseInfo {
+func releaseFromProto(rel *notificationv1.Release) *notification.ReleaseInfo {
 	if rel == nil {
 		return nil
 	}
-	return &model.ReleaseInfo{
+	return &notification.ReleaseInfo{
 		TagName:     rel.GetTagName(),
 		Name:        rel.GetName(),
 		HTMLURL:     rel.GetHtmlUrl(),

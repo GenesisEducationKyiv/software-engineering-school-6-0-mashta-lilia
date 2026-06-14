@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"flag"
 	"github-release-notifier/internal/platform/logger"
-	"github-release-notifier/services/notification/outbound/store"
+	"github-release-notifier/services/notification/store"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -149,7 +149,7 @@ func notificationMigrationsURL() string {
 	if !ok {
 		panic("cannot resolve notification store test path")
 	}
-	path, err := filepath.Abs(filepath.Join(filepath.Dir(file), "..", "..", "migrations"))
+	path, err := filepath.Abs(filepath.Join(filepath.Dir(file), "..", "migrations"))
 	if err != nil {
 		panic(err)
 	}
