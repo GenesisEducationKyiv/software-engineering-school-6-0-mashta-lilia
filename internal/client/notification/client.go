@@ -52,13 +52,13 @@ func NewClient(client notificationv1.NotificationServiceClient, log *logger.Logg
 	return &Client{client: client, log: log}, nil
 }
 
-func (c *Client) SendConfirmation(ctx context.Context, email, token, repo string) error {
+func (c *Client) SendConfirmation(ctx context.Context, email, confirmURL, repo string) error {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	resp, err := c.client.SendConfirmation(ctx, &notificationv1.SendConfirmationRequest{
-		Email: email,
-		Token: token,
-		Repo:  repo,
+		Email:      email,
+		ConfirmUrl: confirmURL,
+		Repo:       repo,
 	})
 	if err != nil {
 		return transportError("send confirmation", err)

@@ -110,7 +110,10 @@ func New(ctx context.Context) (*App, func(), error) {
 		return nil, cleanup, fmt.Errorf("notification client: %w", err)
 	}
 
-	svc := subscription.NewService(subRepo, repoStore, gh, notifier, token.New())
+	svc := subscription.NewService(
+		subRepo, repoStore, gh, notifier, token.New(),
+		subscription.NewConfirmLinkBuilder("http://test.local"),
+	)
 	handler := subhandler.NewHandler(svc, log)
 	hc := health.NewDBChecker(db)
 	router := rest.NewRouter(handler, hc, APIKey, rl, "", log)
@@ -154,7 +157,7 @@ func newNotificationClient(
 		}
 	})
 
-	templates := notificationsmtp.NewTemplateBuilder("http://test.local")
+	templates := notificationsmtp.NewTemplateBuilder()
 	mail, err := notificationsmtp.NewSMTPMailer(
 		mp.Host, mp.SMTPPort, "", "", "noreply@test.local", templates, log,
 	)

@@ -51,7 +51,6 @@ services:
       SMTP_USER: ""
       SMTP_PASSWORD: ""
       SMTP_FROM: "noreply@example.com"
-      BASE_URL: "http://localhost:8080"
       LOG_LEVEL: "info"
       SERVICE_NAME: github-release-notifier-notification
     depends_on:

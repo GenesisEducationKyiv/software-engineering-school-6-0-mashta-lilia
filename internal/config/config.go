@@ -18,6 +18,7 @@ const (
 
 type Config struct {
 	ServerPort string
+	BaseURL    string
 	DBHost     string
 	DBPort     string
 	DBUser     string
@@ -78,6 +79,7 @@ func NewFromEnv() (*Config, error) {
 
 	return &Config{
 		ServerPort: envOrDefault("SERVER_PORT", "8080"),
+		BaseURL:    envOrDefault("BASE_URL", "http://localhost:8080"),
 		DBHost:     envOrDefault("DB_HOST", "localhost"),
 		DBPort:     envOrDefault("DB_PORT", "5432"),
 		DBUser:     envOrDefault("DB_USER", "postgres"),

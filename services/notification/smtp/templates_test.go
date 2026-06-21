@@ -10,9 +10,9 @@ import (
 
 func TestTemplateBuilder_Confirmation_Standard(t *testing.T) {
 	t.Parallel()
-	tb := smtp.NewTemplateBuilder("https://example.com")
+	tb := smtp.NewTemplateBuilder()
 
-	got := tb.Confirmation("alice@example.com", "tok123", "golang/go")
+	got := tb.Confirmation("alice@example.com", "https://example.com/api/confirm/tok123", "golang/go")
 
 	want := smtp.Message{
 		To:      "alice@example.com",
@@ -27,10 +27,10 @@ func TestTemplateBuilder_Confirmation_Standard(t *testing.T) {
 
 func TestTemplateBuilder_Confirmation_StripsCRLFInjection(t *testing.T) {
 	t.Parallel()
-	tb := smtp.NewTemplateBuilder("https://example.com")
+	tb := smtp.NewTemplateBuilder()
 	got := tb.Confirmation(
 		"alice@example.com\r\nBcc: evil@bad.com",
-		"tok",
+		"https://example.com/api/confirm/tok",
 		"golang/go\r\nX-Evil: 1",
 	)
 
@@ -47,7 +47,7 @@ func TestTemplateBuilder_Confirmation_StripsCRLFInjection(t *testing.T) {
 
 func TestTemplateBuilder_ReleaseNotification_Standard(t *testing.T) {
 	t.Parallel()
-	tb := smtp.NewTemplateBuilder("https://example.com")
+	tb := smtp.NewTemplateBuilder()
 	rel := &notification.ReleaseInfo{
 		TagName: "v1.22.0",
 		Name:    "Go 1.22",
@@ -69,7 +69,7 @@ func TestTemplateBuilder_ReleaseNotification_Standard(t *testing.T) {
 
 func TestTemplateBuilder_ReleaseNotification_StripsCRLFInjection(t *testing.T) {
 	t.Parallel()
-	tb := smtp.NewTemplateBuilder("https://example.com")
+	tb := smtp.NewTemplateBuilder()
 	rel := &notification.ReleaseInfo{
 		TagName: "v1.0\r\nX-Evil: 1",
 		Name:    "ok",
@@ -95,7 +95,7 @@ func TestTemplateBuilder_ReleaseNotification_StripsCRLFInjection(t *testing.T) {
 
 func TestTemplateBuilder_ReleaseNotification_NilRelease(t *testing.T) {
 	t.Parallel()
-	tb := smtp.NewTemplateBuilder("https://example.com")
+	tb := smtp.NewTemplateBuilder()
 
 	got := tb.ReleaseNotification("alice@example.com", "golang/go", nil)
 

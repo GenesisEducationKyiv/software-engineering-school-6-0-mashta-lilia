@@ -45,7 +45,7 @@ func NewService(sender sender, dedup dedupStore, log *logger.Logger) (*Service, 
 func (s *Service) SendConfirmation(
 	ctx context.Context, confirmation Confirmation,
 ) (bool, error) {
-	dedupKey := hashDedupKey("confirm:" + confirmation.Token)
+	dedupKey := hashDedupKey("confirm:" + confirmation.ConfirmURL)
 	return s.reserveAndSend(ctx, kindConfirmation, dedupKey, func() error {
 		return s.sender.SendConfirmation(ctx, confirmation)
 	})

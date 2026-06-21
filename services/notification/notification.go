@@ -1,9 +1,9 @@
 package notification
 
 type Confirmation struct {
-	Email string
-	Token string `json:"-"`
-	Repo  string
+	Email      string
+	ConfirmURL string `json:"-"`
+	Repo       string
 }
 
 type ReleaseInfo struct {

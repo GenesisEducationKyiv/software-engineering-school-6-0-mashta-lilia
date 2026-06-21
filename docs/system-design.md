@@ -196,7 +196,8 @@ sequenceDiagram
     S->>DB: Exists(subscriptions WHERE active|pending)
     DB-->>S: false
     S->>DB: INSERT subscription (status=pending, token)
-    S->>N: SendConfirmation(email, token, repo)  [gRPC]
+    S->>S: build confirm_url (BASE_URL + /api/confirm/{token})
+    S->>N: SendConfirmation(email, confirm_url, repo)  [gRPC]
     N->>N: reserve dedup key (own Postgres ledger)
     N->>M: send confirmation email
     alt gRPC transport or SMTP fails (non-OK status)

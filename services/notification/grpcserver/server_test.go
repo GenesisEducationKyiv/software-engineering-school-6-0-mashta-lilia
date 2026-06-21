@@ -15,6 +15,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const testConfirmURL = "https://app.example/api/confirm/tok-123"
+
 type fakeService struct {
 	confirmation *notification.Confirmation
 	email        string
@@ -75,26 +77,26 @@ func TestServer_SendConfirmation_MapsFields(t *testing.T) {
 	srv := New(svc, logger.Nop())
 
 	resp, err := srv.SendConfirmation(context.Background(), &notificationv1.SendConfirmationRequest{
-		Email: "alice@example.com",
-		Token: "tok-123",
-		Repo:  "golang/go",
+		Email:      "alice@example.com",
+		ConfirmUrl: testConfirmURL,
+		Repo:       "golang/go",
 	})
 
 	require.NoError(t, err)
 	assert.True(t, resp.GetDelivered())
 	require.NotNil(t, svc.confirmation)
 	assert.Equal(t, "alice@example.com", svc.confirmation.Email)
-	assert.Equal(t, "tok-123", svc.confirmation.Token)
+	assert.Equal(t, testConfirmURL, svc.confirmation.ConfirmURL)
 	assert.Equal(t, "golang/go", svc.confirmation.Repo)
 }
 
 func TestServer_SendConfirmation_RejectsMissingFields(t *testing.T) {
 	t.Parallel()
 	cases := map[string]*notificationv1.SendConfirmationRequest{
-		"nil request":   nil,
-		"missing email": {Token: "tok", Repo: "golang/go"},
-		"missing token": {Email: "a@b.c", Repo: "golang/go"},
-		"missing repo":  {Email: "a@b.c", Token: "tok"},
+		"nil request":         nil,
+		"missing email":       {ConfirmUrl: testConfirmURL, Repo: "golang/go"},
+		"missing confirm_url": {Email: "a@b.c", Repo: "golang/go"},
+		"missing repo":        {Email: "a@b.c", ConfirmUrl: testConfirmURL},
 	}
 	for name, req := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -156,7 +158,7 @@ func TestServer_ServiceErrorMapsToInternal(t *testing.T) {
 	srv := New(svc, logger.Nop())
 
 	resp, err := srv.SendConfirmation(context.Background(), &notificationv1.SendConfirmationRequest{
-		Email: "a@b.c", Token: "tok", Repo: "golang/go",
+		Email: "a@b.c", ConfirmUrl: testConfirmURL, Repo: "golang/go",
 	})
 
 	assert.Nil(t, resp)

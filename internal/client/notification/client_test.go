@@ -57,10 +57,10 @@ func TestClient_SendConfirmationMapsRequest(t *testing.T) {
 	client, err := notification.NewClient(m, logger.Nop())
 	require.NoError(t, err)
 
-	require.NoError(t, client.SendConfirmation(context.Background(), "alice@example.com", "tok", "golang/go"))
+	require.NoError(t, client.SendConfirmation(context.Background(), "alice@example.com", "https://app.example/api/confirm/tok", "golang/go"))
 	require.NotNil(t, got)
 	assert.Equal(t, "alice@example.com", got.GetEmail())
-	assert.Equal(t, "tok", got.GetToken())
+	assert.Equal(t, "https://app.example/api/confirm/tok", got.GetConfirmUrl())
 	assert.Equal(t, "golang/go", got.GetRepo())
 	m.AssertExpectations(t)
 }
@@ -105,7 +105,7 @@ func TestClient_DeliveredFalseIsBusinessNoop(t *testing.T) {
 	client, err := notification.NewClient(m, logger.Nop())
 	require.NoError(t, err)
 
-	assert.NoError(t, client.SendConfirmation(context.Background(), "alice@example.com", "tok", "golang/go"))
+	assert.NoError(t, client.SendConfirmation(context.Background(), "alice@example.com", "https://app.example/api/confirm/tok", "golang/go"))
 }
 
 func TestClient_TransportErrorIsReturned(t *testing.T) {
@@ -117,7 +117,7 @@ func TestClient_TransportErrorIsReturned(t *testing.T) {
 	client, err := notification.NewClient(m, logger.Nop())
 	require.NoError(t, err)
 
-	err = client.SendConfirmation(context.Background(), "alice@example.com", "tok", "golang/go")
+	err = client.SendConfirmation(context.Background(), "alice@example.com", "https://app.example/api/confirm/tok", "golang/go")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "code=Unavailable")
 }

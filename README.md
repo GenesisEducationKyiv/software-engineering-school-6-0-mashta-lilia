@@ -282,6 +282,7 @@ cp .env.example .env
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SERVER_PORT` | `8080` | HTTP server port |
+| `BASE_URL` | `http://localhost:8080` | Public base URL used to build confirmation links in emails |
 | `DB_HOST` | `localhost` | PostgreSQL host (`postgres` in Docker Compose) |
 | `DB_PORT` | `5432` | PostgreSQL port |
 | `DB_USER` | `postgres` | PostgreSQL user |
@@ -310,7 +311,6 @@ cp .env.example .env
 | `SMTP_PORT` | `587` | SMTP server port |
 | `SMTP_USER` / `SMTP_PASSWORD` | -- | SMTP credentials |
 | `SMTP_FROM` | `noreply@example.com` | Sender email address |
-| `BASE_URL` | `http://localhost:8080` | Base URL for confirmation/unsubscribe links in emails |
 
 ## Project Structure
 

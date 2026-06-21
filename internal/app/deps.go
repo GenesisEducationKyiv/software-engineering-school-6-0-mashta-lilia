@@ -79,7 +79,8 @@ func buildDependencies(
 	closers = append(closers, notifierConn.Close)
 
 	tokenGen := token.New()
-	subService := subscription.NewService(subRepo, repoStore, ghClient, notifier, tokenGen)
+	confirmLinks := subscription.NewConfirmLinkBuilder(cfg.BaseURL)
+	subService := subscription.NewService(subRepo, repoStore, ghClient, notifier, tokenGen, confirmLinks)
 
 	poller, err := release.NewPoller(
 		repoStore, subRepo, ghClient, notifier, cfg.ScanInterval, log.With("component", "poller"),

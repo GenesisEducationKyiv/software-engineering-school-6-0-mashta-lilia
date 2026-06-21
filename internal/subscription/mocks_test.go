@@ -71,14 +71,14 @@ func (m *mockGitHubChecker) RepoExists(ctx context.Context, owner, name string) 
 }
 
 type mockConfirmationSender struct {
-	SendConfirmationFn func(ctx context.Context, email, token, repo string) error
+	SendConfirmationFn func(ctx context.Context, email, confirmURL, repo string) error
 }
 
-func (m *mockConfirmationSender) SendConfirmation(ctx context.Context, email, token, repo string) error {
+func (m *mockConfirmationSender) SendConfirmation(ctx context.Context, email, confirmURL, repo string) error {
 	if m.SendConfirmationFn == nil {
 		panic("mockConfirmationSender.SendConfirmation called but not configured")
 	}
-	return m.SendConfirmationFn(ctx, email, token, repo)
+	return m.SendConfirmationFn(ctx, email, confirmURL, repo)
 }
 
 type fixedTokenGenerator struct {

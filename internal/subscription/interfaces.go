@@ -22,7 +22,13 @@ type githubChecker interface {
 }
 
 type confirmationSender interface {
-	SendConfirmation(ctx context.Context, email, token, repo string) error
+	SendConfirmation(ctx context.Context, email, confirmURL, repo string) error
+}
+
+// confirmationLinkBuilder lives in the monolith so the notifier never has to know the
+// public base URL or the /api/confirm/{token} route — that stays a monolith concern.
+type confirmationLinkBuilder interface {
+	ConfirmURL(token string) string
 }
 
 type tokenGen interface {

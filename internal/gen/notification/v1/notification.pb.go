@@ -24,7 +24,7 @@ const (
 type SendConfirmationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
-	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	ConfirmUrl    string                 `protobuf:"bytes,2,opt,name=confirm_url,json=confirmUrl,proto3" json:"confirm_url,omitempty"`
 	Repo          string                 `protobuf:"bytes,3,opt,name=repo,proto3" json:"repo,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -67,9 +67,9 @@ func (x *SendConfirmationRequest) GetEmail() string {
 	return ""
 }
 
-func (x *SendConfirmationRequest) GetToken() string {
+func (x *SendConfirmationRequest) GetConfirmUrl() string {
 	if x != nil {
-		return x.Token
+		return x.ConfirmUrl
 	}
 	return ""
 }
@@ -257,10 +257,11 @@ var File_notification_v1_notification_proto protoreflect.FileDescriptor
 
 const file_notification_v1_notification_proto_rawDesc = "" +
 	"\n" +
-	"\"notification/v1/notification.proto\x12\x0fnotification.v1\"Y\n" +
+	"\"notification/v1/notification.proto\x12\x0fnotification.v1\"d\n" +
 	"\x17SendConfirmationRequest\x12\x14\n" +
-	"\x05email\x18\x01 \x01(\tR\x05email\x12\x14\n" +
-	"\x05token\x18\x02 \x01(\tR\x05token\x12\x12\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1f\n" +
+	"\vconfirm_url\x18\x02 \x01(\tR\n" +
+	"confirmUrl\x12\x12\n" +
 	"\x04repo\x18\x03 \x01(\tR\x04repo\"v\n" +
 	"\aRelease\x12\x19\n" +
 	"\btag_name\x18\x01 \x01(\tR\atagName\x12\x12\n" +

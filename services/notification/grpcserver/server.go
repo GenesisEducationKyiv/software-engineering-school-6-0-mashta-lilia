@@ -42,13 +42,13 @@ func (s *Server) SendConfirmation(
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
-	if req.GetEmail() == "" || req.GetToken() == "" || req.GetRepo() == "" {
-		return nil, status.Error(codes.InvalidArgument, "email, token and repo are required")
+	if req.GetEmail() == "" || req.GetConfirmUrl() == "" || req.GetRepo() == "" {
+		return nil, status.Error(codes.InvalidArgument, "email, confirm_url and repo are required")
 	}
 	delivered, err := s.service.SendConfirmation(ctx, notification.Confirmation{
-		Email: req.GetEmail(),
-		Token: req.GetToken(),
-		Repo:  req.GetRepo(),
+		Email:      req.GetEmail(),
+		ConfirmURL: req.GetConfirmUrl(),
+		Repo:       req.GetRepo(),
 	})
 	if err != nil {
 		s.log.Error(ctx, "send_confirmation_failed", "err", err)

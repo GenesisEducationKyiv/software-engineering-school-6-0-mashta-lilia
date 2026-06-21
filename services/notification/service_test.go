@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testConfirmURL = "https://app.example/api/confirm/tok-123"
+
 type fakeSender struct {
 	confirmationCalls int
 	releaseCalls      int
@@ -72,30 +74,30 @@ func TestService_SendConfirmation_ReservesThenSends(t *testing.T) {
 	require.NoError(t, err)
 
 	delivered, err := svc.SendConfirmation(context.Background(), Confirmation{
-		Email: "alice@example.com",
-		Token: "tok-123",
-		Repo:  "golang/go",
+		Email:      "alice@example.com",
+		ConfirmURL: testConfirmURL,
+		Repo:       "golang/go",
 	})
 
 	require.NoError(t, err)
 	assert.True(t, delivered)
 	assert.Equal(t, 1, sender.confirmationCalls)
 	assert.Equal(t, kindConfirmation, dedup.lastKind)
-	assert.Equal(t, sha256Hex("confirm:tok-123"), dedup.lastKey)
+	assert.Equal(t, sha256Hex("confirm:"+testConfirmURL), dedup.lastKey)
 }
 
 func TestService_SendConfirmation_DedupConflictSkipsSend(t *testing.T) {
 	t.Parallel()
 	sender := &fakeSender{}
 	dedup := newFakeDedupStore()
-	dedup.reserved[sha256Hex("confirm:tok-123")] = true // already delivered earlier
+	dedup.reserved[sha256Hex("confirm:"+testConfirmURL)] = true // already delivered earlier
 	svc, err := NewService(sender, dedup, logger.Nop())
 	require.NoError(t, err)
 
 	delivered, err := svc.SendConfirmation(context.Background(), Confirmation{
-		Email: "alice@example.com",
-		Token: "tok-123",
-		Repo:  "golang/go",
+		Email:      "alice@example.com",
+		ConfirmURL: testConfirmURL,
+		Repo:       "golang/go",
 	})
 
 	require.NoError(t, err)
@@ -176,9 +178,9 @@ func TestService_ReserveErrorSkipsSend(t *testing.T) {
 	require.NoError(t, err)
 
 	delivered, err := svc.SendConfirmation(context.Background(), Confirmation{
-		Email: "alice@example.com",
-		Token: "tok-123",
-		Repo:  "golang/go",
+		Email:      "alice@example.com",
+		ConfirmURL: testConfirmURL,
+		Repo:       "golang/go",
 	})
 
 	assert.False(t, delivered)

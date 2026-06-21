@@ -11,18 +11,17 @@ type Message struct {
 	Body    string
 }
 
-type TemplateBuilder struct {
-	baseURL string
+type TemplateBuilder struct{}
+
+func NewTemplateBuilder() *TemplateBuilder {
+	return &TemplateBuilder{}
 }
 
-func NewTemplateBuilder(baseURL string) *TemplateBuilder {
-	return &TemplateBuilder{baseURL: baseURL}
-}
-
-func (t *TemplateBuilder) Confirmation(email, token, repo string) Message {
+// confirmURL is built by the monolith, which owns the public base URL and route; the
+// notifier only renders the link it is handed and never constructs subscription URLs.
+func (t *TemplateBuilder) Confirmation(email, confirmURL, repo string) Message {
 	safeEmail := sanitizeHeader(email)
 	safeRepo := sanitizeHeader(repo)
-	confirmURL := fmt.Sprintf("%s/api/confirm/%s", t.baseURL, token)
 	return Message{
 		To:      safeEmail,
 		Subject: fmt.Sprintf("Confirm your subscription to %s releases", safeRepo),

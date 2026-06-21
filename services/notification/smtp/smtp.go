@@ -49,7 +49,7 @@ func (m *SMTPMailer) SendConfirmation(ctx context.Context, confirmation notifica
 		return err
 	}
 	return m.deliver(ctx, templates.Confirmation(
-		confirmation.Email, confirmation.Token, confirmation.Repo,
+		confirmation.Email, confirmation.ConfirmURL, confirmation.Repo,
 	))
 }
 

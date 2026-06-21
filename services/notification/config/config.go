@@ -24,8 +24,6 @@ type Config struct {
 	SMTPPassword string `envconfig:"SMTP_PASSWORD"`
 	SMTPFrom     string `envconfig:"SMTP_FROM" default:"noreply@example.com"`
 
-	BaseURL string `envconfig:"BASE_URL" default:"http://localhost:8080"`
-
 	LogLevel    string `envconfig:"LOG_LEVEL" default:"info"`
 	ServiceName string `envconfig:"SERVICE_NAME" default:"github-release-notifier-notification"`
 }

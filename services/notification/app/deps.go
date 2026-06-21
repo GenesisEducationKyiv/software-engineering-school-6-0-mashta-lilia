@@ -28,7 +28,7 @@ func buildDependencies(
 		return nil, fmt.Errorf("creating notification store: %w", err)
 	}
 
-	templates := smtp.NewTemplateBuilder(cfg.BaseURL)
+	templates := smtp.NewTemplateBuilder()
 	mail, err := smtp.NewSMTPMailer(
 		cfg.SMTPHost, cfg.SMTPPort,
 		cfg.SMTPUser, cfg.SMTPPassword,

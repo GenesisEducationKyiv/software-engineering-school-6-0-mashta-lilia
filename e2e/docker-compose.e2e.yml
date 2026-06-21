@@ -74,7 +74,6 @@ services:
       SMTP_USER: ""
       SMTP_PASSWORD: ""
       SMTP_FROM: "noreply@e2e.local"
-      BASE_URL: "http://localhost:8081"
       LOG_LEVEL: "info"
       SERVICE_NAME: github-release-notifier-notification
     # No host port: the unauthenticated gRPC endpoint stays internal to the stack.
@@ -97,6 +96,7 @@ services:
         condition: service_healthy
     environment:
       SERVER_PORT: "8080"
+      BASE_URL: "http://localhost:8081"   # public host port; goes into confirmation email links
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_USER: postgres
