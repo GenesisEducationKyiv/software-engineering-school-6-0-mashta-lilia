@@ -9,7 +9,8 @@ import (
 )
 
 type Config struct {
-	GRPCAddr string `envconfig:"GRPC_ADDR" default:":50051"`
+	GRPCAddr    string `envconfig:"GRPC_ADDR" default:":50051"`
+	RabbitMQURL string `envconfig:"RABBITMQ_URL" default:"amqp://localhost:5672/"`
 
 	DBHost     string `envconfig:"DB_HOST" default:"localhost"`
 	DBPort     string `envconfig:"DB_PORT" default:"5432"`

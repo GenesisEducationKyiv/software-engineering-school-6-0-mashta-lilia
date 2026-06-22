@@ -8,6 +8,7 @@ import (
 	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/services/notification"
 	"github-release-notifier/services/notification/config"
+	"github-release-notifier/services/notification/consumer"
 	"github-release-notifier/services/notification/grpcserver"
 	"github-release-notifier/services/notification/smtp"
 	"github-release-notifier/services/notification/store"
@@ -17,6 +18,7 @@ import (
 
 type dependencies struct {
 	notificationServer notificationv1.NotificationServiceServer
+	consumer           *consumer.Consumer
 	closers            []func() error
 }
 
@@ -45,8 +47,15 @@ func buildDependencies(
 		return nil, fmt.Errorf("creating notification service: %w", err)
 	}
 
+	cons, err := consumer.New(service, log.With("component", "notification_consumer"))
+	if err != nil {
+		closeQuietly(ctx, log, "notification store", ledger.Close)
+		return nil, fmt.Errorf("creating notification consumer: %w", err)
+	}
+
 	return &dependencies{
 		notificationServer: grpcserver.New(service, log.With("component", "notification_server")),
+		consumer:           cons,
 		closers:            []func() error{ledger.Close},
 	}, nil
 }

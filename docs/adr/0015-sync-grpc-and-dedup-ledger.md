@@ -1,7 +1,7 @@
 # ADR 0015: Synchronous gRPC with Dedup Ledger
 
 Date: 2026-06-10
-Status: Accepted
+Status: Accepted — transport superseded by [ADR 0016](0016-async-notifications-via-rabbitmq.md); the dedup ledger semantics below are still current
 Deciders: Project Author
 
 ## Context and Problem Statement

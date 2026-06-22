@@ -13,7 +13,7 @@ const (
 	defaultScanInterval = 5 * time.Minute
 	defaultCacheTTL     = 10 * time.Minute
 	defaultServiceName  = "github-release-notifier"
-	defaultNotifierAddr = "localhost:50051"
+	defaultRabbitMQURL  = "amqp://localhost:5672/"
 )
 
 type Config struct {
@@ -30,8 +30,8 @@ type Config struct {
 
 	ScanInterval time.Duration
 
-	APIKey       string
-	NotifierAddr string
+	APIKey      string
+	RabbitMQURL string
 
 	RedisAddr     string
 	RedisPassword string
@@ -91,8 +91,8 @@ func NewFromEnv() (*Config, error) {
 
 		ScanInterval: scanInterval,
 
-		APIKey:       apiKey,
-		NotifierAddr: envOrDefault("NOTIFIER_ADDR", defaultNotifierAddr),
+		APIKey:      apiKey,
+		RabbitMQURL: envOrDefault("RABBITMQ_URL", defaultRabbitMQURL),
 
 		RedisAddr:     envOrDefault("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: envOrDefault("REDIS_PASSWORD", ""),

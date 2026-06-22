@@ -6,13 +6,13 @@ services:
     env_file:
       - .env
     environment:
-      NOTIFIER_ADDR: notifier:50051
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      notifier:
+      rabbitmq:
         condition: service_healthy
     restart: unless-stopped
     networks:
@@ -51,12 +51,15 @@ services:
       SMTP_USER: ""
       SMTP_PASSWORD: ""
       SMTP_FROM: "noreply@example.com"
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       LOG_LEVEL: "info"
       SERVICE_NAME: github-release-notifier-notification
     depends_on:
       postgres-notifier:
         condition: service_healthy
       mailpit:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     restart: unless-stopped
     networks:
@@ -168,6 +171,31 @@ services:
       resources:
         limits:
           memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     logging:
       driver: json-file
       options:
@@ -305,6 +333,7 @@ networks:
 volumes:
   pgdata:
   pgdata_notifier:
+  rabbitmq_data:
   esdata:
   prometheus_data:
   grafana_data:
