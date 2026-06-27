@@ -6,11 +6,12 @@ import (
 )
 
 type mockSubscriptionRepo struct {
-	CreateFn           func(ctx context.Context, sub *Subscription) error
-	GetByTokenFn       func(ctx context.Context, token string) (*Subscription, error)
-	GetActiveByEmailFn func(ctx context.Context, email string) ([]Subscription, error)
-	UpdateStatusFn     func(ctx context.Context, id int64, status Status) error
-	ExistsFn           func(ctx context.Context, email, owner, name string) (bool, error)
+	CreateFn            func(ctx context.Context, sub *Subscription) error
+	GetByTokenFn        func(ctx context.Context, token string) (*Subscription, error)
+	GetActiveByEmailFn  func(ctx context.Context, email string) ([]Subscription, error)
+	GetByEmailAndRepoFn func(ctx context.Context, email, owner, name string) (*Subscription, error)
+	UpdateStatusFn      func(ctx context.Context, id int64, status Status) error
+	UpdateTokenFn       func(ctx context.Context, id int64, token string) error
 }
 
 func (m *mockSubscriptionRepo) Create(ctx context.Context, sub *Subscription) error {
@@ -41,11 +42,20 @@ func (m *mockSubscriptionRepo) UpdateStatus(ctx context.Context, id int64, statu
 	return m.UpdateStatusFn(ctx, id, status)
 }
 
-func (m *mockSubscriptionRepo) Exists(ctx context.Context, email, owner, name string) (bool, error) {
-	if m.ExistsFn == nil {
-		panic("mockSubscriptionRepo.Exists called but not configured")
+func (m *mockSubscriptionRepo) GetByEmailAndRepo(
+	ctx context.Context, email, owner, name string,
+) (*Subscription, error) {
+	if m.GetByEmailAndRepoFn == nil {
+		panic("mockSubscriptionRepo.GetByEmailAndRepo called but not configured")
 	}
-	return m.ExistsFn(ctx, email, owner, name)
+	return m.GetByEmailAndRepoFn(ctx, email, owner, name)
+}
+
+func (m *mockSubscriptionRepo) UpdateToken(ctx context.Context, id int64, token string) error {
+	if m.UpdateTokenFn == nil {
+		panic("mockSubscriptionRepo.UpdateToken called but not configured")
+	}
+	return m.UpdateTokenFn(ctx, id, token)
 }
 
 type mockRepoUpserter struct {

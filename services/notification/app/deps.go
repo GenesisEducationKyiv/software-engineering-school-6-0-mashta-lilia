@@ -53,8 +53,14 @@ func buildDependencies(
 		return nil, fmt.Errorf("creating notification consumer: %w", err)
 	}
 
+	notificationServer, err := grpcserver.New(service, log.With("component", "notification_server"))
+	if err != nil {
+		closeQuietly(ctx, log, "notification store", ledger.Close)
+		return nil, fmt.Errorf("creating notification server: %w", err)
+	}
+
 	return &dependencies{
-		notificationServer: grpcserver.New(service, log.With("component", "notification_server")),
+		notificationServer: notificationServer,
 		consumer:           cons,
 		closers:            []func() error{ledger.Close},
 	}, nil

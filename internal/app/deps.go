@@ -80,7 +80,10 @@ func buildDependencies(
 
 	tokenGen := token.New()
 	confirmLinks := subscription.NewConfirmLinkBuilder(cfg.BaseURL)
-	subService := subscription.NewService(subRepo, repoStore, ghClient, notifier, tokenGen, confirmLinks)
+	subService, err := subscription.NewService(subRepo, repoStore, ghClient, notifier, tokenGen, confirmLinks)
+	if err != nil {
+		return nil, fmt.Errorf("creating subscription service: %w", err)
+	}
 
 	poller, err := release.NewPoller(
 		repoStore, subRepo, ghClient, notifier, cfg.ScanInterval, log.With("component", "poller"),

@@ -20,7 +20,8 @@ type Service struct {
 	links  confirmationLinkBuilder
 }
 
-// Panics on nil deps: built once at boot, so a wiring bug should crash startup, not requests.
+// Errors on any nil dep: built once at boot, so a wiring bug fails startup
+// rather than surfacing on a request.
 func NewService(
 	subs subscriptionStore,
 	repos repoUpserter,
@@ -28,11 +29,11 @@ func NewService(
 	m confirmationSender,
 	tokens tokenGen,
 	links confirmationLinkBuilder,
-) *Service {
+) (*Service, error) {
 	if subs == nil || repos == nil || gh == nil || m == nil || tokens == nil || links == nil {
-		panic("subscription.NewService: all dependencies must be non-nil")
+		return nil, errors.New("subscription.NewService: all dependencies must be non-nil")
 	}
-	return &Service{subs: subs, repos: repos, github: gh, mailer: m, tokens: tokens, links: links}
+	return &Service{subs: subs, repos: repos, github: gh, mailer: m, tokens: tokens, links: links}, nil
 }
 
 func (s *Service) Subscribe(ctx context.Context, rawEmail, rawRepo string) error {
@@ -43,10 +44,7 @@ func (s *Service) Subscribe(ctx context.Context, rawEmail, rawRepo string) error
 	if err := s.ensureRepoExistsOnGitHub(ctx, ref); err != nil {
 		return err
 	}
-	if err := s.ensureNoActiveSubscription(ctx, addr, ref); err != nil {
-		return err
-	}
-	sub, err := s.createPendingSubscription(ctx, addr, ref)
+	sub, err := s.reserveSubscription(ctx, addr, ref)
 	if err != nil {
 		return err
 	}
@@ -76,17 +74,42 @@ func (s *Service) ensureRepoExistsOnGitHub(ctx context.Context, ref repository.R
 	return nil
 }
 
-func (s *Service) ensureNoActiveSubscription(
+// reserveSubscription returns the pending subscription to confirm: an active one
+// is a conflict, a still-pending one is refreshed with a new token so a
+// never-delivered confirmation can be retried, and otherwise a fresh row is
+// created.
+func (s *Service) reserveSubscription(
 	ctx context.Context, addr email.Address, ref repository.Ref,
-) error {
-	already, err := s.subs.Exists(ctx, addr.String(), ref.Owner, ref.Name)
+) (*Subscription, error) {
+	existing, err := s.subs.GetByEmailAndRepo(ctx, addr.String(), ref.Owner, ref.Name)
+	switch {
+	case err == nil:
+		if existing.Status == StatusActive {
+			return nil, ErrAlreadyExists
+		}
+		return s.refreshPendingSubscription(ctx, existing)
+	case errors.Is(err, ErrNotFound):
+		return s.createPendingSubscription(ctx, addr, ref)
+	default:
+		return nil, fmt.Errorf("checking existing subscription: %w", err)
+	}
+}
+
+// refreshPendingSubscription re-issues the token on a still-pending row so the
+// confirmation can be resent in place, without tripping the partial unique index
+// (ADR-0008). The caller resends and rolls back on failure as for a new row.
+func (s *Service) refreshPendingSubscription(
+	ctx context.Context, sub *Subscription,
+) (*Subscription, error) {
+	token, err := s.tokens.Generate()
 	if err != nil {
-		return fmt.Errorf("checking existing subscription: %w", err)
+		return nil, fmt.Errorf("generating token: %w", err)
 	}
-	if already {
-		return ErrAlreadyExists
+	if err := s.subs.UpdateToken(ctx, sub.ID, token); err != nil {
+		return nil, fmt.Errorf("refreshing confirmation token: %w", err)
 	}
-	return nil
+	sub.Token = token
+	return sub, nil
 }
 
 func (s *Service) createPendingSubscription(

@@ -2,6 +2,7 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/platform/tracectx"
 	"github-release-notifier/services/notification"
@@ -28,11 +29,14 @@ type Server struct {
 	log     *logger.Logger
 }
 
-func New(service applicationService, log *logger.Logger) *Server {
+func New(service applicationService, log *logger.Logger) (*Server, error) {
+	if service == nil {
+		return nil, errors.New("notification grpc server: service is nil")
+	}
 	if log == nil {
 		log = logger.Nop()
 	}
-	return &Server{service: service, log: log}
+	return &Server{service: service, log: log}, nil
 }
 
 func (s *Server) SendConfirmation(

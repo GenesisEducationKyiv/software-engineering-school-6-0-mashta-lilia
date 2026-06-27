@@ -85,7 +85,7 @@ User                    API                     Service                  DB     
  |                       |-- Subscribe() ------> |                       |                    |
  |                       |                       |-- normalizeEmail() -->|                    |
  |                       |                       |-- RepoExists() ---->(GitHub API)          |
- |                       |                       |-- Exists() --------> |                    |
+ |                       |                       |-- GetByEmailAndRepo->|                    |
  |                       |                       |-- Upsert(repo) ----> | (FK target first)  |
  |                       |                       |-- Create(sub) -----> | (status=pending)   |
  |                       |                       |-- SendConfirmation ->|                    |--> email
@@ -100,7 +100,7 @@ User                    API                     Service                  DB     
 
 **Why upsert the tracked repo before creating the subscription?** The `subscriptions` table has a foreign key to `tracked_repositories(owner, name)`. If we create the subscription first, the FK constraint will reject it. The upsert guarantees the FK target exists without creating duplicates (`ON CONFLICT DO NOTHING`).
 
-**Why rollback on email failure?** The database has a partial unique index `WHERE status != 'unsubscribed'` that prevents duplicate active/pending subscriptions for the same email+repo. If the confirmation email fails, the subscription remains in `pending` status, and the user gets a permanent `409 Conflict` on retry. The compensation rollback sets the status to `unsubscribed`, freeing the index slot so the user can try again.
+**Why rollback / refresh on a stuck `pending`?** The database has a partial unique index `WHERE status != 'unsubscribed'` that prevents duplicate active/pending subscriptions for the same email+repo, so a stranded `pending` row would otherwise give the user a permanent `409 Conflict` on retry. Two mechanisms keep re-subscription open: (1) if the **publish** to RabbitMQ fails, the monolith rolls the row back to `unsubscribed`, freeing the index slot; (2) because an async SMTP failure on the consumer side is invisible to the monolith (no rollback fires), re-subscribing over an existing `pending` row **refreshes its token and resends** the confirmation in place rather than returning `409`. An `active` subscription still returns `ErrAlreadyExists`.
 
 ### Message Broker (RabbitMQ)
 
@@ -253,7 +253,7 @@ curl http://localhost:8080/api/subscriptions?email=user@example.com \
 | `400` | Invalid email, invalid repo format, or malformed JSON |
 | `401` | Missing or invalid API key (subscriptions endpoint only) |
 | `404` | Repository not found on GitHub, or invalid confirmation/unsubscribe token |
-| `409` | Subscription already exists for this email+repo |
+| `409` | An **active** subscription already exists for this email+repo (a still-`pending` one is refreshed and the confirmation resent) |
 | `429` | Rate limit exceeded (includes `Retry-After` header) |
 | `503` | SMTP server unavailable (subscription was rolled back, safe to retry) |
 | `500` | Internal server error |

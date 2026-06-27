@@ -41,10 +41,17 @@ func (f *fakeService) SendReleaseNotification(
 	return f.delivered, f.err
 }
 
+func mustNewServer(t *testing.T, svc *fakeService) *Server {
+	t.Helper()
+	srv, err := New(svc, logger.Nop())
+	require.NoError(t, err)
+	return srv
+}
+
 func TestServer_SendReleaseNotification_MapsPopulatedRelease(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{delivered: true}
-	srv := New(svc, logger.Nop())
+	srv := mustNewServer(t, svc)
 
 	resp, err := srv.SendReleaseNotification(
 		context.Background(),
@@ -74,7 +81,7 @@ func TestServer_SendReleaseNotification_MapsPopulatedRelease(t *testing.T) {
 func TestServer_SendConfirmation_MapsFields(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{delivered: true}
-	srv := New(svc, logger.Nop())
+	srv := mustNewServer(t, svc)
 
 	resp, err := srv.SendConfirmation(context.Background(), &notificationv1.SendConfirmationRequest{
 		Email:      "alice@example.com",
@@ -102,7 +109,7 @@ func TestServer_SendConfirmation_RejectsMissingFields(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			svc := &fakeService{delivered: true}
-			srv := New(svc, logger.Nop())
+			srv := mustNewServer(t, svc)
 
 			resp, err := srv.SendConfirmation(context.Background(), req)
 
@@ -125,7 +132,7 @@ func TestServer_SendReleaseNotification_RejectsMissingFields(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			svc := &fakeService{delivered: true}
-			srv := New(svc, logger.Nop())
+			srv := mustNewServer(t, svc)
 
 			resp, err := srv.SendReleaseNotification(context.Background(), req)
 
@@ -140,7 +147,7 @@ func TestServer_SendReleaseNotification_RejectsMissingFields(t *testing.T) {
 func TestServer_SendReleaseNotification_NilReleaseAllowed(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{delivered: true}
-	srv := New(svc, logger.Nop())
+	srv := mustNewServer(t, svc)
 
 	resp, err := srv.SendReleaseNotification(
 		context.Background(),
@@ -155,7 +162,7 @@ func TestServer_SendReleaseNotification_NilReleaseAllowed(t *testing.T) {
 func TestServer_ServiceErrorMapsToInternal(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{err: errors.New("smtp down")}
-	srv := New(svc, logger.Nop())
+	srv := mustNewServer(t, svc)
 
 	resp, err := srv.SendConfirmation(context.Background(), &notificationv1.SendConfirmationRequest{
 		Email: "a@b.c", ConfirmUrl: testConfirmURL, Repo: "golang/go",

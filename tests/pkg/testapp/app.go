@@ -111,10 +111,13 @@ func New(ctx context.Context) (*App, func(), error) {
 		return nil, cleanup, fmt.Errorf("notification client: %w", err)
 	}
 
-	svc := subscription.NewService(
+	svc, err := subscription.NewService(
 		subRepo, repoStore, gh, notifier, token.New(),
 		subscription.NewConfirmLinkBuilder("http://test.local"),
 	)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("subscription service: %w", err)
+	}
 	handler := subhandler.NewHandler(svc, log)
 	hc := health.NewDBChecker(db)
 	router := rest.NewRouter(handler, hc, APIKey, rl, "", log)
@@ -175,8 +178,12 @@ func newNotificationClient(
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("notification listener: %w", err)
 	}
+	notificationServer, err := grpcserver.New(notificationService, log)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("notification grpc server: %w", err)
+	}
 	server := grpc.NewServer(grpc.UnaryInterceptor(grpcserver.TraceUnaryServerInterceptor()))
-	notificationv1.RegisterNotificationServiceServer(server, grpcserver.New(notificationService, log))
+	notificationv1.RegisterNotificationServiceServer(server, notificationServer)
 	go func() {
 		if err := server.Serve(listener); err != nil {
 			slog.Warn("notification test server stopped", "err", err)

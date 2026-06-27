@@ -8,7 +8,8 @@ import (
 type subscriptionStore interface {
 	Create(ctx context.Context, sub *Subscription) error
 	UpdateStatus(ctx context.Context, id int64, status Status) error
-	Exists(ctx context.Context, email, owner, name string) (bool, error)
+	UpdateToken(ctx context.Context, id int64, token string) error
+	GetByEmailAndRepo(ctx context.Context, email, owner, name string) (*Subscription, error)
 	GetByToken(ctx context.Context, token string) (*Subscription, error)
 	GetActiveByEmail(ctx context.Context, email string) ([]Subscription, error)
 }

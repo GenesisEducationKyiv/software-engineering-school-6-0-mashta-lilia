@@ -34,8 +34,18 @@ const (
 	getEmailsByRepoQuery = `
 		SELECT email FROM subscriptions WHERE repo_owner = $1 AND repo_name = $2 AND status = $3`
 
+	getByEmailAndRepoQuery = `
+		SELECT id, email, repo_owner, repo_name, token, status, created_at, updated_at
+		FROM subscriptions
+		WHERE email = $1 AND repo_owner = $2 AND repo_name = $3 AND status != $4`
+
 	updateStatusQuery = `
 		UPDATE subscriptions SET status = $1 WHERE id = $2`
+
+	// updated_at is maintained by the trg_subscriptions_updated_at trigger.
+	// #nosec G101 -- SQL column name, not a credential.
+	updateTokenQuery = `
+		UPDATE subscriptions SET token = $1 WHERE id = $2`
 
 	existsQuery = `
 		SELECT EXISTS(
@@ -45,16 +55,18 @@ const (
 )
 
 type Repo struct {
-	db                   *sql.DB
-	prepareMu            sync.Mutex
-	prepared             bool
-	stmtCreate           *sql.Stmt
-	stmtGetByToken       *sql.Stmt
-	stmtGetActiveByEmail *sql.Stmt
-	stmtGetEmailsByRepo  *sql.Stmt
-	stmtUpdateStatus     *sql.Stmt
-	stmtExists           *sql.Stmt
-	log                  *logger.Logger
+	db                    *sql.DB
+	prepareMu             sync.Mutex
+	prepared              bool
+	stmtCreate            *sql.Stmt
+	stmtGetByToken        *sql.Stmt
+	stmtGetActiveByEmail  *sql.Stmt
+	stmtGetEmailsByRepo   *sql.Stmt
+	stmtGetByEmailAndRepo *sql.Stmt
+	stmtUpdateStatus      *sql.Stmt
+	stmtUpdateToken       *sql.Stmt
+	stmtExists            *sql.Stmt
+	log                   *logger.Logger
 }
 
 func NewRepo(db *sql.DB, log *logger.Logger) *Repo {
@@ -123,9 +135,17 @@ func (r *Repo) prepare(ctx context.Context) error {
 		r.log.Error(ctx, "subscription_repo_prepare_failed", "statement", "get_emails_by_repo", "err", err)
 		return fmt.Errorf("preparing subscription get emails by repo: %w", err)
 	}
+	if r.stmtGetByEmailAndRepo, err = r.db.PrepareContext(ctx, getByEmailAndRepoQuery); err != nil {
+		r.log.Error(ctx, "subscription_repo_prepare_failed", "statement", "get_by_email_and_repo", "err", err)
+		return fmt.Errorf("preparing subscription get by email and repo: %w", err)
+	}
 	if r.stmtUpdateStatus, err = r.db.PrepareContext(ctx, updateStatusQuery); err != nil {
 		r.log.Error(ctx, "subscription_repo_prepare_failed", "statement", "update_status", "err", err)
 		return fmt.Errorf("preparing subscription update status: %w", err)
+	}
+	if r.stmtUpdateToken, err = r.db.PrepareContext(ctx, updateTokenQuery); err != nil {
+		r.log.Error(ctx, "subscription_repo_prepare_failed", "statement", "update_token", "err", err)
+		return fmt.Errorf("preparing subscription update token: %w", err)
 	}
 	if r.stmtExists, err = r.db.PrepareContext(ctx, existsQuery); err != nil {
 		r.log.Error(ctx, "subscription_repo_prepare_failed", "statement", "exists", "err", err)
@@ -143,7 +163,9 @@ func (r *Repo) Close() error {
 		closeStmt("subscription get by token", r.stmtGetByToken),
 		closeStmt("subscription get active by email", r.stmtGetActiveByEmail),
 		closeStmt("subscription get emails by repo", r.stmtGetEmailsByRepo),
+		closeStmt("subscription get by email and repo", r.stmtGetByEmailAndRepo),
 		closeStmt("subscription update status", r.stmtUpdateStatus),
+		closeStmt("subscription update token", r.stmtUpdateToken),
 		closeStmt("subscription exists", r.stmtExists),
 	)
 }
@@ -237,6 +259,46 @@ func (r *Repo) UpdateStatus(ctx context.Context, id int64, status Status) error 
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *Repo) UpdateToken(ctx context.Context, id int64, token string) error {
+	if err := r.ensurePrepared(ctx); err != nil {
+		return err
+	}
+	result, err := r.stmtUpdateToken.ExecContext(ctx, token, id)
+	if err != nil {
+		return fmt.Errorf("updating subscription token id=%d: %w", id, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("getting rows affected id=%d: %w", id, err)
+	}
+	if n == 0 {
+		r.log.Warn(ctx, "subscription_update_token_no_rows", "id", id)
+		return ErrNotFound
+	}
+	return nil
+}
+
+// GetByEmailAndRepo returns the single non-unsubscribed subscription for the
+// pair, relying on idx_subscriptions_email_repo_active to keep it unique, or
+// ErrNotFound when only unsubscribed history rows (or none) exist.
+func (r *Repo) GetByEmailAndRepo(ctx context.Context, email, owner, name string) (*Subscription, error) {
+	if err := r.ensurePrepared(ctx); err != nil {
+		return nil, err
+	}
+	sub := &Subscription{}
+	err := r.stmtGetByEmailAndRepo.QueryRowContext(ctx, email, owner, name, StatusUnsubscribed).Scan(
+		&sub.ID, &sub.Email, &sub.RepoOwner, &sub.RepoName,
+		&sub.Token, &sub.Status, &sub.CreatedAt, &sub.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying subscription owner=%s name=%s: %w", owner, name, err)
+	}
+	return sub, nil
 }
 
 func (r *Repo) Exists(ctx context.Context, email, owner, name string) (bool, error) {
