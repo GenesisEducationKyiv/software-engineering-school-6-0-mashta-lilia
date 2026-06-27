@@ -89,9 +89,9 @@ graph TB
     subgraph Monolith["monolith: API + poller (main/main.go)"]
         API["api/rest<br/>(Chi router, middleware)"]
         Domains["domain packages<br/>(subscription, release)"]
-        Repo["storage<br/>(Postgres queries)"]
+        Repo["repository<br/>(Postgres queries)"]
         GHC["client/github<br/>(HTTP + Cache decorator)"]
-        NotifyClient["outbound/notification<br/>(gRPC client)"]
+        NotifyClient["client/notification<br/>(RabbitMQ publisher)"]
 
         API --> Domains
         Domains --> Repo
@@ -99,12 +99,16 @@ graph TB
         Domains --> NotifyClient
     end
 
-    subgraph Notification["notification service (services/notification)"]
-        GRPC["inbound/grpcserver"]
-        NotificationApp["app.Service<br/>(dedup -> compose -> send)"]
-        SMTPAdapter["outbound/smtp"]
-        Ledger["outbound/store"]
+    Broker[/"RabbitMQ<br/>exchange notifications,<br/>queue notifications.email"/]
 
+    subgraph Notification["notification service (services/notification)"]
+        Consumer["consumer<br/>(decode envelope + dispatch)"]
+        GRPC["grpcserver<br/>(health surface + test transport)"]
+        NotificationApp["notification.Service<br/>(dedup -> compose -> send)"]
+        SMTPAdapter["smtp"]
+        Ledger["store"]
+
+        Consumer --> NotificationApp
         GRPC --> NotificationApp
         NotificationApp --> SMTPAdapter
         NotificationApp --> Ledger
@@ -119,24 +123,28 @@ graph TB
     Repo --> DB
     GHC --> Cache
     GHC --> GitHub
-    NotifyClient -- "gRPC" --> GRPC
+    NotifyClient -- "publish command" --> Broker
+    Broker -- "deliver" --> Consumer
     Ledger --> NotifyDB
     SMTPAdapter --> SMTPSrv
 ```
 
 The dependency arrow still points **inward** inside each deployable. The
 monolith's `subscription` and `release` packages define the notification
-interfaces they consume; `internal/outbound/notification` implements those
-interfaces by calling the extracted service over gRPC. The notification service
-owns its own Postgres database and is structured as a DDD module:
-`model`, `app`, `inbound/grpcserver`, and `outbound/*`.
+interfaces they consume; `internal/client/notification` implements those
+interfaces by **publishing commands to RabbitMQ**, which the notifier consumes
+asynchronously. The notification service owns its own Postgres database and is
+structured as `notification` (domain), `app`, `consumer`, `grpcserver`, `smtp`,
+and `store`.
 
 Redis caching is added as a **decorator** on `GitHubClient` — both the base
 client and `CachedClient` satisfy the same interface, so the domain layer
 never knows whether a cache is in front. The cache is optional: any Redis
-error falls through to the GitHub API. The notification split and synchronous
-gRPC/dedup trade-off are recorded in [ADR 0014](adr/0014-extract-notification-microservice.md)
-and [ADR 0015](adr/0015-sync-grpc-and-dedup-ledger.md).
+error falls through to the GitHub API. The notification split is recorded in
+[ADR 0014](adr/0014-extract-notification-microservice.md); the move from
+synchronous gRPC to durable broker commands (keeping the dedup ledger) is in
+[ADR 0015](adr/0015-sync-grpc-and-dedup-ledger.md) and
+[ADR 0016](adr/0016-async-notifications-via-rabbitmq.md).
 
 ---
 
@@ -150,8 +158,8 @@ and [ADR 0015](adr/0015-sync-grpc-and-dedup-ledger.md).
 | Storage adapter | Parameterised SQL against `subscriptions` and `tracked_repositories` | `database/sql` + `lib/pq` |
 | GitHub client   | `GET /repos/.../releases/latest` with retry/backoff  | `net/http` + custom retries |
 | Cache decorator | Cache-aside Redis layer over GitHub client           | `redis/go-redis/v9`         |
-| Notification client | Call the notification service over gRPC          | `google.golang.org/grpc`    |
-| Notification service | Deduplicate, compose, and send email notifications | gRPC + `net/smtp` + Postgres |
+| Notification client | Publish notification commands to RabbitMQ         | `rabbitmq/amqp091-go`       |
+| Notification service | Consume commands; deduplicate, compose, send email | RabbitMQ + `net/smtp` + Postgres (gRPC health surface) |
 | Migrations      | Schema versioning at startup                          | `golang-migrate/migrate/v4` |
 | Metrics         | RED metrics on HTTP, in-flight gauge                 | `prometheus/client_golang`  |
 
@@ -184,7 +192,8 @@ sequenceDiagram
     participant S as Subscription Service
     participant GH as GitHub Client (cached)
     participant DB as Postgres
-    participant N as Notifier (gRPC)
+    participant MQ as RabbitMQ
+    participant N as Notifier (consumer)
     participant M as SMTP
 
     U->>API: POST /subscribe {email, repo}
@@ -192,29 +201,32 @@ sequenceDiagram
     S->>S: normalizeEmail(email)
     S->>GH: RepoExists(owner, name)
     GH-->>S: true
-    S->>DB: Upsert(tracked_repositories)
-    S->>DB: Exists(subscriptions WHERE active|pending)
-    DB-->>S: false
-    S->>DB: INSERT subscription (status=pending, token)
+    S->>DB: GetByEmailAndRepo(email, repo)
+    alt active row exists
+        S-->>API: ErrAlreadyExists -> 409
+    else pending row exists
+        S->>DB: UpdateToken(id, newToken)
+    else none
+        S->>DB: Upsert(tracked_repositories)
+        S->>DB: INSERT subscription (status=pending, token)
+    end
+    Note over S: pending / none paths continue below
     S->>S: build confirm_url (BASE_URL + /api/confirm/{token})
-    S->>N: SendConfirmation(email, confirm_url, repo)  [gRPC]
+    S->>MQ: publish ConfirmationCommand
+    alt broker publish fails
+        S->>DB: UPDATE status='unsubscribed' (rollback)
+        S-->>API: 503 Service Unavailable
+    else accepted
+        S-->>API: 200 OK
+    end
+    Note over MQ,M: Asynchronously, later
+    MQ->>N: deliver ConfirmationCommand
     N->>N: reserve dedup key (own Postgres ledger)
     N->>M: send confirmation email
-    alt gRPC transport or SMTP fails (non-OK status)
-        N-->>S: error
-        S->>DB: UPDATE status='unsubscribed'  (rollback)
-        S-->>API: 503
-        API-->>U: 503 Service Unavailable
-    else delivered=true (or deduped delivered=false: business no-op)
-        N-->>S: OK
-        S-->>API: 200
-        API-->>U: 200 OK
-    end
     Note over U,M: Email arrives with /confirm/{token} link
     U->>API: GET /confirm/{token}
     API->>S: Confirm(token)
     S->>DB: UPDATE status='active'
-    S-->>API: 200
     API-->>U: 200 OK
 ```
 
@@ -226,7 +238,8 @@ sequenceDiagram
     participant P as Poller
     participant DB as Postgres
     participant GH as GitHub Client (cached)
-    participant N as Notifier (gRPC)
+    participant MQ as RabbitMQ
+    participant N as Notifier (consumer)
     participant M as SMTP
 
     T->>P: tick
@@ -240,17 +253,16 @@ sequenceDiagram
             P->>DB: UPDATE last_seen_tag (PERSIST FIRST)
             P->>DB: SELECT emails WHERE repo=? AND status='active'
             DB-->>P: [emails]
-            loop for each email
-                P->>N: SendReleaseNotification  [gRPC]
-                N->>N: reserve dedup key (at-most-once)
-                N->>M: send notification email
-                Note right of N: per-recipient errors logged,<br/>do not abort batch
+            loop for each email (bounded worker pool)
+                P->>MQ: publish ReleaseCommand
+                Note right of P: per-recipient publish errors logged,<br/>do not abort batch
             end
         else same tag or nil
             P->>DB: UPDATE last_checked_at
         end
     end
     P->>P: Unlock
+    Note over MQ,M: Asynchronously: consumer reserves dedup key (at-most-once), then sends via SMTP
 ```
 
 Why persist before notify: see [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md).
@@ -321,10 +333,12 @@ Back-of-the-envelope for a single-instance deployment:
 - Subscriber count is bounded by Postgres row count, not GitHub. 1M
   subscriber rows in `subscriptions` is well within Postgres comfort zone
   with the current indexes.
-- Email fan-out per release at 200 ms/SMTP round-trip: 1000 subscribers ≈
-  200 s. Above this, the poller mutex causes the next tick to be skipped.
-  Mitigation path when this becomes a bottleneck: bounded worker pool, then
-  outbox-pattern with row-level locking.
+- Email fan-out per release is decoupled: the poller **publishes** one command
+  per subscriber (via a bounded worker pool) and returns; the notifier drains
+  the durable queue and sends over SMTP. Publishing is cheap, so fan-out alone
+  is unlikely to make the poller mutex skip a tick. The next scaling step, when
+  notifier SMTP throughput is the bottleneck, is to run multiple notifier
+  consumers off the shared queue.
 
 ---
 
@@ -337,8 +351,9 @@ Back-of-the-envelope for a single-instance deployment:
 | Redis unreachable                           | Cache decorator falls through to GitHub API; logs the error. No user-visible impact.        |
 | GitHub API 429                              | 3-tier retry: `Retry-After`, `X-RateLimit-Reset` (capped 120 s), exp. backoff (1/2/4 s).    |
 | GitHub API 5xx                              | Not retried — surfaced to caller. Only 429 triggers the retry chain (see row above).        |
-| SMTP unreachable on subscribe               | Subscription rolled back to `unsubscribed` so user can retry; no `pending` zombies.         |
-| SMTP unreachable on notification fan-out    | Per-recipient log entry; loop continues; missed recipient is **not** retried.               |
+| Broker unreachable on subscribe             | Publish fails; subscription rolled back to `unsubscribed` so the user can retry.            |
+| Notifier SMTP fails after broker accepted   | Row stays `pending`; re-subscribing refreshes the token and resends (no permanent zombie).  |
+| Publish fails on notification fan-out       | Per-recipient publish error logged; loop continues; that command is not sent.               |
 | Process crash mid-fan-out                   | At-most-once: tag persisted, some recipients miss this release. [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md). |
 | Race: two concurrent subscribes (same email+repo) | Partial unique index blocks the second INSERT atomically.                              |
 | Race: two poller ticks overlap              | Mutex on the poller causes the second tick to be skipped with a log entry.                  |
@@ -402,7 +417,7 @@ question it. The rest are tactical choices that match the project's scope.
 | Persist-before-notify             | Some subscribers may miss a release on crash; never a duplicate.             | [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md)                  |
 | Partial unique index              | Postgres-specific; encodes a state-dependent rule in DDL.                    | [ADR 0008](adr/0008-partial-unique-index-for-resubscription.md)                 |
 | Polling over webhooks             | Up to `SCAN_INTERVAL` detection latency; rate-limit budget.                  | This document, §3, §6.                                                          |
-| Sequential email fan-out          | Long fan-out delays subsequent scans; no auto-retry on transient SMTP fail.  | This document, §6.                                                              |
+| Async fan-out via message broker  | A broker to operate; "accepted" ≠ "delivered" (eventually consistent).       | [ADR 0016](adr/0016-async-notifications-via-rabbitmq.md), §6.                  |
 | Cache-aside Redis (TTL only)      | Up to TTL extra latency; no proactive invalidation.                          | This document, §3.2, §5.2.                                                      |
 | Direct SMTP, no transactional API | Deliverability tuning is on us; no bounce feedback loop.                     | README §"Trade-offs".                                                           |
 | In-memory rate limiter            | State lost on restart; not safe across multiple instances.                   | README §"Trade-offs".                                                           |
@@ -411,11 +426,13 @@ question it. The rest are tactical choices that match the project's scope.
 
 ## 11. Open Questions
 
-- [ ] Should re-subscription after unsubscribe **revive** the original row
-      instead of inserting a new one? Current behaviour creates a new row;
-      the old `unsubscribed` row stays as history. Either is defensible.
-- [ ] At what tracked-repo count do we move the poller to a bounded worker
-      pool? Likely well below the rate-limit ceiling (§6).
+- [ ] Should re-subscription after **unsubscribe** revive the original row
+      instead of inserting a new one? Current behaviour creates a new row; the
+      old `unsubscribed` row stays as history. (Re-subscribing over a still
+      **pending** row already refreshes that row in place — see README.)
+- [ ] At what fan-out volume do we scale the notifier to multiple consumers off
+      the shared queue? The poller already publishes via a bounded worker pool;
+      the next bottleneck is notifier-side SMTP throughput (§6).
 - [ ] Do we need a `purge_unsubscribed_after` cleanup job? The
       `unsubscribed` rows currently grow without bound (see
       [ADR 0008](adr/0008-partial-unique-index-for-resubscription.md)).
