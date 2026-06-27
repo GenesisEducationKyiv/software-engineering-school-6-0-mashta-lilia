@@ -9,8 +9,6 @@ import (
 	"github-release-notifier/internal/repository"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 const notifyWorkers = 8
@@ -117,7 +115,7 @@ func (p *Poller) scan(parentCtx context.Context) {
 	}
 	defer p.scanLock.Unlock()
 
-	ctx := tracectx.WithTraceID(parentCtx, uuid.NewString())
+	ctx := tracectx.WithTraceID(parentCtx, tracectx.NewID())
 
 	repos, err := p.repos.GetAll(ctx)
 	if err != nil {
