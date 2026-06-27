@@ -44,6 +44,7 @@ const (
 	rateLimitWindow         = time.Minute
 	postgresReadyOccurrence = 2
 	postgresStartupTimeout  = 60 * time.Second
+	notifierSMTPTimeout     = 30 * time.Second
 )
 
 const APIKey = "test-api-key-12345"
@@ -159,7 +160,7 @@ func newNotificationClient(
 
 	templates := notificationsmtp.NewTemplateBuilder()
 	mail, err := notificationsmtp.NewSMTPMailer(
-		mp.Host, mp.SMTPPort, "", "", "noreply@test.local", templates, log,
+		mp.Host, mp.SMTPPort, "", "", "noreply@test.local", notifierSMTPTimeout, templates, log,
 	)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("notification smtp: %w", err)

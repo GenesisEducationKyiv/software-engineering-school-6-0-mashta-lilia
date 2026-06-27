@@ -34,7 +34,7 @@ func buildDependencies(
 	mail, err := smtp.NewSMTPMailer(
 		cfg.SMTPHost, cfg.SMTPPort,
 		cfg.SMTPUser, cfg.SMTPPassword,
-		cfg.SMTPFrom, templates, log.With("component", "notification_smtp"),
+		cfg.SMTPFrom, cfg.SMTPTimeout, templates, log.With("component", "notification_smtp"),
 	)
 	if err != nil {
 		closeQuietly(ctx, log, "notification store", ledger.Close)

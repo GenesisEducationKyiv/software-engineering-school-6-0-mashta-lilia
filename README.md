@@ -336,6 +336,7 @@ cp .env.example .env
 | `SMTP_PORT` | `587` | SMTP server port |
 | `SMTP_USER` / `SMTP_PASSWORD` | -- | SMTP credentials |
 | `SMTP_FROM` | `noreply@example.com` | Sender email address |
+| `SMTP_TIMEOUT` | `30s` | Per-message SMTP delivery timeout (bounds the broker-consumer path, which has no request deadline) |
 
 ## Project Structure
 

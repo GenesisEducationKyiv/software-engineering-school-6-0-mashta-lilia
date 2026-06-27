@@ -11,7 +11,13 @@ import (
 	"net"
 	"net/smtp"
 	"strings"
+	"time"
 )
+
+// defaultSendTimeout bounds a single SMTP delivery when the caller supplies a
+// non-positive timeout. The consumer path passes a deadline-less context, so
+// without this a stalled server would hang the worker and block shutdown.
+const defaultSendTimeout = 30 * time.Second
 
 type SMTPMailer struct {
 	host      string
@@ -19,15 +25,20 @@ type SMTPMailer struct {
 	user      string
 	password  string
 	from      string
+	timeout   time.Duration
 	templates *TemplateBuilder
 	log       *logger.Logger
 }
 
 func NewSMTPMailer(
-	host string, port int, user, password, from string, templates *TemplateBuilder, log *logger.Logger,
+	host string, port int, user, password, from string, timeout time.Duration,
+	templates *TemplateBuilder, log *logger.Logger,
 ) (*SMTPMailer, error) {
 	if templates == nil {
 		return nil, errors.New("smtp mailer: templates is nil")
+	}
+	if timeout <= 0 {
+		timeout = defaultSendTimeout
 	}
 	if log == nil {
 		log = logger.Nop()
@@ -38,6 +49,7 @@ func NewSMTPMailer(
 		user:      user,
 		password:  password,
 		from:      from,
+		timeout:   timeout,
 		templates: templates,
 		log:       log,
 	}, nil
@@ -76,6 +88,9 @@ func sanitizeHeader(value string) string {
 }
 
 func (m *SMTPMailer) deliver(ctx context.Context, msg Message) error {
+	ctx, cancel := context.WithTimeout(ctx, m.timeout)
+	defer cancel()
+
 	sanitizedTo := sanitizeHeader(msg.To)
 	sanitizedFrom := sanitizeHeader(m.from)
 	encodedSubject := mime.QEncoding.Encode("utf-8", sanitizeHeader(msg.Subject))
