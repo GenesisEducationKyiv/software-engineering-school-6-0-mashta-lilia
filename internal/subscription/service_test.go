@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -76,31 +77,23 @@ func TestSubscribe_Success(t *testing.T) {
 	var createdSub *Subscription
 	var sentEmail, sentConfirmURL, sentRepo string
 
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByEmailAndRepoFn: func(_ context.Context, _, _, _ string) (*Subscription, error) { return nil, ErrNotFound },
-			CreateFn: func(_ context.Context, sub *Subscription) error {
-				createdSub = sub
-				return nil
-			},
-		},
-		&mockRepoUpserter{
-			UpsertFn: func(_ context.Context, _, _ string) error {
-				return nil
-			},
-		},
-		&mockGitHubChecker{
-			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
-		},
-		&mockConfirmationSender{
-			SendConfirmationFn: func(_ context.Context, email, confirmURL, repo string) error {
-				sentEmail = email
-				sentConfirmURL = confirmURL
-				sentRepo = repo
-				return nil
-			},
-		},
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByEmailAndRepo", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, ErrNotFound)
+	subs.On("Create", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		createdSub, _ = args.Get(1).(*Subscription)
+	})
+	repos := &mockRepoUpserter{}
+	repos.On("Upsert", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	gh := &mockGitHubChecker{}
+	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+	mail := &mockConfirmationSender{}
+	mail.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil).Run(func(args mock.Arguments) {
+		sentEmail, sentConfirmURL, sentRepo = args.String(1), args.String(2), args.String(3)
+	})
+
+	svc := newTestService(subs, repos, gh, mail)
 
 	require.NoError(t, svc.Subscribe(context.Background(), testEmail, "golang/go"))
 	require.NotNil(t, createdSub, "expected subscription to be created")
@@ -138,14 +131,10 @@ func TestSubscribe_InvalidRepoFormat(t *testing.T) {
 
 func TestSubscribe_RepoNotFound(t *testing.T) {
 	t.Parallel()
-	svc := newTestService(
-		&mockSubscriptionRepo{},
-		&mockRepoUpserter{},
-		&mockGitHubChecker{
-			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return false, nil },
-		},
-		&mockConfirmationSender{},
-	)
+	gh := &mockGitHubChecker{}
+	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
+
+	svc := newTestService(&mockSubscriptionRepo{}, &mockRepoUpserter{}, gh, &mockConfirmationSender{})
 	err := svc.Subscribe(context.Background(), testEmail, "nonexistent/repo")
 	assert.ErrorIs(t, err, ErrRepoNotFound)
 }
@@ -153,36 +142,28 @@ func TestSubscribe_RepoNotFound(t *testing.T) {
 func TestSubscribe_AlreadyExists(t *testing.T) {
 	t.Parallel()
 	t.Run("pre-check detects active duplicate", func(t *testing.T) {
-		svc := newTestService(
-			&mockSubscriptionRepo{
-				GetByEmailAndRepoFn: func(_ context.Context, _, _, _ string) (*Subscription, error) {
-					return &Subscription{ID: 1, Status: StatusActive}, nil
-				},
-			},
-			&mockRepoUpserter{},
-			&mockGitHubChecker{
-				RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
-			},
-			&mockConfirmationSender{},
-		)
+		subs := &mockSubscriptionRepo{}
+		subs.On("GetByEmailAndRepo", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(&Subscription{ID: 1, Status: StatusActive}, nil)
+		gh := &mockGitHubChecker{}
+		gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+
+		svc := newTestService(subs, &mockRepoUpserter{}, gh, &mockConfirmationSender{})
 		err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 		assert.ErrorIs(t, err, ErrAlreadyExists)
 	})
 
 	t.Run("create detects concurrent duplicate", func(t *testing.T) {
-		svc := newTestService(
-			&mockSubscriptionRepo{
-				GetByEmailAndRepoFn: func(_ context.Context, _, _, _ string) (*Subscription, error) { return nil, ErrNotFound },
-				CreateFn:            func(_ context.Context, _ *Subscription) error { return ErrAlreadyExists },
-			},
-			&mockRepoUpserter{
-				UpsertFn: func(_ context.Context, _, _ string) error { return nil },
-			},
-			&mockGitHubChecker{
-				RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
-			},
-			&mockConfirmationSender{},
-		)
+		subs := &mockSubscriptionRepo{}
+		subs.On("GetByEmailAndRepo", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(nil, ErrNotFound)
+		subs.On("Create", mock.Anything, mock.Anything).Return(ErrAlreadyExists)
+		repos := &mockRepoUpserter{}
+		repos.On("Upsert", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+		gh := &mockGitHubChecker{}
+		gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+
+		svc := newTestService(subs, repos, gh, &mockConfirmationSender{})
 		err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 		assert.ErrorIs(t, err, ErrAlreadyExists)
 	})
@@ -195,40 +176,28 @@ func TestSubscribe_RefreshesPendingSubscription(t *testing.T) {
 	const newToken = "refreshed-token"
 
 	var updatedID int64
-	var updatedToken string
-	var sentConfirmURL string
-	createCalled := false
+	var updatedToken, sentConfirmURL string
 
-	svc, err := NewService(
-		&mockSubscriptionRepo{
-			GetByEmailAndRepoFn: func(_ context.Context, _, _, _ string) (*Subscription, error) {
-				return &Subscription{
-					ID: 7, Email: testEmail, RepoOwner: "golang", RepoName: "go", Status: StatusPending,
-				}, nil
-			},
-			UpdateTokenFn: func(_ context.Context, id int64, token string) error {
-				updatedID = id
-				updatedToken = token
-				return nil
-			},
-			CreateFn: func(_ context.Context, _ *Subscription) error {
-				createCalled = true
-				return nil
-			},
-		},
-		&mockRepoUpserter{},
-		&mockGitHubChecker{
-			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
-		},
-		&mockConfirmationSender{
-			SendConfirmationFn: func(_ context.Context, _, confirmURL, _ string) error {
-				sentConfirmURL = confirmURL
-				return nil
-			},
-		},
-		fixedTokenGenerator{Token: newToken},
-		NewConfirmLinkBuilder(testBaseURL),
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByEmailAndRepo", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&Subscription{
+			ID: 7, Email: testEmail, RepoOwner: "golang", RepoName: "go", Status: StatusPending,
+		}, nil)
+	subs.On("UpdateToken", mock.Anything, mock.Anything, mock.Anything).Return(nil).
+		Run(func(args mock.Arguments) {
+			updatedID, _ = args.Get(1).(int64)
+			updatedToken = args.String(2)
+		})
+	gh := &mockGitHubChecker{}
+	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+	mail := &mockConfirmationSender{}
+	mail.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil).Run(func(args mock.Arguments) {
+		sentConfirmURL = args.String(2)
+	})
+
+	svc, err := NewService(subs, &mockRepoUpserter{}, gh, mail,
+		fixedTokenGenerator{Token: newToken}, NewConfirmLinkBuilder(testBaseURL))
 	require.NoError(t, err)
 
 	require.NoError(t, svc.Subscribe(context.Background(), testEmail, "golang/go"))
@@ -236,21 +205,16 @@ func TestSubscribe_RefreshesPendingSubscription(t *testing.T) {
 	assert.Equal(t, newToken, updatedToken)
 	assert.Equal(t, testBaseURL+"/api/confirm/"+newToken, sentConfirmURL,
 		"confirmation is resent with the new token")
-	assert.False(t, createCalled, "must not create a new row when a pending one exists")
+	subs.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
 
 func TestSubscribe_GitHubAPIError(t *testing.T) {
 	t.Parallel()
-	svc := newTestService(
-		&mockSubscriptionRepo{},
-		&mockRepoUpserter{},
-		&mockGitHubChecker{
-			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) {
-				return false, errors.New("rate limited")
-			},
-		},
-		&mockConfirmationSender{},
-	)
+	gh := &mockGitHubChecker{}
+	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).
+		Return(false, errors.New("rate limited"))
+
+	svc := newTestService(&mockSubscriptionRepo{}, &mockRepoUpserter{}, gh, &mockConfirmationSender{})
 	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrRepoNotFound,
@@ -260,19 +224,16 @@ func TestSubscribe_GitHubAPIError(t *testing.T) {
 func TestSubscribe_TokenGeneratorFailure_Propagates(t *testing.T) {
 	t.Parallel()
 	tokenErr := errors.New("entropy source unavailable")
-	svc, err := NewService(
-		&mockSubscriptionRepo{
-			GetByEmailAndRepoFn: func(_ context.Context, _, _, _ string) (*Subscription, error) { return nil, ErrNotFound },
-		},
-		&mockRepoUpserter{},
-		&mockGitHubChecker{
-			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
-		},
-		&mockConfirmationSender{},
-		fixedTokenGenerator{Err: tokenErr},
-		NewConfirmLinkBuilder(testBaseURL),
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByEmailAndRepo", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, ErrNotFound)
+	gh := &mockGitHubChecker{}
+	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+
+	svc, err := NewService(subs, &mockRepoUpserter{}, gh, &mockConfirmationSender{},
+		fixedTokenGenerator{Err: tokenErr}, NewConfirmLinkBuilder(testBaseURL))
 	require.NoError(t, err)
+
 	err = svc.Subscribe(context.Background(), testEmail, "golang/go")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, tokenErr,
@@ -282,27 +243,23 @@ func TestSubscribe_TokenGeneratorFailure_Propagates(t *testing.T) {
 func TestSubscribe_UpsertBeforeCreate(t *testing.T) {
 	t.Parallel()
 	var callOrder []string
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByEmailAndRepoFn: func(_ context.Context, _, _, _ string) (*Subscription, error) { return nil, ErrNotFound },
-			CreateFn: func(_ context.Context, _ *Subscription) error {
-				callOrder = append(callOrder, "create")
-				return nil
-			},
-		},
-		&mockRepoUpserter{
-			UpsertFn: func(_ context.Context, _, _ string) error {
-				callOrder = append(callOrder, "upsert")
-				return nil
-			},
-		},
-		&mockGitHubChecker{
-			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
-		},
-		&mockConfirmationSender{
-			SendConfirmationFn: func(_ context.Context, _, _, _ string) error { return nil },
-		},
-	)
+
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByEmailAndRepo", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, ErrNotFound)
+	subs.On("Create", mock.Anything, mock.Anything).Return(nil).Run(func(_ mock.Arguments) {
+		callOrder = append(callOrder, "create")
+	})
+	repos := &mockRepoUpserter{}
+	repos.On("Upsert", mock.Anything, mock.Anything, mock.Anything).Return(nil).Run(func(_ mock.Arguments) {
+		callOrder = append(callOrder, "upsert")
+	})
+	gh := &mockGitHubChecker{}
+	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+	mail := &mockConfirmationSender{}
+	mail.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	svc := newTestService(subs, repos, gh, mail)
 	require.NoError(t, svc.Subscribe(context.Background(), "user@example.com", "golang/go"))
 	assert.Equal(t, []string{"upsert", "create"}, callOrder)
 }
@@ -312,33 +269,28 @@ func TestSubscribe_SMTPFailure_RollsBackSubscription(t *testing.T) {
 	var rolledBackID int64
 	var rolledBackStatus Status
 
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByEmailAndRepoFn: func(_ context.Context, _, _, _ string) (*Subscription, error) { return nil, ErrNotFound },
-			CreateFn: func(_ context.Context, sub *Subscription) error {
-				sub.ID = 99
-				return nil
-			},
-			UpdateStatusFn: func(_ context.Context, id int64, status Status) error {
-				rolledBackID = id
-				rolledBackStatus = status
-				return nil
-			},
-		},
-		&mockRepoUpserter{
-			UpsertFn: func(_ context.Context, _, _ string) error {
-				return nil
-			},
-		},
-		&mockGitHubChecker{
-			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
-		},
-		&mockConfirmationSender{
-			SendConfirmationFn: func(_ context.Context, _, _, _ string) error {
-				return errors.New("SMTP connection refused")
-			},
-		},
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByEmailAndRepo", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, ErrNotFound)
+	subs.On("Create", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		if sub, ok := args.Get(1).(*Subscription); ok {
+			sub.ID = 99
+		}
+	})
+	subs.On("UpdateStatus", mock.Anything, mock.Anything, mock.Anything).Return(nil).
+		Run(func(args mock.Arguments) {
+			rolledBackID, _ = args.Get(1).(int64)
+			rolledBackStatus, _ = args.Get(2).(Status)
+		})
+	repos := &mockRepoUpserter{}
+	repos.On("Upsert", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	gh := &mockGitHubChecker{}
+	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+	mail := &mockConfirmationSender{}
+	mail.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(errors.New("SMTP connection refused"))
+
+	svc := newTestService(subs, repos, gh, mail)
 	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrEmailSendFailed)
@@ -354,30 +306,27 @@ func TestSubscribe_SMTPFailure_RollbackFailure_JoinedError(t *testing.T) {
 	var rolledBackID int64
 	var rolledBackStatus Status
 
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByEmailAndRepoFn: func(_ context.Context, _, _, _ string) (*Subscription, error) { return nil, ErrNotFound },
-			CreateFn: func(_ context.Context, sub *Subscription) error {
-				sub.ID = 99
-				return nil
-			},
-			UpdateStatusFn: func(_ context.Context, id int64, status Status) error {
-				rolledBackID = id
-				rolledBackStatus = status
-				return rollbackErr
-			},
-		},
-		&mockRepoUpserter{
-			UpsertFn: func(_ context.Context, _, _ string) error { return nil },
-		},
-		&mockGitHubChecker{
-			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
-		},
-		&mockConfirmationSender{
-			SendConfirmationFn: func(_ context.Context, _, _, _ string) error { return smtpErr },
-		},
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByEmailAndRepo", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, ErrNotFound)
+	subs.On("Create", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		if sub, ok := args.Get(1).(*Subscription); ok {
+			sub.ID = 99
+		}
+	})
+	subs.On("UpdateStatus", mock.Anything, mock.Anything, mock.Anything).Return(rollbackErr).
+		Run(func(args mock.Arguments) {
+			rolledBackID, _ = args.Get(1).(int64)
+			rolledBackStatus, _ = args.Get(2).(Status)
+		})
+	repos := &mockRepoUpserter{}
+	repos.On("Upsert", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	gh := &mockGitHubChecker{}
+	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+	mail := &mockConfirmationSender{}
+	mail.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(smtpErr)
 
+	svc := newTestService(subs, repos, gh, mail)
 	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrEmailSendFailed)
@@ -392,19 +341,16 @@ func TestConfirm_Success(t *testing.T) {
 	var updatedID int64
 	var updatedStatus Status
 
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByTokenFn: func(_ context.Context, token string) (*Subscription, error) {
-				return &Subscription{ID: 42, Token: token, Status: StatusPending}, nil
-			},
-			UpdateStatusFn: func(_ context.Context, id int64, status Status) error {
-				updatedID = id
-				updatedStatus = status
-				return nil
-			},
-		},
-		&mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{},
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByToken", mock.Anything, mock.Anything).
+		Return(&Subscription{ID: 42, Status: StatusPending}, nil)
+	subs.On("UpdateStatus", mock.Anything, mock.Anything, mock.Anything).Return(nil).
+		Run(func(args mock.Arguments) {
+			updatedID, _ = args.Get(1).(int64)
+			updatedStatus, _ = args.Get(2).(Status)
+		})
+
+	svc := newTestService(subs, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	require.NoError(t, svc.Confirm(context.Background(), "valid-token"))
 	assert.Equal(t, int64(42), updatedID)
 	assert.Equal(t, StatusActive, updatedStatus)
@@ -412,129 +358,94 @@ func TestConfirm_Success(t *testing.T) {
 
 func TestConfirm_TokenNotFound(t *testing.T) {
 	t.Parallel()
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
-				return nil, ErrNotFound
-			},
-		},
-		&mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{},
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByToken", mock.Anything, mock.Anything).Return(nil, ErrNotFound)
+
+	svc := newTestService(subs, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	err := svc.Confirm(context.Background(), "invalid-token")
 	assert.ErrorIs(t, err, ErrTokenNotFound)
 }
 
 func TestConfirm_AlreadyActive_Idempotent(t *testing.T) {
 	t.Parallel()
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
-				return &Subscription{ID: 1, Status: StatusActive}, nil
-			},
-		},
-		&mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{},
-	)
-	assert.NoError(t, svc.Confirm(context.Background(), "token"),
-		"idempotent confirm should return nil")
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByToken", mock.Anything, mock.Anything).
+		Return(&Subscription{ID: 1, Status: StatusActive}, nil)
+
+	svc := newTestService(subs, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
+	assert.NoError(t, svc.Confirm(context.Background(), "token"), "idempotent confirm should return nil")
+	subs.AssertNotCalled(t, "UpdateStatus", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestConfirm_UnsubscribedToken(t *testing.T) {
 	t.Parallel()
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
-				return &Subscription{ID: 1, Status: StatusUnsubscribed}, nil
-			},
-		},
-		&mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{},
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByToken", mock.Anything, mock.Anything).
+		Return(&Subscription{ID: 1, Status: StatusUnsubscribed}, nil)
+
+	svc := newTestService(subs, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	err := svc.Confirm(context.Background(), "token")
 	assert.ErrorIs(t, err, ErrSubscriptionInactive)
 }
 
 func TestConfirm_DBError_Propagates(t *testing.T) {
 	t.Parallel()
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
-				return nil, errors.New("connection refused")
-			},
-		},
-		&mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{},
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByToken", mock.Anything, mock.Anything).Return(nil, errors.New("connection refused"))
+
+	svc := newTestService(subs, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	err := svc.Confirm(context.Background(), "token")
 	require.Error(t, err)
-	assert.NotErrorIs(t, err, ErrTokenNotFound,
-		"DB errors must not be wrapped as ErrTokenNotFound")
+	assert.NotErrorIs(t, err, ErrTokenNotFound, "DB errors must not be wrapped as ErrTokenNotFound")
 }
 
 func TestUnsubscribe_Success(t *testing.T) {
 	t.Parallel()
 	var updatedStatus Status
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
-				return &Subscription{ID: 10, Status: StatusActive}, nil
-			},
-			UpdateStatusFn: func(_ context.Context, _ int64, status Status) error {
-				updatedStatus = status
-				return nil
-			},
-		},
-		&mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{},
-	)
+
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByToken", mock.Anything, mock.Anything).
+		Return(&Subscription{ID: 10, Status: StatusActive}, nil)
+	subs.On("UpdateStatus", mock.Anything, mock.Anything, mock.Anything).Return(nil).
+		Run(func(args mock.Arguments) {
+			updatedStatus, _ = args.Get(2).(Status)
+		})
+
+	svc := newTestService(subs, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	require.NoError(t, svc.Unsubscribe(context.Background(), "valid-token"))
 	assert.Equal(t, StatusUnsubscribed, updatedStatus)
 }
 
 func TestUnsubscribe_TokenNotFound(t *testing.T) {
 	t.Parallel()
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
-				return nil, ErrNotFound
-			},
-		},
-		&mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{},
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByToken", mock.Anything, mock.Anything).Return(nil, ErrNotFound)
+
+	svc := newTestService(subs, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	err := svc.Unsubscribe(context.Background(), "bad-token")
 	assert.ErrorIs(t, err, ErrTokenNotFound)
 }
 
 func TestUnsubscribe_AlreadyUnsubscribed_Idempotent(t *testing.T) {
 	t.Parallel()
-	updateCalled := false
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
-				return &Subscription{ID: 10, Status: StatusUnsubscribed}, nil
-			},
-			UpdateStatusFn: func(_ context.Context, _ int64, _ Status) error {
-				updateCalled = true
-				return nil
-			},
-		},
-		&mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{},
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByToken", mock.Anything, mock.Anything).
+		Return(&Subscription{ID: 10, Status: StatusUnsubscribed}, nil)
+
+	svc := newTestService(subs, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	assert.NoError(t, svc.Unsubscribe(context.Background(), "token"))
-	assert.False(t, updateCalled,
-		"already-unsubscribed should be a no-op — UpdateStatus must not be called")
+	subs.AssertNotCalled(t, "UpdateStatus", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestUnsubscribe_DBError_Propagates(t *testing.T) {
 	t.Parallel()
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetByTokenFn: func(_ context.Context, _ string) (*Subscription, error) {
-				return nil, errors.New("connection refused")
-			},
-		},
-		&mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{},
-	)
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByToken", mock.Anything, mock.Anything).Return(nil, errors.New("connection refused"))
+
+	svc := newTestService(subs, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	err := svc.Unsubscribe(context.Background(), "token")
 	require.Error(t, err)
-	assert.NotErrorIs(t, err, ErrTokenNotFound,
-		"DB errors must not be wrapped as ErrTokenNotFound")
+	assert.NotErrorIs(t, err, ErrTokenNotFound, "DB errors must not be wrapped as ErrTokenNotFound")
 }
 
 func TestGetSubscriptions_Success(t *testing.T) {
@@ -543,19 +454,18 @@ func TestGetSubscriptions_Success(t *testing.T) {
 		{ID: 1, Email: testEmail, RepoOwner: "golang", RepoName: "go", Status: StatusActive},
 	}
 	var queriedEmail string
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetActiveByEmailFn: func(_ context.Context, email string) ([]Subscription, error) {
-				queriedEmail = email
-				return expected, nil
-			},
-		},
-		&mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{},
-	)
-	subs, err := svc.GetSubscriptions(context.Background(), testEmail)
+
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetActiveByEmail", mock.Anything, mock.Anything).Return(expected, nil).
+		Run(func(args mock.Arguments) {
+			queriedEmail = args.String(1)
+		})
+
+	svc := newTestService(subs, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
+	got, err := svc.GetSubscriptions(context.Background(), testEmail)
 	require.NoError(t, err)
-	require.Len(t, subs, 1)
-	assert.Equal(t, "golang", subs[0].RepoOwner)
+	require.Len(t, got, 1)
+	assert.Equal(t, "golang", got[0].RepoOwner)
 	assert.Equal(t, testEmail, queriedEmail)
 }
 
@@ -579,26 +489,23 @@ func TestSubscribe_NormalizesEmail(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			var storedEmail string
-			svc := newTestService(
-				&mockSubscriptionRepo{
-					GetByEmailAndRepoFn: func(_ context.Context, _, _, _ string) (*Subscription, error) { return nil, ErrNotFound },
-					CreateFn: func(_ context.Context, sub *Subscription) error {
-						storedEmail = sub.Email
-						return nil
-					},
-				},
-				&mockRepoUpserter{
-					UpsertFn: func(_ context.Context, _, _ string) error {
-						return nil
-					},
-				},
-				&mockGitHubChecker{
-					RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
-				},
-				&mockConfirmationSender{
-					SendConfirmationFn: func(_ context.Context, _, _, _ string) error { return nil },
-				},
-			)
+
+			subs := &mockSubscriptionRepo{}
+			subs.On("GetByEmailAndRepo", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+				Return(nil, ErrNotFound)
+			subs.On("Create", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+				if sub, ok := args.Get(1).(*Subscription); ok {
+					storedEmail = sub.Email
+				}
+			})
+			repos := &mockRepoUpserter{}
+			repos.On("Upsert", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+			gh := &mockGitHubChecker{}
+			gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+			mail := &mockConfirmationSender{}
+			mail.On("SendConfirmation", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+			svc := newTestService(subs, repos, gh, mail)
 			require.NoError(t, svc.Subscribe(context.Background(), tt.input, "golang/go"))
 			assert.Equal(t, tt.want, storedEmail)
 		})
@@ -608,15 +515,14 @@ func TestSubscribe_NormalizesEmail(t *testing.T) {
 func TestGetSubscriptions_NormalizesEmail(t *testing.T) {
 	t.Parallel()
 	var queriedEmail string
-	svc := newTestService(
-		&mockSubscriptionRepo{
-			GetActiveByEmailFn: func(_ context.Context, email string) ([]Subscription, error) {
-				queriedEmail = email
-				return []Subscription{}, nil
-			},
-		},
-		&mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{},
-	)
+
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetActiveByEmail", mock.Anything, mock.Anything).Return([]Subscription{}, nil).
+		Run(func(args mock.Arguments) {
+			queriedEmail = args.String(1)
+		})
+
+	svc := newTestService(subs, &mockRepoUpserter{}, &mockGitHubChecker{}, &mockConfirmationSender{})
 	_, err := svc.GetSubscriptions(context.Background(), "USER@Example.COM")
 	require.NoError(t, err)
 	assert.Equal(t, testEmail, queriedEmail)

@@ -3,94 +3,72 @@ package subscription
 
 import (
 	"context"
+
+	"github.com/stretchr/testify/mock"
 )
 
 type mockSubscriptionRepo struct {
-	CreateFn            func(ctx context.Context, sub *Subscription) error
-	GetByTokenFn        func(ctx context.Context, token string) (*Subscription, error)
-	GetActiveByEmailFn  func(ctx context.Context, email string) ([]Subscription, error)
-	GetByEmailAndRepoFn func(ctx context.Context, email, owner, name string) (*Subscription, error)
-	UpdateStatusFn      func(ctx context.Context, id int64, status Status) error
-	UpdateTokenFn       func(ctx context.Context, id int64, token string) error
+	mock.Mock
 }
 
 func (m *mockSubscriptionRepo) Create(ctx context.Context, sub *Subscription) error {
-	if m.CreateFn == nil {
-		panic("mockSubscriptionRepo.Create called but not configured")
-	}
-	return m.CreateFn(ctx, sub)
+	return m.Called(ctx, sub).Error(0)
 }
 
 func (m *mockSubscriptionRepo) GetByToken(ctx context.Context, token string) (*Subscription, error) {
-	if m.GetByTokenFn == nil {
-		panic("mockSubscriptionRepo.GetByToken called but not configured")
-	}
-	return m.GetByTokenFn(ctx, token)
+	args := m.Called(ctx, token)
+	sub, _ := args.Get(0).(*Subscription)
+	return sub, args.Error(1)
 }
 
 func (m *mockSubscriptionRepo) GetActiveByEmail(ctx context.Context, email string) ([]Subscription, error) {
-	if m.GetActiveByEmailFn == nil {
-		panic("mockSubscriptionRepo.GetActiveByEmail called but not configured")
-	}
-	return m.GetActiveByEmailFn(ctx, email)
-}
-
-func (m *mockSubscriptionRepo) UpdateStatus(ctx context.Context, id int64, status Status) error {
-	if m.UpdateStatusFn == nil {
-		panic("mockSubscriptionRepo.UpdateStatus called but not configured")
-	}
-	return m.UpdateStatusFn(ctx, id, status)
+	args := m.Called(ctx, email)
+	subs, _ := args.Get(0).([]Subscription)
+	return subs, args.Error(1)
 }
 
 func (m *mockSubscriptionRepo) GetByEmailAndRepo(
 	ctx context.Context, email, owner, name string,
 ) (*Subscription, error) {
-	if m.GetByEmailAndRepoFn == nil {
-		panic("mockSubscriptionRepo.GetByEmailAndRepo called but not configured")
-	}
-	return m.GetByEmailAndRepoFn(ctx, email, owner, name)
+	args := m.Called(ctx, email, owner, name)
+	sub, _ := args.Get(0).(*Subscription)
+	return sub, args.Error(1)
+}
+
+func (m *mockSubscriptionRepo) UpdateStatus(ctx context.Context, id int64, status Status) error {
+	return m.Called(ctx, id, status).Error(0)
 }
 
 func (m *mockSubscriptionRepo) UpdateToken(ctx context.Context, id int64, token string) error {
-	if m.UpdateTokenFn == nil {
-		panic("mockSubscriptionRepo.UpdateToken called but not configured")
-	}
-	return m.UpdateTokenFn(ctx, id, token)
+	return m.Called(ctx, id, token).Error(0)
 }
 
 type mockRepoUpserter struct {
-	UpsertFn func(ctx context.Context, owner, name string) error
+	mock.Mock
 }
 
 func (m *mockRepoUpserter) Upsert(ctx context.Context, owner, name string) error {
-	if m.UpsertFn == nil {
-		panic("mockRepoUpserter.Upsert called but not configured")
-	}
-	return m.UpsertFn(ctx, owner, name)
+	return m.Called(ctx, owner, name).Error(0)
 }
 
 type mockGitHubChecker struct {
-	RepoExistsFn func(ctx context.Context, owner, name string) (bool, error)
+	mock.Mock
 }
 
 func (m *mockGitHubChecker) RepoExists(ctx context.Context, owner, name string) (bool, error) {
-	if m.RepoExistsFn == nil {
-		panic("mockGitHubChecker.RepoExists called but not configured")
-	}
-	return m.RepoExistsFn(ctx, owner, name)
+	args := m.Called(ctx, owner, name)
+	return args.Bool(0), args.Error(1)
 }
 
 type mockConfirmationSender struct {
-	SendConfirmationFn func(ctx context.Context, email, confirmURL, repo string) error
+	mock.Mock
 }
 
 func (m *mockConfirmationSender) SendConfirmation(ctx context.Context, email, confirmURL, repo string) error {
-	if m.SendConfirmationFn == nil {
-		panic("mockConfirmationSender.SendConfirmation called but not configured")
-	}
-	return m.SendConfirmationFn(ctx, email, confirmURL, repo)
+	return m.Called(ctx, email, confirmURL, repo).Error(0)
 }
 
+// fixedTokenGenerator is a deterministic value stub, not a behaviour mock.
 type fixedTokenGenerator struct {
 	Token string
 	Err   error
