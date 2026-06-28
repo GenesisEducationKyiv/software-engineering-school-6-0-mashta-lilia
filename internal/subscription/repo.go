@@ -281,8 +281,7 @@ func (r *Repo) UpdateToken(ctx context.Context, id int64, token string) error {
 }
 
 // GetByEmailAndRepo returns the single non-unsubscribed subscription for the
-// pair, relying on idx_subscriptions_email_repo_active to keep it unique, or
-// ErrNotFound when only unsubscribed history rows (or none) exist.
+// pair (unique per idx_subscriptions_email_repo_active), or ErrNotFound.
 func (r *Repo) GetByEmailAndRepo(ctx context.Context, email, owner, name string) (*Subscription, error) {
 	if err := r.ensurePrepared(ctx); err != nil {
 		return nil, err

@@ -14,9 +14,8 @@ import (
 	"time"
 )
 
-// defaultSendTimeout bounds a single SMTP delivery when the caller supplies a
-// non-positive timeout. The consumer path passes a deadline-less context, so
-// without this a stalled server would hang the worker and block shutdown.
+// defaultSendTimeout bounds a single SMTP delivery; the consumer path has no
+// request deadline, so without it a stalled server would hang shutdown.
 const defaultSendTimeout = 30 * time.Second
 
 type SMTPMailer struct {

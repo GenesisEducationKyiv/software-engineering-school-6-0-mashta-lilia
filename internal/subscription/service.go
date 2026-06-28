@@ -74,10 +74,8 @@ func (s *Service) ensureRepoExistsOnGitHub(ctx context.Context, ref repository.R
 	return nil
 }
 
-// reserveSubscription returns the pending subscription to confirm: an active one
-// is a conflict, a still-pending one is refreshed with a new token so a
-// never-delivered confirmation can be retried, and otherwise a fresh row is
-// created.
+// reserveSubscription refreshes a still-pending row (so a never-delivered
+// confirmation can be retried) instead of rejecting the re-subscribe.
 func (s *Service) reserveSubscription(
 	ctx context.Context, addr email.Address, ref repository.Ref,
 ) (*Subscription, error) {
@@ -96,8 +94,7 @@ func (s *Service) reserveSubscription(
 }
 
 // refreshPendingSubscription re-issues the token on a still-pending row so the
-// confirmation can be resent in place, without tripping the partial unique index
-// (ADR-0008). The caller resends and rolls back on failure as for a new row.
+// confirmation can be resent without tripping the partial unique index (ADR-0008).
 func (s *Service) refreshPendingSubscription(
 	ctx context.Context, sub *Subscription,
 ) (*Subscription, error) {

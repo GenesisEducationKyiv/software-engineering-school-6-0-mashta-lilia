@@ -29,8 +29,8 @@ func FromContext(ctx context.Context) (string, bool) {
 	return v, ok
 }
 
-// NewID returns a fresh W3C trace id: 16 random bytes as 32 lowercase hex chars.
-// Trace ids are correlation handles, not secrets.
+// NewID returns a fresh 32-hex-char W3C trace id. Trace ids are correlation
+// handles, not secrets.
 func NewID() string {
 	var b [traceIDBytes]byte
 	_, _ = rand.Read(b[:]) // crypto/rand.Read cannot fail (Go 1.24+)
@@ -42,9 +42,8 @@ func IsValidID(id string) bool {
 	return len(id) == traceIDHexLen && id != zeroTraceID && isHexLower(id)
 }
 
-// Traceparent builds a W3C traceparent header value for traceID with a fresh
-// random parent (span) id, so the all-zero parent-id the spec rejects is never
-// produced. The bool is false when traceID is not a valid trace id.
+// Traceparent builds a W3C traceparent for traceID with a fresh random parent
+// id, so the all-zero parent-id the spec rejects is never produced.
 func Traceparent(traceID string) (string, bool) {
 	if !IsValidID(traceID) {
 		return "", false

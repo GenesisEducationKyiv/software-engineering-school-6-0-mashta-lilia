@@ -15,9 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A server that accepts the TCP connection but never speaks SMTP must not hang
-// the sender past its configured timeout. This is the consumer-path regression:
-// that context carries no deadline, so the timeout has to come from the mailer.
+// A server that accepts the connection but never speaks SMTP must not hang the
+// sender past its timeout — the consumer path's context carries no deadline.
 func TestSMTPMailer_DeliverHonorsTimeout(t *testing.T) {
 	t.Parallel()
 
