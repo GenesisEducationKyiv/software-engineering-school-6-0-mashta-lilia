@@ -418,6 +418,7 @@ question it. The rest are tactical choices that match the project's scope.
 | Partial unique index              | Postgres-specific; encodes a state-dependent rule in DDL.                    | [ADR 0008](adr/0008-partial-unique-index-for-resubscription.md)                 |
 | Polling over webhooks             | Up to `SCAN_INTERVAL` detection latency; rate-limit budget.                  | This document, §3, §6.                                                          |
 | Async fan-out via message broker  | A broker to operate; "accepted" ≠ "delivered" (eventually consistent).       | [ADR 0016](adr/0016-async-notifications-via-rabbitmq.md), §6.                  |
+| Orchestrated saga for subscribe   | Subscribe blocks on the confirmation round trip; a reaper to operate.        | README (Subscribe Saga)                                                         |
 | Cache-aside Redis (TTL only)      | Up to TTL extra latency; no proactive invalidation.                          | This document, §3.2, §5.2.                                                      |
 | Direct SMTP, no transactional API | Deliverability tuning is on us; no bounce feedback loop.                     | README §"Trade-offs".                                                           |
 | In-memory rate limiter            | State lost on restart; not safe across multiple instances.                   | README §"Trade-offs".                                                           |

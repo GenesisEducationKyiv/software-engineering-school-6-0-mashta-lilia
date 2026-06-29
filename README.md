@@ -122,6 +122,25 @@ Monolith (publisher)                 RabbitMQ                  Notification serv
 - **Delivery semantics** (`internal/messaging`): persistent messages, manual ack, prefetch 16. The consumer **acks** on success, **drops** (nack, no requeue) permanently bad input — malformed JSON, unknown type, missing fields — so it cannot poison-loop, and **requeues** (nack, requeue) on transient send failures so they are retried. Both the publisher and consumer reconnect automatically when the broker blips.
 - **gRPC retained**: the notifier still serves its gRPC endpoint (health surface + in-process integration tests). The broker is the production path; see the consumer logic in `services/notification/consumer`.
 
+### Subscribe Saga (Orchestrated)
+
+`POST /subscribe` runs as an **orchestrated saga** — a distributed transaction across the monolith (the subscription row) and the notification service (the confirmation email), with compensation:
+
+```
+Subscriber   Monolith (orchestrator)        RabbitMQ          Notifier (participant)
+   | POST /subscribe   |                        |                        |
+   |------------------>|-- reserve pending row  |                        |
+   |                   |-- persist saga --------|                        |
+   |                   |-- SendConfirmation --->| saga.commands -------->|-- dedup + SMTP
+   |                   |                        |<-- confirmation_sent --|
+   |                   |<- saga.replies --------|                        |
+   |<--- 200 / 503 ----|  (confirmation_failed or timeout -> cancel the subscription)
+```
+
+- **Orchestrator** (`internal/saga`): persists each saga in `saga_instances`, blocks the request for the outcome via an in-memory waiter the durable reply consumer signals, and returns the real `200`/`503` — not a fire-and-forget `202`.
+- **Compensation**: a `confirmation_failed` reply (or a timeout) cancels the subscription, freeing the partial-unique-index slot. A `time.Ticker` **reaper** compensates sagas whose reply never arrives, so a notifier crash cannot strand a subscription.
+- **Idempotency**: state transitions are single-winner conditional `UPDATE`s, the participant is deduped by the confirm-URL ledger, and duplicate replies are no-ops.
+
 ### Background Poller Logic
 
 ```
@@ -316,6 +335,7 @@ cp .env.example .env
 | `GITHUB_TOKEN` | -- | GitHub personal access token (optional, increases rate limit) |
 | `RABBITMQ_URL` | `amqp://localhost:5672/` | Message broker the monolith publishes notification commands to (`amqp://guest:guest@rabbitmq:5672/` in Docker Compose) |
 | `SCAN_INTERVAL` | `5m` | How often to check for new releases |
+| `SAGA_TIMEOUT` | `30s` | How long the subscribe saga waits for the confirmation outcome before the reaper compensates |
 | `API_KEY` | -- | API key for the `GET /api/subscriptions` endpoint |
 | `REDIS_ADDR` | `localhost:6379` | Redis address (`redis:6379` in Docker Compose) |
 | `REDIS_PASSWORD` | -- | Redis password |
