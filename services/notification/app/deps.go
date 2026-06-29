@@ -5,11 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github-release-notifier/internal/messaging"
 	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/internal/sagaevent"
 	"github-release-notifier/services/notification"
 	"github-release-notifier/services/notification/config"
 	"github-release-notifier/services/notification/consumer"
 	"github-release-notifier/services/notification/grpcserver"
+	"github-release-notifier/services/notification/sagaparticipant"
 	"github-release-notifier/services/notification/smtp"
 	"github-release-notifier/services/notification/store"
 
@@ -19,6 +22,7 @@ import (
 type dependencies struct {
 	notificationServer notificationv1.NotificationServiceServer
 	consumer           *consumer.Consumer
+	sagaParticipant    *sagaparticipant.Participant
 	closers            []func() error
 }
 
@@ -59,10 +63,34 @@ func buildDependencies(
 		return nil, fmt.Errorf("creating notification server: %w", err)
 	}
 
+	sagaReplyPublisher, err := messaging.NewPublisher(
+		cfg.RabbitMQURL,
+		messaging.Topology{
+			Exchange:    sagaevent.Exchange,
+			Queue:       sagaevent.RepliesQueue,
+			RoutingKeys: sagaevent.ReplyRoutingKeys(),
+		},
+		log.With("component", "saga_reply_broker"),
+	)
+	if err != nil {
+		closeQuietly(ctx, log, "notification store", ledger.Close)
+		return nil, fmt.Errorf("creating saga reply publisher: %w", err)
+	}
+
+	participant, err := sagaparticipant.New(
+		service, sagaReplyPublisher, log.With("component", "saga_participant"),
+	)
+	if err != nil {
+		closeQuietly(ctx, log, "saga reply publisher", sagaReplyPublisher.Close)
+		closeQuietly(ctx, log, "notification store", ledger.Close)
+		return nil, fmt.Errorf("creating saga participant: %w", err)
+	}
+
 	return &dependencies{
 		notificationServer: notificationServer,
 		consumer:           cons,
-		closers:            []func() error{ledger.Close},
+		sagaParticipant:    participant,
+		closers:            []func() error{sagaReplyPublisher.Close, ledger.Close},
 	}, nil
 }
 

@@ -15,6 +15,7 @@ import (
 	platformpostgres "github-release-notifier/internal/platform/postgres"
 	"github-release-notifier/internal/platform/token"
 	"github-release-notifier/internal/repository"
+	"github-release-notifier/internal/saga"
 	"github-release-notifier/internal/subscription"
 	"github-release-notifier/services/notification"
 	"github-release-notifier/services/notification/grpcserver"
@@ -48,6 +49,17 @@ const (
 )
 
 const APIKey = "test-api-key-12345"
+
+// syncSaga drives confirmation synchronously over the in-process gRPC client for
+// the integration harness, standing in for the broker-backed orchestrator that
+// the production composition root wires.
+type syncSaga struct {
+	client *notificationclient.Client
+}
+
+func (s syncSaga) StartAndWait(ctx context.Context, data saga.SubscriptionData) error {
+	return s.client.SendConfirmation(ctx, data.Email, data.ConfirmURL, data.Repo)
+}
 
 type App struct {
 	Server      *httptest.Server
@@ -112,7 +124,7 @@ func New(ctx context.Context) (*App, func(), error) {
 	}
 
 	svc, err := subscription.NewService(
-		subRepo, repoStore, gh, notifier, token.New(),
+		subRepo, repoStore, gh, syncSaga{client: notifier}, token.New(),
 		subscription.NewConfirmLinkBuilder("http://test.local"),
 	)
 	if err != nil {

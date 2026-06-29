@@ -6,16 +6,14 @@ import (
 	"fmt"
 	"github-release-notifier/internal/email"
 	"github-release-notifier/internal/repository"
-	"time"
+	"github-release-notifier/internal/saga"
 )
-
-const rollbackTimeout = 5 * time.Second
 
 type Service struct {
 	subs   subscriptionStore
 	repos  repoUpserter
 	github githubChecker
-	mailer confirmationSender
+	saga   subscriptionSaga
 	tokens tokenGen
 	links  confirmationLinkBuilder
 }
@@ -26,14 +24,14 @@ func NewService(
 	subs subscriptionStore,
 	repos repoUpserter,
 	gh githubChecker,
-	m confirmationSender,
+	orch subscriptionSaga,
 	tokens tokenGen,
 	links confirmationLinkBuilder,
 ) (*Service, error) {
-	if subs == nil || repos == nil || gh == nil || m == nil || tokens == nil || links == nil {
+	if subs == nil || repos == nil || gh == nil || orch == nil || tokens == nil || links == nil {
 		return nil, errors.New("subscription.NewService: all dependencies must be non-nil")
 	}
-	return &Service{subs: subs, repos: repos, github: gh, mailer: m, tokens: tokens, links: links}, nil
+	return &Service{subs: subs, repos: repos, github: gh, saga: orch, tokens: tokens, links: links}, nil
 }
 
 func (s *Service) Subscribe(ctx context.Context, rawEmail, rawRepo string) error {
@@ -48,7 +46,20 @@ func (s *Service) Subscribe(ctx context.Context, rawEmail, rawRepo string) error
 	if err != nil {
 		return err
 	}
-	return s.sendConfirmationOrRollback(ctx, sub, ref)
+	// Hand off to the orchestrated saga: it dispatches the confirmation and
+	// compensates (cancels the row) if delivery fails or times out.
+	if err := s.saga.StartAndWait(ctx, saga.SubscriptionData{
+		Email:          sub.Email,
+		Repo:           ref.String(),
+		Owner:          ref.Owner,
+		Name:           ref.Name,
+		Token:          sub.Token,
+		ConfirmURL:     s.links.ConfirmURL(sub.Token),
+		SubscriptionID: sub.ID,
+	}); err != nil {
+		return fmt.Errorf("%w: %w", ErrEmailSendFailed, err)
+	}
+	return nil
 }
 
 func parseSubscribeInput(rawEmail, rawRepo string) (email.Address, repository.Ref, error) {
@@ -130,25 +141,6 @@ func (s *Service) createPendingSubscription(
 		return nil, fmt.Errorf("creating subscription: %w", err)
 	}
 	return sub, nil
-}
-
-func (s *Service) sendConfirmationOrRollback(
-	ctx context.Context, sub *Subscription, ref repository.Ref,
-) error {
-	confirmURL := s.links.ConfirmURL(sub.Token)
-	if err := s.mailer.SendConfirmation(ctx, sub.Email, confirmURL, ref.String()); err != nil {
-		// Detach cancel so rollback survives client disconnect; stuck pending row blocks retries.
-		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
-		defer cancel()
-		if rbErr := s.subs.UpdateStatus(rollbackCtx, sub.ID, StatusUnsubscribed); rbErr != nil {
-			return errors.Join(
-				fmt.Errorf("%w: %w", ErrEmailSendFailed, err),
-				fmt.Errorf("rollback after email failure: %w", rbErr),
-			)
-		}
-		return fmt.Errorf("%w: %w", ErrEmailSendFailed, err)
-	}
-	return nil
 }
 
 func (s *Service) Confirm(ctx context.Context, token string) error {

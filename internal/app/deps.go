@@ -17,6 +17,8 @@ import (
 	"github-release-notifier/internal/platform/token"
 	"github-release-notifier/internal/release"
 	"github-release-notifier/internal/repository"
+	"github-release-notifier/internal/saga"
+	"github-release-notifier/internal/sagaevent"
 	"github-release-notifier/internal/subscription"
 	"net/http"
 	"time"
@@ -34,6 +36,7 @@ const (
 type dependencies struct {
 	router           http.Handler
 	poller           *release.Poller
+	orchestrator     *saga.Orchestrator
 	subscribeLimiter *middleware.RateLimiter
 	closers          []func() error
 }
@@ -78,9 +81,17 @@ func buildDependencies(
 	}
 	closers = append(closers, notifierClose)
 
+	orchestrator, sagaClose, err := buildSagaOrchestrator(cfg, db, subRepo, log)
+	if err != nil {
+		return nil, fmt.Errorf("creating saga orchestrator: %w", err)
+	}
+	closers = append(closers, sagaClose)
+
 	tokenGen := token.New()
 	confirmLinks := subscription.NewConfirmLinkBuilder(cfg.BaseURL)
-	subService, err := subscription.NewService(subRepo, repoStore, ghClient, notifier, tokenGen, confirmLinks)
+	subService, err := subscription.NewService(
+		subRepo, repoStore, ghClient, orchestrator, tokenGen, confirmLinks,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("creating subscription service: %w", err)
 	}
@@ -102,9 +113,40 @@ func buildDependencies(
 	return &dependencies{
 		router:           router,
 		poller:           poller,
+		orchestrator:     orchestrator,
 		subscribeLimiter: subscribeLimiter,
 		closers:          closers,
 	}, nil
+}
+
+// buildSagaOrchestrator wires the saga command publisher, store, and compensation
+// adapter into the orchestrator, returning a closer for the broker connection.
+func buildSagaOrchestrator(
+	cfg *config.Config, db *sql.DB, subRepo *subscription.Repo, log *logger.Logger,
+) (*saga.Orchestrator, func() error, error) {
+	commandPublisher, err := messaging.NewPublisher(
+		cfg.RabbitMQURL,
+		messaging.Topology{
+			Exchange:    sagaevent.Exchange,
+			Queue:       sagaevent.CommandsQueue,
+			RoutingKeys: sagaevent.CommandRoutingKeys(),
+		},
+		log.With("component", "saga_command_broker"),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	orchestrator, err := saga.NewOrchestrator(
+		saga.NewStore(db),
+		commandPublisher,
+		subscription.NewSagaCanceller(subRepo),
+		cfg.SagaTimeout,
+		log.With("component", "saga_orchestrator"),
+	)
+	if err != nil {
+		return nil, nil, errors.Join(err, commandPublisher.Close())
+	}
+	return orchestrator, commandPublisher.Close, nil
 }
 
 // buildNotificationPublisher wires the AMQP transport to the domain publisher and

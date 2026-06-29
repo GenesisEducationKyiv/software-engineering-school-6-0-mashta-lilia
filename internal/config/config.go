@@ -14,6 +14,7 @@ const (
 	defaultCacheTTL     = 10 * time.Minute
 	defaultServiceName  = "github-release-notifier"
 	defaultRabbitMQURL  = "amqp://localhost:5672/"
+	defaultSagaTimeout  = 30 * time.Second
 )
 
 type Config struct {
@@ -32,6 +33,7 @@ type Config struct {
 
 	APIKey      string
 	RabbitMQURL string
+	SagaTimeout time.Duration
 
 	RedisAddr     string
 	RedisPassword string
@@ -76,6 +78,10 @@ func NewFromEnv() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	sagaTimeout, err := envDuration("SAGA_TIMEOUT", defaultSagaTimeout)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Config{
 		ServerPort: envOrDefault("SERVER_PORT", "8080"),
@@ -93,6 +99,7 @@ func NewFromEnv() (*Config, error) {
 
 		APIKey:      apiKey,
 		RabbitMQURL: envOrDefault("RABBITMQ_URL", defaultRabbitMQURL),
+		SagaTimeout: sagaTimeout,
 
 		RedisAddr:     envOrDefault("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: envOrDefault("REDIS_PASSWORD", ""),

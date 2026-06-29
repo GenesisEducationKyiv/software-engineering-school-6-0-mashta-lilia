@@ -2,6 +2,8 @@ package subscription
 
 import (
 	"context"
+
+	"github-release-notifier/internal/saga"
 )
 
 // Kept as one interface because the package itself is the consumer (ADR-0009).
@@ -22,8 +24,9 @@ type githubChecker interface {
 	RepoExists(ctx context.Context, owner, name string) (bool, error)
 }
 
-type confirmationSender interface {
-	SendConfirmation(ctx context.Context, email, confirmURL, repo string) error
+// subscriptionSaga runs the orchestrated confirmation saga and blocks for the outcome.
+type subscriptionSaga interface {
+	StartAndWait(ctx context.Context, data saga.SubscriptionData) error
 }
 
 // confirmationLinkBuilder lives in the monolith so the notifier never has to know the

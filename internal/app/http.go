@@ -32,6 +32,8 @@ func runHTTPServer(ctx context.Context, cfg *config.Config, deps *dependencies, 
 	defer deps.subscribeLimiter.Stop()
 
 	go deps.poller.Start(pollerCtx)
+	go runSagaReplyConsumer(pollerCtx, cfg, deps, log)
+	go deps.orchestrator.RunReaper(pollerCtx, sagaReaperInterval)
 
 	serverErr := make(chan error, 1)
 	go func() {

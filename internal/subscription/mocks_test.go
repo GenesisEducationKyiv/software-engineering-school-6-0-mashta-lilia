@@ -3,6 +3,7 @@ package subscription
 
 import (
 	"context"
+	"github-release-notifier/internal/saga"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -60,20 +61,19 @@ func (m *mockGitHubChecker) RepoExists(ctx context.Context, owner, name string) 
 	return args.Bool(0), args.Error(1)
 }
 
-type mockConfirmationSender struct {
+type mockSubscriptionSaga struct {
 	mock.Mock
 }
 
-func (m *mockConfirmationSender) SendConfirmation(ctx context.Context, email, confirmURL, repo string) error {
-	return m.Called(ctx, email, confirmURL, repo).Error(0)
+func (m *mockSubscriptionSaga) StartAndWait(ctx context.Context, data saga.SubscriptionData) error {
+	return m.Called(ctx, data).Error(0)
 }
 
-// fixedTokenGenerator is a deterministic value stub, not a behaviour mock.
-type fixedTokenGenerator struct {
-	Token string
-	Err   error
+type mockTokenGenerator struct {
+	mock.Mock
 }
 
-func (g fixedTokenGenerator) Generate() (string, error) {
-	return g.Token, g.Err
+func (m *mockTokenGenerator) Generate() (string, error) {
+	args := m.Called()
+	return args.String(0), args.Error(1)
 }
