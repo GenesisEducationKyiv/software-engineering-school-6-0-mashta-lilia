@@ -2,7 +2,6 @@ package subscription
 
 import (
 	"context"
-
 	"github-release-notifier/internal/saga"
 )
 
