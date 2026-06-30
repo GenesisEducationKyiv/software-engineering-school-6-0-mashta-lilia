@@ -253,6 +253,113 @@ func (x *SendNotificationResponse) GetDelivered() bool {
 	return false
 }
 
+// VerifyEmailRequest carries the recipient and the confirmation link to email.
+type VerifyEmailRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	ConfirmUrl    string                 `protobuf:"bytes,2,opt,name=confirm_url,json=confirmUrl,proto3" json:"confirm_url,omitempty"`
+	Repo          string                 `protobuf:"bytes,3,opt,name=repo,proto3" json:"repo,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyEmailRequest) Reset() {
+	*x = VerifyEmailRequest{}
+	mi := &file_notification_v1_notification_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyEmailRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyEmailRequest) ProtoMessage() {}
+
+func (x *VerifyEmailRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_notification_v1_notification_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyEmailRequest.ProtoReflect.Descriptor instead.
+func (*VerifyEmailRequest) Descriptor() ([]byte, []int) {
+	return file_notification_v1_notification_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *VerifyEmailRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *VerifyEmailRequest) GetConfirmUrl() string {
+	if x != nil {
+		return x.ConfirmUrl
+	}
+	return ""
+}
+
+func (x *VerifyEmailRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+// VerifyEmailResponse reports whether the email was dispatched (false on a
+// deduplicated no-op).
+type VerifyEmailResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Delivered     bool                   `protobuf:"varint,1,opt,name=delivered,proto3" json:"delivered,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyEmailResponse) Reset() {
+	*x = VerifyEmailResponse{}
+	mi := &file_notification_v1_notification_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyEmailResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyEmailResponse) ProtoMessage() {}
+
+func (x *VerifyEmailResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_notification_v1_notification_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyEmailResponse.ProtoReflect.Descriptor instead.
+func (*VerifyEmailResponse) Descriptor() ([]byte, []int) {
+	return file_notification_v1_notification_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *VerifyEmailResponse) GetDelivered() bool {
+	if x != nil {
+		return x.Delivered
+	}
+	return false
+}
+
 var File_notification_v1_notification_proto protoreflect.FileDescriptor
 
 const file_notification_v1_notification_proto_rawDesc = "" +
@@ -273,10 +380,18 @@ const file_notification_v1_notification_proto_rawDesc = "" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x122\n" +
 	"\arelease\x18\x03 \x01(\v2\x18.notification.v1.ReleaseR\arelease\"8\n" +
 	"\x18SendNotificationResponse\x12\x1c\n" +
-	"\tdelivered\x18\x01 \x01(\bR\tdelivered2\xf5\x01\n" +
+	"\tdelivered\x18\x01 \x01(\bR\tdelivered\"_\n" +
+	"\x12VerifyEmailRequest\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1f\n" +
+	"\vconfirm_url\x18\x02 \x01(\tR\n" +
+	"confirmUrl\x12\x12\n" +
+	"\x04repo\x18\x03 \x01(\tR\x04repo\"3\n" +
+	"\x13VerifyEmailResponse\x12\x1c\n" +
+	"\tdelivered\x18\x01 \x01(\bR\tdelivered2\xcf\x02\n" +
 	"\x13NotificationService\x12g\n" +
 	"\x10SendConfirmation\x12(.notification.v1.SendConfirmationRequest\x1a).notification.v1.SendNotificationResponse\x12u\n" +
-	"\x17SendReleaseNotification\x12/.notification.v1.SendReleaseNotificationRequest\x1a).notification.v1.SendNotificationResponseBEZCgithub-release-notifier/internal/gen/notification/v1;notificationv1b\x06proto3"
+	"\x17SendReleaseNotification\x12/.notification.v1.SendReleaseNotificationRequest\x1a).notification.v1.SendNotificationResponse\x12X\n" +
+	"\vVerifyEmail\x12#.notification.v1.VerifyEmailRequest\x1a$.notification.v1.VerifyEmailResponseBEZCgithub-release-notifier/internal/gen/notification/v1;notificationv1b\x06proto3"
 
 var (
 	file_notification_v1_notification_proto_rawDescOnce sync.Once
@@ -290,21 +405,25 @@ func file_notification_v1_notification_proto_rawDescGZIP() []byte {
 	return file_notification_v1_notification_proto_rawDescData
 }
 
-var file_notification_v1_notification_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_notification_v1_notification_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_notification_v1_notification_proto_goTypes = []any{
 	(*SendConfirmationRequest)(nil),        // 0: notification.v1.SendConfirmationRequest
 	(*Release)(nil),                        // 1: notification.v1.Release
 	(*SendReleaseNotificationRequest)(nil), // 2: notification.v1.SendReleaseNotificationRequest
 	(*SendNotificationResponse)(nil),       // 3: notification.v1.SendNotificationResponse
+	(*VerifyEmailRequest)(nil),             // 4: notification.v1.VerifyEmailRequest
+	(*VerifyEmailResponse)(nil),            // 5: notification.v1.VerifyEmailResponse
 }
 var file_notification_v1_notification_proto_depIdxs = []int32{
 	1, // 0: notification.v1.SendReleaseNotificationRequest.release:type_name -> notification.v1.Release
 	0, // 1: notification.v1.NotificationService.SendConfirmation:input_type -> notification.v1.SendConfirmationRequest
 	2, // 2: notification.v1.NotificationService.SendReleaseNotification:input_type -> notification.v1.SendReleaseNotificationRequest
-	3, // 3: notification.v1.NotificationService.SendConfirmation:output_type -> notification.v1.SendNotificationResponse
-	3, // 4: notification.v1.NotificationService.SendReleaseNotification:output_type -> notification.v1.SendNotificationResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
+	4, // 3: notification.v1.NotificationService.VerifyEmail:input_type -> notification.v1.VerifyEmailRequest
+	3, // 4: notification.v1.NotificationService.SendConfirmation:output_type -> notification.v1.SendNotificationResponse
+	3, // 5: notification.v1.NotificationService.SendReleaseNotification:output_type -> notification.v1.SendNotificationResponse
+	5, // 6: notification.v1.NotificationService.VerifyEmail:output_type -> notification.v1.VerifyEmailResponse
+	4, // [4:7] is the sub-list for method output_type
+	1, // [1:4] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
 	1, // [1:1] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
@@ -321,7 +440,7 @@ func file_notification_v1_notification_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_notification_v1_notification_proto_rawDesc), len(file_notification_v1_notification_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

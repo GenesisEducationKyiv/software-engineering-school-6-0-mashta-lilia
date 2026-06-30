@@ -81,6 +81,30 @@ func (s *Server) SendReleaseNotification(
 	return &notificationv1.SendNotificationResponse{Delivered: delivered}, nil
 }
 
+// VerifyEmail is the gRPC replacement for the POST /api/v1/verify-email REST
+// endpoint; both reuse the same Service.SendConfirmation logic (HW10).
+func (s *Server) VerifyEmail(
+	ctx context.Context,
+	req *notificationv1.VerifyEmailRequest,
+) (*notificationv1.VerifyEmailResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if req.GetEmail() == "" || req.GetConfirmUrl() == "" || req.GetRepo() == "" {
+		return nil, status.Error(codes.InvalidArgument, "email, confirm_url and repo are required")
+	}
+	delivered, err := s.service.SendConfirmation(ctx, notification.Confirmation{
+		Email:      req.GetEmail(),
+		ConfirmURL: req.GetConfirmUrl(),
+		Repo:       req.GetRepo(),
+	})
+	if err != nil {
+		s.log.Error(ctx, "verify_email_failed", "err", err)
+		return nil, status.Error(codes.Internal, "failed to send verification email")
+	}
+	return &notificationv1.VerifyEmailResponse{Delivered: delivered}, nil
+}
+
 func releaseFromProto(rel *notificationv1.Release) *notification.ReleaseInfo {
 	if rel == nil {
 		return nil

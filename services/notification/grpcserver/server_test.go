@@ -172,3 +172,60 @@ func TestServer_ServiceErrorMapsToInternal(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, codes.Internal, status.Code(err))
 }
+
+func TestServer_VerifyEmail_MapsFields(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{delivered: true}
+	srv := mustNewServer(t, svc)
+
+	resp, err := srv.VerifyEmail(context.Background(), &notificationv1.VerifyEmailRequest{
+		Email:      "alice@example.com",
+		ConfirmUrl: testConfirmURL,
+		Repo:       "golang/go",
+	})
+
+	require.NoError(t, err)
+	assert.True(t, resp.GetDelivered())
+	require.NotNil(t, svc.confirmation)
+	assert.Equal(t, "alice@example.com", svc.confirmation.Email)
+	assert.Equal(t, testConfirmURL, svc.confirmation.ConfirmURL)
+	assert.Equal(t, "golang/go", svc.confirmation.Repo)
+}
+
+func TestServer_VerifyEmail_RejectsMissingFields(t *testing.T) {
+	t.Parallel()
+	cases := map[string]*notificationv1.VerifyEmailRequest{
+		"nil request":         nil,
+		"missing email":       {ConfirmUrl: testConfirmURL, Repo: "golang/go"},
+		"missing confirm_url": {Email: "a@b.c", Repo: "golang/go"},
+		"missing repo":        {Email: "a@b.c", ConfirmUrl: testConfirmURL},
+	}
+	for name, req := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			svc := &fakeService{delivered: true}
+			srv := mustNewServer(t, svc)
+
+			resp, err := srv.VerifyEmail(context.Background(), req)
+
+			assert.Nil(t, resp)
+			require.Error(t, err)
+			assert.Equal(t, codes.InvalidArgument, status.Code(err))
+			assert.Zero(t, svc.calls, "service must not be called for invalid input")
+		})
+	}
+}
+
+func TestServer_VerifyEmail_ServiceErrorMapsToInternal(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{err: errors.New("smtp down")}
+	srv := mustNewServer(t, svc)
+
+	resp, err := srv.VerifyEmail(context.Background(), &notificationv1.VerifyEmailRequest{
+		Email: "a@b.c", ConfirmUrl: testConfirmURL, Repo: "golang/go",
+	})
+
+	assert.Nil(t, resp)
+	require.Error(t, err)
+	assert.Equal(t, codes.Internal, status.Code(err))
+}

@@ -88,6 +88,21 @@ func (c *Client) SendReleaseNotification(
 	return nil
 }
 
+// VerifyEmail is the gRPC counterpart of the REST verify-email call (HW10).
+func (c *Client) VerifyEmail(ctx context.Context, email, confirmURL, repo string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
+	resp, err := c.client.VerifyEmail(ctx, &notificationv1.VerifyEmailRequest{
+		Email:      email,
+		ConfirmUrl: confirmURL,
+		Repo:       repo,
+	})
+	if err != nil {
+		return false, transportError("verify email", err)
+	}
+	return resp.GetDelivered(), nil
+}
+
 func releaseToProto(rel *release.Release) *notificationv1.Release {
 	if rel == nil {
 		return nil

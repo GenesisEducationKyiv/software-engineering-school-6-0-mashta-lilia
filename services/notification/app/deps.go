@@ -12,6 +12,7 @@ import (
 	"github-release-notifier/services/notification/config"
 	"github-release-notifier/services/notification/consumer"
 	"github-release-notifier/services/notification/grpcserver"
+	"github-release-notifier/services/notification/resthttp"
 	"github-release-notifier/services/notification/sagaparticipant"
 	"github-release-notifier/services/notification/smtp"
 	"github-release-notifier/services/notification/store"
@@ -23,6 +24,7 @@ type dependencies struct {
 	notificationServer notificationv1.NotificationServiceServer
 	consumer           *consumer.Consumer
 	sagaParticipant    *sagaparticipant.Participant
+	restHandler        *resthttp.Handler
 	closers            []func() error
 }
 
@@ -86,10 +88,18 @@ func buildDependencies(
 		return nil, fmt.Errorf("creating saga participant: %w", err)
 	}
 
+	restHandler, err := resthttp.NewHandler(service, log.With("component", "notification_rest"))
+	if err != nil {
+		closeQuietly(ctx, log, "saga reply publisher", sagaReplyPublisher.Close)
+		closeQuietly(ctx, log, "notification store", ledger.Close)
+		return nil, fmt.Errorf("creating notification rest handler: %w", err)
+	}
+
 	return &dependencies{
 		notificationServer: notificationServer,
 		consumer:           cons,
 		sagaParticipant:    participant,
+		restHandler:        restHandler,
 		closers:            []func() error{sagaReplyPublisher.Close, ledger.Close},
 	}, nil
 }

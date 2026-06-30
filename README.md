@@ -64,7 +64,8 @@ services/notification/              -- Notification microservice (RabbitMQ consu
   (package notification)            -- domain: value types + application service + ports
   app/                              -- composition root (lifecycle, DB, consumer + gRPC bootstrap)
   consumer/                         -- broker consumer: decode envelope + dispatch to service
-  grpcserver/                       -- gRPC transport mapping
+  grpcserver/                       -- gRPC transport mapping (incl. VerifyEmail)
+  resthttp/                         -- REST verify-email endpoint (HW10, kept alongside gRPC)
   smtp/, store/                     -- SMTP mailer + sent_notifications ledger
   main/                             -- notifier entrypoint
 proto/notification/v1/              -- gRPC contract between monolith and notifier
@@ -140,6 +141,33 @@ Subscriber   Monolith (orchestrator)        RabbitMQ          Notifier (particip
 - **Orchestrator** (`internal/saga`): persists each saga in `saga_instances`, blocks the request for the outcome via an in-memory waiter the durable reply consumer signals, and returns the real `200`/`503` — not a fire-and-forget `202`.
 - **Compensation**: a `confirmation_failed` reply (or a timeout) cancels the subscription, freeing the partial-unique-index slot. A `time.Ticker` **reaper** compensates sagas whose reply never arrives, so a notifier crash cannot strand a subscription.
 - **Idempotency**: state transitions are single-winner conditional `UPDATE`s, the participant is deduped by the confirm-URL ledger, and duplicate replies are no-ops.
+
+### REST → gRPC Migration (verify-email)
+
+HW10 migrates one **synchronous inter-service call** from REST to gRPC, keeping the REST implementation alongside for comparison.
+
+```
+Monolith (Verifier)                         Notification service
+  |  transport = grpc (default) | rest      |
+  |--- VerifyEmail(email, confirm_url, repo) over chosen transport -->|
+  |                                          |-- same SendConfirmation service logic
+  |<------------------ delivered ------------|   (dedup ledger + SMTP)
+```
+
+- **Contract** (`proto/notification/v1`): a new Unary RPC `VerifyEmail(VerifyEmailRequest) → VerifyEmailResponse`. A *new* RPC (not a reuse of `SendConfirmation`) keeps the before/after migration story explicit. `buf lint` guards the contract; `buf generate` (`make proto`) regenerates the stubs.
+- **gRPC status codes** (`services/notification/grpcserver`): missing `email`/`confirm_url`/`repo` → `InvalidArgument`; a downstream send failure → `Internal`; success → `delivered`. The REST handler mirrors this as `400` / `500` / `200`.
+- **REST kept alongside** (`services/notification/resthttp`): `POST /api/v1/verify-email` serves the same JSON contract on `REST_ADDR` (default `:8081`), so both transports run against identical service logic.
+- **Swappable client** (`internal/client/notification`): both the gRPC `Client` and the `RESTClient` satisfy one `Verifier` interface; `NewVerifier(transport, target, log)` selects `grpc` (default) or `rest`.
+
+**Benchmark** (`make bench` — in-process server, no-op sender, so the delta is pure transport cost; 13th-gen i7, 16 logical CPUs):
+
+| Scenario | gRPC | REST | Winner |
+| --- | --- | --- | --- |
+| **Sequential latency** (1 caller) | ~392 µs/op (~2.5k req/s) | ~95 µs/op (~10.5k req/s) | **REST ~4×** |
+| **Parallel throughput** (16 cores) | ~31 µs/op (~32k req/s) | ~71 µs/op (~14k req/s) | **gRPC ~2.3×** |
+| **Allocations under load** | 10.5 KB/op | 32 KB/op | **gRPC ~3× less** |
+
+The honest takeaway: for a **single small synchronous call on loopback, REST/JSON has lower latency** — gRPC's HTTP/2 framing and flow-control overhead per call has nothing to amortize against. gRPC's structural advantages appear **under concurrency**: it multiplexes all RPCs over one HTTP/2 connection and pulls ~2.3× ahead on throughput with ~3× less memory churn, while HTTP/1.1 is bottlenecked by one in-flight request per connection. gRPC also wins on the qualities a benchmark can't show — a typed, versioned `.proto` contract, code generation, and first-class streaming — which is why it is the default transport here. The reaper- and broker-based production path is unchanged; this migration covers the one synchronous request/response hop.
 
 ### Background Poller Logic
 
@@ -348,7 +376,8 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GRPC_ADDR` | `:50051` | gRPC listen address (health surface + integration tests) |
+| `GRPC_ADDR` | `:50051` | gRPC listen address (health surface + integration tests; serves `VerifyEmail`) |
+| `REST_ADDR` | `:8081` | REST listen address for `POST /api/v1/verify-email` (HW10 transport kept alongside gRPC) |
 | `RABBITMQ_URL` | `amqp://localhost:5672/` | Message broker the notifier consumes notification commands from |
 | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` | `localhost` / `5432` / `postgres` / `postgres` | Notifier's own PostgreSQL (DB-per-service; `postgres-notifier` in Docker Compose) |
 | `DB_NAME` | `notification` | Notifier database name |
@@ -385,7 +414,8 @@ cp .env.example .env
 │   ├── (package notification)   # Domain: value types + application service + ports
 │   ├── app/                     # Composition root (lifecycle, DB, consumer + gRPC bootstrap)
 │   ├── consumer/                # Broker consumer: decode envelope + dispatch to service
-│   ├── grpcserver/              # gRPC transport mapping
+│   ├── grpcserver/              # gRPC transport mapping (incl. VerifyEmail)
+│   ├── resthttp/                # REST verify-email endpoint (HW10, kept alongside gRPC)
 │   ├── smtp/                    # SMTP mailer + templates
 │   ├── store/                   # sent_notifications dedup ledger (PG)
 │   ├── migrations/              # Notifier schema (embedded, auto-applied on startup)

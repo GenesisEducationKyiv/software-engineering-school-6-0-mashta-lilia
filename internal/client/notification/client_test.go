@@ -40,6 +40,14 @@ func (m *mockServiceClient) SendReleaseNotification(
 	return resp, args.Error(1)
 }
 
+func (m *mockServiceClient) VerifyEmail(
+	ctx context.Context, in *notificationv1.VerifyEmailRequest, _ ...grpc.CallOption,
+) (*notificationv1.VerifyEmailResponse, error) {
+	args := m.Called(ctx, in)
+	resp, _ := args.Get(0).(*notificationv1.VerifyEmailResponse)
+	return resp, args.Error(1)
+}
+
 func delivered() *notificationv1.SendNotificationResponse {
 	return &notificationv1.SendNotificationResponse{Delivered: true}
 }
@@ -118,6 +126,43 @@ func TestClient_TransportErrorIsReturned(t *testing.T) {
 	require.NoError(t, err)
 
 	err = client.SendConfirmation(context.Background(), "alice@example.com", "https://app.example/api/confirm/tok", "golang/go")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "code=Unavailable")
+}
+
+func TestClient_VerifyEmailMapsRequest(t *testing.T) {
+	t.Parallel()
+	m := &mockServiceClient{}
+	var got *notificationv1.VerifyEmailRequest
+	m.On("VerifyEmail", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			got, _ = args.Get(1).(*notificationv1.VerifyEmailRequest)
+		}).
+		Return(&notificationv1.VerifyEmailResponse{Delivered: true}, nil)
+
+	client, err := notification.NewClient(m, logger.Nop())
+	require.NoError(t, err)
+
+	delivered, err := client.VerifyEmail(context.Background(), "alice@example.com", "https://app.example/api/confirm/tok", "golang/go")
+	require.NoError(t, err)
+	assert.True(t, delivered)
+	require.NotNil(t, got)
+	assert.Equal(t, "alice@example.com", got.GetEmail())
+	assert.Equal(t, "https://app.example/api/confirm/tok", got.GetConfirmUrl())
+	assert.Equal(t, "golang/go", got.GetRepo())
+	m.AssertExpectations(t)
+}
+
+func TestClient_VerifyEmailTransportErrorIsReturned(t *testing.T) {
+	t.Parallel()
+	m := &mockServiceClient{}
+	m.On("VerifyEmail", mock.Anything, mock.Anything).
+		Return((*notificationv1.VerifyEmailResponse)(nil), status.Error(codes.Unavailable, "notifier down"))
+
+	client, err := notification.NewClient(m, logger.Nop())
+	require.NoError(t, err)
+
+	_, err = client.VerifyEmail(context.Background(), "alice@example.com", "https://app.example/api/confirm/tok", "golang/go")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "code=Unavailable")
 }
