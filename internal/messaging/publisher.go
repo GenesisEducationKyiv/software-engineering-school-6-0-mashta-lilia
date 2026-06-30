@@ -77,7 +77,7 @@ func (p *Publisher) channel() (*amqp.Channel, error) {
 	}
 	// A dead channel can still hold an open connection; close stale state before
 	// redialing so the previous connection is not leaked.
-	p.reset() //nolint:errcheck // best-effort close of stale state before redial
+	_ = p.reset() //nolint:errcheck // best-effort close of stale state before redial
 	conn, err := amqp.Dial(p.url)
 	if err != nil {
 		return nil, fmt.Errorf("messaging: dial broker: %w", err)
