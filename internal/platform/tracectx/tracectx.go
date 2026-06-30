@@ -48,9 +48,14 @@ func Traceparent(traceID string) (string, bool) {
 	if !IsValidID(traceID) {
 		return "", false
 	}
-	var span [spanIDBytes]byte
-	_, _ = rand.Read(span[:]) // crypto/rand.Read cannot fail (Go 1.24+)
-	return "00-" + traceID + "-" + hex.EncodeToString(span[:]) + "-01", true
+	for {
+		var span [spanIDBytes]byte
+		_, _ = rand.Read(span[:]) // crypto/rand.Read cannot fail (Go 1.24+)
+		// Retry on the 1/2^64 all-zero draw the W3C spec rejects as a parent id.
+		if span != ([spanIDBytes]byte{}) {
+			return "00-" + traceID + "-" + hex.EncodeToString(span[:]) + "-01", true
+		}
+	}
 }
 
 func isHexLower(s string) bool {
