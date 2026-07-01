@@ -95,6 +95,10 @@ func (s *Service) reserveSubscription(
 
 // refreshPendingSubscription re-issues the token on a still-pending row so the
 // confirmation can be resent without tripping the partial unique index (ADR-0008).
+// UpdateToken is a CAS on the old token: if a concurrent re-subscribe already
+// refreshed this row, ours loses the race (ErrNotFound) and we report
+// ErrAlreadyExists rather than emailing a confirm link for a token we never
+// actually wrote.
 func (s *Service) refreshPendingSubscription(
 	ctx context.Context, sub *Subscription,
 ) (*Subscription, error) {
@@ -102,7 +106,10 @@ func (s *Service) refreshPendingSubscription(
 	if err != nil {
 		return nil, fmt.Errorf("generating token: %w", err)
 	}
-	if err := s.subs.UpdateToken(ctx, sub.ID, token); err != nil {
+	if err := s.subs.UpdateToken(ctx, sub.ID, sub.Token, token); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, ErrAlreadyExists
+		}
 		return nil, fmt.Errorf("refreshing confirmation token: %w", err)
 	}
 	sub.Token = token

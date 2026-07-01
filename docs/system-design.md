@@ -354,8 +354,10 @@ Back-of-the-envelope for a single-instance deployment:
 | Broker unreachable on subscribe             | Publish fails; subscription rolled back to `unsubscribed` so the user can retry.            |
 | Notifier SMTP fails after broker accepted   | Row stays `pending`; re-subscribing refreshes the token and resends (no permanent zombie).  |
 | Publish fails on notification fan-out       | Per-recipient publish error logged; loop continues; that command is not sent.               |
+| Transient SMTP failure on the consumer      | Consumer returns `Requeue`; broker redelivers; dedup ledger makes the retry idempotent.     |
 | Process crash mid-fan-out                   | At-most-once: tag persisted, some recipients miss this release. [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md). |
-| Race: two concurrent subscribes (same email+repo) | Partial unique index blocks the second INSERT atomically.                              |
+| Race: two concurrent subscribes (same email+repo, no existing row) | Partial unique index blocks the second INSERT atomically.              |
+| Race: two concurrent re-subscribes over the same `pending` row | `UpdateToken`'s CAS (`WHERE id=? AND token=?`) makes one win and one lose; the loser gets `ErrAlreadyExists` instead of emailing a token it never wrote. |
 | Race: two poller ticks overlap              | Mutex on the poller causes the second tick to be skipped with a log entry.                  |
 | Token brute-force                           | 256-bit entropy from `crypto/rand`; not feasible.                                           |
 | Header injection in email                   | `\r` and `\n` stripped from header values in the SMTP mailer.                               |

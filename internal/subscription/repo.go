@@ -44,14 +44,11 @@ const (
 
 	// updated_at is maintained by the trg_subscriptions_updated_at trigger.
 	// #nosec G101 -- SQL column name, not a credential.
+	// The WHERE token=$3 guard makes this an optimistic-concurrency CAS: a
+	// concurrent refresh of the same row loses the update instead of both
+	// racing writes silently overwriting each other.
 	updateTokenQuery = `
-		UPDATE subscriptions SET token = $1 WHERE id = $2`
-
-	existsQuery = `
-		SELECT EXISTS(
-			SELECT 1 FROM subscriptions
-			WHERE email = $1 AND repo_owner = $2 AND repo_name = $3 AND status != $4
-		)`
+		UPDATE subscriptions SET token = $1 WHERE id = $2 AND token = $3`
 )
 
 type Repo struct {
@@ -65,7 +62,6 @@ type Repo struct {
 	stmtGetByEmailAndRepo *sql.Stmt
 	stmtUpdateStatus      *sql.Stmt
 	stmtUpdateToken       *sql.Stmt
-	stmtExists            *sql.Stmt
 	log                   *logger.Logger
 }
 
@@ -147,10 +143,6 @@ func (r *Repo) prepare(ctx context.Context) error {
 		r.log.Error(ctx, "subscription_repo_prepare_failed", "statement", "update_token", "err", err)
 		return fmt.Errorf("preparing subscription update token: %w", err)
 	}
-	if r.stmtExists, err = r.db.PrepareContext(ctx, existsQuery); err != nil {
-		r.log.Error(ctx, "subscription_repo_prepare_failed", "statement", "exists", "err", err)
-		return fmt.Errorf("preparing subscription exists: %w", err)
-	}
 	return nil
 }
 
@@ -166,7 +158,6 @@ func (r *Repo) Close() error {
 		closeStmt("subscription get by email and repo", r.stmtGetByEmailAndRepo),
 		closeStmt("subscription update status", r.stmtUpdateStatus),
 		closeStmt("subscription update token", r.stmtUpdateToken),
-		closeStmt("subscription exists", r.stmtExists),
 	)
 }
 
@@ -261,11 +252,15 @@ func (r *Repo) UpdateStatus(ctx context.Context, id int64, status Status) error 
 	return nil
 }
 
-func (r *Repo) UpdateToken(ctx context.Context, id int64, token string) error {
+// UpdateToken replaces oldToken with newToken on subscription id, but only if
+// oldToken still matches (optimistic concurrency): a concurrent refresh of the
+// same row changes the token first, so this call then affects zero rows and
+// returns ErrNotFound instead of silently clobbering the winning token.
+func (r *Repo) UpdateToken(ctx context.Context, id int64, oldToken, newToken string) error {
 	if err := r.ensurePrepared(ctx); err != nil {
 		return err
 	}
-	result, err := r.stmtUpdateToken.ExecContext(ctx, token, id)
+	result, err := r.stmtUpdateToken.ExecContext(ctx, newToken, id, oldToken)
 	if err != nil {
 		return fmt.Errorf("updating subscription token id=%d: %w", id, err)
 	}
@@ -298,19 +293,6 @@ func (r *Repo) GetByEmailAndRepo(ctx context.Context, email, owner, name string)
 		return nil, fmt.Errorf("querying subscription owner=%s name=%s: %w", owner, name, err)
 	}
 	return sub, nil
-}
-
-func (r *Repo) Exists(ctx context.Context, email, owner, name string) (bool, error) {
-	if err := r.ensurePrepared(ctx); err != nil {
-		return false, err
-	}
-	var exists bool
-	if err := r.stmtExists.QueryRowContext(
-		ctx, email, owner, name, StatusUnsubscribed,
-	).Scan(&exists); err != nil {
-		return false, fmt.Errorf("checking subscription existence owner=%s name=%s: %w", owner, name, err)
-	}
-	return exists, nil
 }
 
 func (r *Repo) scan(
