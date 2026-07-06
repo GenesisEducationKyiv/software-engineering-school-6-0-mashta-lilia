@@ -29,8 +29,11 @@ func (noopSender) SendReleaseNotification(
 }
 
 // BenchmarkVerifyEmail_GRPC and _REST drive the same operation over each
-// transport against an in-process server, so the delta is the transport cost
-// (HTTP/2 + protobuf vs HTTP/1.1 + JSON). Run: go test -run=^$ -bench=VerifyEmail.
+// transport against an in-process server. Both loops pay for one
+// context.WithTimeout per call — the gRPC Client wraps it internally, and the
+// REST loop wraps it explicitly to match — so the delta isn't inflated by that
+// allocation being one-sided; what's left is the transport cost (HTTP/2 +
+// protobuf vs HTTP/1.1 + JSON). Run: go test -run=^$ -bench=VerifyEmail.
 func BenchmarkVerifyEmail_GRPC(b *testing.B) {
 	srv, err := grpcserver.New(noopSender{}, logger.Nop())
 	if err != nil {
@@ -74,7 +77,13 @@ func BenchmarkVerifyEmail_REST(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := client.VerifyEmail(context.Background(), "a@b.c", "https://x/confirm/tok", "o/r"); err != nil {
+		// Matches the context.WithTimeout the gRPC Client wraps every call in
+		// (RESTClient relies on http.Client's single, pre-built Timeout instead),
+		// so this loop pays the same per-call allocation the gRPC side pays.
+		ctx, cancel := context.WithTimeout(context.Background(), notificationclient.CallTimeout)
+		_, err := client.VerifyEmail(ctx, "a@b.c", "https://x/confirm/tok", "o/r")
+		cancel()
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -113,6 +122,8 @@ func BenchmarkVerifyEmail_GRPC_Parallel(b *testing.B) {
 	})
 }
 
+// BenchmarkVerifyEmail_REST_Parallel wraps each call in the same
+// context.WithTimeout as the REST serial benchmark above, for the same reason.
 func BenchmarkVerifyEmail_REST_Parallel(b *testing.B) {
 	h, err := resthttp.NewHandler(noopSender{}, logger.Nop())
 	if err != nil {
@@ -129,7 +140,10 @@ func BenchmarkVerifyEmail_REST_Parallel(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if _, err := client.VerifyEmail(context.Background(), "a@b.c", "https://x/confirm/tok", "o/r"); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), notificationclient.CallTimeout)
+			_, err := client.VerifyEmail(ctx, "a@b.c", "https://x/confirm/tok", "o/r")
+			cancel()
+			if err != nil {
 				b.Fatal(err)
 			}
 		}

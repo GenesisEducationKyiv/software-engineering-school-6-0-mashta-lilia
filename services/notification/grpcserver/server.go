@@ -56,7 +56,9 @@ func (s *Server) SendConfirmation(
 	})
 	if err != nil {
 		s.log.Error(ctx, "send_confirmation_failed", "err", err)
-		return nil, status.Error(codes.Internal, "failed to send confirmation")
+		// Unavailable, not Internal: today's send failures are SMTP/broker blips
+		// the caller can retry, and Internal would tell it not to.
+		return nil, status.Error(codes.Unavailable, "failed to send confirmation")
 	}
 	return &notificationv1.SendNotificationResponse{Delivered: delivered}, nil
 }
@@ -76,7 +78,7 @@ func (s *Server) SendReleaseNotification(
 	)
 	if err != nil {
 		s.log.Error(ctx, "send_release_notification_failed", "err", err)
-		return nil, status.Error(codes.Internal, "failed to send release notification")
+		return nil, status.Error(codes.Unavailable, "failed to send release notification")
 	}
 	return &notificationv1.SendNotificationResponse{Delivered: delivered}, nil
 }
@@ -100,7 +102,7 @@ func (s *Server) VerifyEmail(
 	})
 	if err != nil {
 		s.log.Error(ctx, "verify_email_failed", "err", err)
-		return nil, status.Error(codes.Internal, "failed to send verification email")
+		return nil, status.Error(codes.Unavailable, "failed to send verification email")
 	}
 	return &notificationv1.VerifyEmailResponse{Delivered: delivered}, nil
 }

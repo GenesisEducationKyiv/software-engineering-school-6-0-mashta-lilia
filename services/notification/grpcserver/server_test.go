@@ -159,7 +159,9 @@ func TestServer_SendReleaseNotification_NilReleaseAllowed(t *testing.T) {
 	assert.Nil(t, svc.release)
 }
 
-func TestServer_ServiceErrorMapsToInternal(t *testing.T) {
+// A send failure is Unavailable, not Internal: it's a retryable SMTP/broker
+// blip today, not proof of a permanent server-side fault.
+func TestServer_SendConfirmation_ServiceErrorMapsToUnavailable(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{err: errors.New("smtp down")}
 	srv := mustNewServer(t, svc)
@@ -170,7 +172,21 @@ func TestServer_ServiceErrorMapsToInternal(t *testing.T) {
 
 	assert.Nil(t, resp)
 	require.Error(t, err)
-	assert.Equal(t, codes.Internal, status.Code(err))
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+}
+
+func TestServer_SendReleaseNotification_ServiceErrorMapsToUnavailable(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{err: errors.New("smtp down")}
+	srv := mustNewServer(t, svc)
+
+	resp, err := srv.SendReleaseNotification(context.Background(), &notificationv1.SendReleaseNotificationRequest{
+		Email: "a@b.c", Repo: "golang/go",
+	})
+
+	assert.Nil(t, resp)
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
 }
 
 func TestServer_VerifyEmail_MapsFields(t *testing.T) {
@@ -216,7 +232,7 @@ func TestServer_VerifyEmail_RejectsMissingFields(t *testing.T) {
 	}
 }
 
-func TestServer_VerifyEmail_ServiceErrorMapsToInternal(t *testing.T) {
+func TestServer_VerifyEmail_ServiceErrorMapsToUnavailable(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{err: errors.New("smtp down")}
 	srv := mustNewServer(t, svc)
@@ -227,5 +243,5 @@ func TestServer_VerifyEmail_ServiceErrorMapsToInternal(t *testing.T) {
 
 	assert.Nil(t, resp)
 	require.Error(t, err)
-	assert.Equal(t, codes.Internal, status.Code(err))
+	assert.Equal(t, codes.Unavailable, status.Code(err))
 }
