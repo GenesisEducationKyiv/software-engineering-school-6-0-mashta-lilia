@@ -11,7 +11,9 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// Publisher publishes persistent JSON messages to a durable exchange, redialing transparently on failure.
+// Publisher publishes persistent JSON messages to a durable exchange, waiting
+// for the broker's publisher-confirm before returning and redialing
+// transparently on failure.
 type Publisher struct {
 	url      string
 	topology Topology
@@ -35,8 +37,11 @@ func NewPublisher(url string, topology Topology, log *logger.Logger) (*Publisher
 	return &Publisher{url: url, topology: topology, log: log}, nil
 }
 
-// Publish sends body to the exchange under routingKey. It is safe for
-// concurrent use: amqp091-go's Channel serializes its own writes internally, so
+// Publish sends body to the exchange under routingKey and waits for the
+// broker's publisher-confirm, so a returned nil error means RabbitMQ has
+// durably accepted the message, not just that it left the app. It is safe for
+// concurrent use: amqp091-go's Channel serializes its own writes internally
+// and matches each deferred confirm to its own publish by delivery tag, so
 // concurrent callers only contend on the (fast) channel lookup below, not on
 // the network I/O — a redial is the only path that blocks other publishers.
 func (p *Publisher) Publish(ctx context.Context, routingKey string, body []byte) error {
@@ -49,7 +54,8 @@ func (p *Publisher) Publish(ctx context.Context, routingKey string, body []byte)
 	defer cancel()
 
 	const mandatory, immediate = false, false
-	err = ch.PublishWithContext(pubCtx, p.topology.Exchange, routingKey, mandatory, immediate,
+	confirmation, err := ch.PublishWithDeferredConfirmWithContext(
+		pubCtx, p.topology.Exchange, routingKey, mandatory, immediate,
 		amqp.Publishing{
 			ContentType:  "application/json",
 			DeliveryMode: amqp.Persistent,
@@ -63,6 +69,19 @@ func (p *Publisher) Publish(ctx context.Context, routingKey string, body []byte)
 			fmt.Errorf("messaging: publish to %s/%s: %w", p.topology.Exchange, routingKey, err),
 			p.resetIfCurrent(ch),
 		)
+	}
+
+	ok, err := confirmation.WaitContext(pubCtx)
+	if err != nil {
+		// Same reasoning as above: the wait timed out or ctx was canceled, which
+		// leaves the channel's state unknown, so force the next publish to redial.
+		return errors.Join(
+			fmt.Errorf("messaging: await broker confirm for %s/%s: %w", p.topology.Exchange, routingKey, err),
+			p.resetIfCurrent(ch),
+		)
+	}
+	if !ok {
+		return fmt.Errorf("messaging: broker nacked publish to %s/%s", p.topology.Exchange, routingKey)
 	}
 	return nil
 }
@@ -90,6 +109,14 @@ func (p *Publisher) getChannel(ctx context.Context) (*amqp.Channel, error) {
 	ch, err := conn.Channel()
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("messaging: open channel: %w", err), conn.Close())
+	}
+	// Confirm mode is required for PublishWithDeferredConfirmWithContext to
+	// track broker acks instead of silently discarding them.
+	const noWait = false
+	if err := ch.Confirm(noWait); err != nil {
+		return nil, errors.Join(
+			fmt.Errorf("messaging: enable publisher confirms: %w", err), ch.Close(), conn.Close(),
+		)
 	}
 	if err := declareTopology(ch, p.topology); err != nil {
 		return nil, errors.Join(err, ch.Close(), conn.Close())

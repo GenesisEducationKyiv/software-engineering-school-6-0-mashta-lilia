@@ -21,6 +21,7 @@ type sender interface {
 
 type dedupStore interface {
 	Reserve(ctx context.Context, kind, dedupKey string) (bool, error)
+	Confirm(ctx context.Context, dedupKey string) error
 }
 
 type Service struct {
@@ -83,6 +84,11 @@ func (s *Service) reserveAndSend(
 	}
 	if err := send(); err != nil {
 		return false, fmt.Errorf("sending notification kind=%s: %w", kind, err)
+	}
+	if err := s.dedup.Confirm(ctx, dedupKey); err != nil {
+		// The email is already sent; leaving the row unconfirmed only risks a
+		// redelivery re-sending it, not losing it, so log rather than fail the call.
+		s.log.Error(ctx, "notification_confirm_failed", "kind", kind, "dedup_key", dedupKey, "err", err)
 	}
 	return true, nil
 }

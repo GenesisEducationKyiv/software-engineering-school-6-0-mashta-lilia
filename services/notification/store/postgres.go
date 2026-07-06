@@ -9,17 +9,26 @@ import (
 	"sync"
 )
 
+// A conflicting row is re-reserved (and the caller gets another send attempt)
+// while it's still unconfirmed (sent_at IS NULL); once confirmed, the WHERE
+// excludes it from the update so RETURNING yields no row, i.e. a true dedup.
 const reserveQuery = `
 	INSERT INTO sent_notifications (kind, dedup_key)
 	VALUES ($1, $2)
-	ON CONFLICT (dedup_key) DO NOTHING
+	ON CONFLICT (dedup_key) DO UPDATE
+		SET kind = EXCLUDED.kind
+		WHERE sent_notifications.sent_at IS NULL
 	RETURNING id`
+
+const confirmQuery = `
+	UPDATE sent_notifications SET sent_at = NOW() WHERE dedup_key = $1`
 
 type Store struct {
 	db          *sql.DB
 	prepareMu   sync.Mutex
 	prepared    bool
 	stmtReserve *sql.Stmt
+	stmtConfirm *sql.Stmt
 	log         *logger.Logger
 }
 
@@ -64,11 +73,26 @@ func (s *Store) Reserve(ctx context.Context, kind, dedupKey string) (bool, error
 	return true, nil
 }
 
+// Confirm marks a reserved dedup key as sent, so a later Reserve for the same
+// key is treated as a true duplicate instead of a retryable failure.
+func (s *Store) Confirm(ctx context.Context, dedupKey string) error {
+	if err := s.ensurePrepared(ctx); err != nil {
+		return err
+	}
+	if _, err := s.stmtConfirm.ExecContext(ctx, dedupKey); err != nil {
+		return fmt.Errorf("confirming notification dedup_key=%q: %w", dedupKey, err)
+	}
+	return nil
+}
+
 func (s *Store) Close() error {
 	if s == nil {
 		return nil
 	}
-	return closeStmt("notification reserve", s.stmtReserve)
+	return errors.Join(
+		closeStmt("notification reserve", s.stmtReserve),
+		closeStmt("notification confirm", s.stmtConfirm),
+	)
 }
 
 func (s *Store) ensurePrepared(ctx context.Context) error {
@@ -99,6 +123,10 @@ func (s *Store) prepare(ctx context.Context) error {
 	if s.stmtReserve, err = s.db.PrepareContext(ctx, reserveQuery); err != nil {
 		s.log.Error(ctx, "notification_store_prepare_failed", "statement", "reserve", "err", err)
 		return fmt.Errorf("preparing notification reserve: %w", err)
+	}
+	if s.stmtConfirm, err = s.db.PrepareContext(ctx, confirmQuery); err != nil {
+		s.log.Error(ctx, "notification_store_prepare_failed", "statement", "confirm", "err", err)
+		return fmt.Errorf("preparing notification confirm: %w", err)
 	}
 	return nil
 }

@@ -32,19 +32,20 @@ func (f *fakeSender) SendReleaseNotification(
 	return f.err
 }
 
-// fakeDedupStore tracks reserved keys in a map so repeated keys behave like the
-// real INSERT ... ON CONFLICT DO NOTHING ledger: the first reserve of a key wins
-// and later ones report already-reserved.
+// fakeDedupStore mirrors the real upsert ledger: a dedup key can be reserved
+// but unconfirmed (a prior send failed, so redelivery may retry it) or
+// confirmed (a real duplicate, never re-reserved).
 type fakeDedupStore struct {
-	reserved map[string]bool
-	err      error
-	calls    int
-	lastKind string
-	lastKey  string
+	confirmed  map[string]bool
+	err        error
+	confirmErr error
+	calls      int
+	lastKind   string
+	lastKey    string
 }
 
 func newFakeDedupStore() *fakeDedupStore {
-	return &fakeDedupStore{reserved: make(map[string]bool)}
+	return &fakeDedupStore{confirmed: make(map[string]bool)}
 }
 
 func (f *fakeDedupStore) Reserve(_ context.Context, kind, dedupKey string) (bool, error) {
@@ -54,11 +55,18 @@ func (f *fakeDedupStore) Reserve(_ context.Context, kind, dedupKey string) (bool
 	if f.err != nil {
 		return false, f.err
 	}
-	if f.reserved[dedupKey] {
+	if f.confirmed[dedupKey] {
 		return false, nil
 	}
-	f.reserved[dedupKey] = true
 	return true, nil
+}
+
+func (f *fakeDedupStore) Confirm(_ context.Context, dedupKey string) error {
+	if f.confirmErr != nil {
+		return f.confirmErr
+	}
+	f.confirmed[dedupKey] = true
+	return nil
 }
 
 func sha256Hex(s string) string {
@@ -90,7 +98,7 @@ func TestService_SendConfirmation_DedupConflictSkipsSend(t *testing.T) {
 	t.Parallel()
 	sender := &fakeSender{}
 	dedup := newFakeDedupStore()
-	dedup.reserved[sha256Hex("confirm:"+testConfirmURL)] = true // already delivered earlier
+	dedup.confirmed[sha256Hex("confirm:"+testConfirmURL)] = true // already delivered earlier
 	svc, err := NewService(sender, dedup, logger.Nop())
 	require.NoError(t, err)
 
@@ -144,10 +152,9 @@ func TestService_SendErrorIsReturnedAfterReservation(t *testing.T) {
 	assert.Equal(t, 1, sender.releaseCalls)
 }
 
-// ADR-0015 failure window: Reserve succeeds, the send fails, and a later retry
-// finds the key already reserved -> it returns delivered=false WITHOUT calling
-// SMTP again. Guards against a refactor silently re-sending after a failure.
-func TestService_FailedSendIsNotResentOnRetry(t *testing.T) {
+// The ledger row stays unconfirmed until send() succeeds, so a redelivery
+// after a failed send retries SMTP instead of silently dropping the email.
+func TestService_FailedSendIsRetriedOnRedelivery(t *testing.T) {
 	t.Parallel()
 	sender := &fakeSender{err: errors.New("smtp down")}
 	dedup := newFakeDedupStore()
@@ -161,11 +168,52 @@ func TestService_FailedSendIsNotResentOnRetry(t *testing.T) {
 	assert.False(t, delivered)
 	require.Equal(t, 1, sender.releaseCalls)
 
+	sender.err = nil // the transient failure clears before the broker redelivers
 	delivered, err = svc.SendReleaseNotification(context.Background(), "alice@example.com", "golang/go", rel)
 	require.NoError(t, err)
-	assert.False(t, delivered)
-	assert.Equal(t, 1, sender.releaseCalls, "SMTP must not be retried once the row is reserved")
+	assert.True(t, delivered)
+	assert.Equal(t, 2, sender.releaseCalls, "an unconfirmed reservation must let redelivery retry SMTP")
 	assert.Equal(t, 2, dedup.calls, "the retry still consults the ledger")
+}
+
+// Once a send is confirmed, a later redelivery of the same command is a true
+// duplicate and must not reach SMTP again.
+func TestService_ConfirmedSendIsNotResentOnRedelivery(t *testing.T) {
+	t.Parallel()
+	sender := &fakeSender{}
+	dedup := newFakeDedupStore()
+	svc, err := NewService(sender, dedup, logger.Nop())
+	require.NoError(t, err)
+
+	rel := &ReleaseInfo{TagName: "v1.22.0"}
+
+	delivered, err := svc.SendReleaseNotification(context.Background(), "alice@example.com", "golang/go", rel)
+	require.NoError(t, err)
+	require.True(t, delivered)
+	require.Equal(t, 1, sender.releaseCalls)
+
+	delivered, err = svc.SendReleaseNotification(context.Background(), "alice@example.com", "golang/go", rel)
+	require.NoError(t, err)
+	assert.False(t, delivered, "a confirmed send is a true duplicate")
+	assert.Equal(t, 1, sender.releaseCalls, "SMTP must not be retried once the send is confirmed")
+}
+
+// A failure to write the confirmation must not be reported as a send failure:
+// the email already went out, so the caller should still see delivered=true.
+func TestService_ConfirmErrorStillReportsDelivered(t *testing.T) {
+	t.Parallel()
+	sender := &fakeSender{}
+	dedup := newFakeDedupStore()
+	dedup.confirmErr = errors.New("db down")
+	svc, err := NewService(sender, dedup, logger.Nop())
+	require.NoError(t, err)
+
+	delivered, err := svc.SendReleaseNotification(
+		context.Background(), "alice@example.com", "golang/go", &ReleaseInfo{TagName: "v1.22.0"},
+	)
+
+	require.NoError(t, err)
+	assert.True(t, delivered)
 }
 
 func TestService_ReserveErrorSkipsSend(t *testing.T) {
