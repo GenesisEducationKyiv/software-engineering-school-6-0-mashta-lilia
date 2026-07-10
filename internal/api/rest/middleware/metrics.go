@@ -41,7 +41,9 @@ const unmatchedRoute = "unmatched_route"
 
 func Metrics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/metrics" {
+		// Skip infra endpoints: Prometheus scrapes /metrics and the healthcheck
+		// hits /health on a fixed interval, which would inflate http_requests_total.
+		if r.URL.Path == "/metrics" || r.URL.Path == "/health" {
 			next.ServeHTTP(w, r)
 			return
 		}
