@@ -9,8 +9,6 @@ import (
 	"github-release-notifier/internal/repository"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 const notifyWorkers = 8
@@ -117,13 +115,7 @@ func (p *Poller) scan(parentCtx context.Context) {
 	}
 	defer p.scanLock.Unlock()
 
-	start := time.Now()
-	defer func() {
-		scanDurationSeconds.Observe(time.Since(start).Seconds())
-		scanCyclesTotal.Inc()
-	}()
-
-	ctx := tracectx.WithTraceID(parentCtx, uuid.NewString())
+	ctx := tracectx.WithTraceID(parentCtx, tracectx.NewID())
 
 	repos, err := p.repos.GetAll(ctx)
 	if err != nil {
@@ -156,7 +148,6 @@ func (p *Poller) scanRepository(ctx context.Context, repo repository.Repository)
 	}
 
 	p.log.Info(ctx, "new_release_detected", "tag", rel.TagName, "repo", repo.FullName())
-	releasesDetectedTotal.Inc()
 
 	if err := p.repos.UpdateLastSeen(ctx, repo.ID, rel.TagName); err != nil {
 		p.log.Error(ctx, "poller_update_last_seen_failed", "repo", repo.FullName(), "err", err)

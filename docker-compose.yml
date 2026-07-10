@@ -6,13 +6,13 @@ services:
     env_file:
       - .env
     environment:
-      NOTIFIER_ADDR: notifier:50051
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      notifier:
+      rabbitmq:
         condition: service_healthy
     restart: unless-stopped
     networks:
@@ -51,12 +51,15 @@ services:
       SMTP_USER: ""
       SMTP_PASSWORD: ""
       SMTP_FROM: "noreply@example.com"
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       LOG_LEVEL: "info"
       SERVICE_NAME: github-release-notifier-notification
     depends_on:
       postgres-notifier:
         condition: service_healthy
       mailpit:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     restart: unless-stopped
     networks:
@@ -174,6 +177,31 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
     environment:
@@ -235,7 +263,6 @@ services:
     command: ["--strict.perms=false"]
     volumes:
       - ./deploy/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
-      - ./deploy/filebeat/ilm-policy.json:/usr/share/filebeat/ilm-policy.json:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
@@ -262,7 +289,6 @@ services:
       - "127.0.0.1:9090:9090"
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     depends_on:
       app:
@@ -301,32 +327,13 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  alertmanager:
-    image: prom/alertmanager:v0.27.0
-    command:
-      - --config.file=/etc/alertmanager/alertmanager.yml
-    ports:
-      - "127.0.0.1:9093:9093"
-    volumes:
-      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-    networks:
-      - observability
-    deploy:
-      resources:
-        limits:
-          memory: 128m
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
 networks:
   observability:
 
 volumes:
   pgdata:
   pgdata_notifier:
+  rabbitmq_data:
   esdata:
   prometheus_data:
   grafana_data:

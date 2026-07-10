@@ -10,11 +10,15 @@ import (
 	"github-release-notifier/internal/client/github"
 	notificationclient "github-release-notifier/internal/client/notification"
 	"github-release-notifier/internal/config"
+	"github-release-notifier/internal/messaging"
+	"github-release-notifier/internal/notifyevent"
 	"github-release-notifier/internal/platform/health"
 	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/platform/token"
 	"github-release-notifier/internal/release"
 	"github-release-notifier/internal/repository"
+	"github-release-notifier/internal/saga"
+	"github-release-notifier/internal/sagaevent"
 	"github-release-notifier/internal/subscription"
 	"net/http"
 	"time"
@@ -32,6 +36,7 @@ const (
 type dependencies struct {
 	router           http.Handler
 	poller           *release.Poller
+	orchestrator     *saga.Orchestrator
 	subscribeLimiter *middleware.RateLimiter
 	closers          []func() error
 }
@@ -70,17 +75,26 @@ func buildDependencies(
 	base := github.NewClient(cfg.GitHubToken)
 	ghClient := selectGitHubClient(ctx, base, rdb, cfg.RedisCacheTTL, log)
 
-	notifierConn, notifier, err := notificationclient.Dial(
-		cfg.NotifierAddr, log.With("component", "notification_client"),
-	)
+	notifier, notifierClose, err := buildNotificationPublisher(cfg, log)
 	if err != nil {
-		return nil, fmt.Errorf("creating notification client: %w", err)
+		return nil, fmt.Errorf("creating notification publisher: %w", err)
 	}
-	closers = append(closers, notifierConn.Close)
+	closers = append(closers, notifierClose)
+
+	orchestrator, sagaClose, err := buildSagaOrchestrator(cfg, db, subRepo, log)
+	if err != nil {
+		return nil, fmt.Errorf("creating saga orchestrator: %w", err)
+	}
+	closers = append(closers, sagaClose)
 
 	tokenGen := token.New()
 	confirmLinks := subscription.NewConfirmLinkBuilder(cfg.BaseURL)
-	subService := subscription.NewService(subRepo, repoStore, ghClient, notifier, tokenGen, confirmLinks)
+	subService, err := subscription.NewService(
+		subRepo, repoStore, ghClient, orchestrator, tokenGen, confirmLinks,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating subscription service: %w", err)
+	}
 
 	poller, err := release.NewPoller(
 		repoStore, subRepo, ghClient, notifier, cfg.ScanInterval, log.With("component", "poller"),
@@ -99,9 +113,66 @@ func buildDependencies(
 	return &dependencies{
 		router:           router,
 		poller:           poller,
+		orchestrator:     orchestrator,
 		subscribeLimiter: subscribeLimiter,
 		closers:          closers,
 	}, nil
+}
+
+// buildSagaOrchestrator wires the saga command publisher, store, and compensation
+// adapter into the orchestrator, returning a closer for the broker connection.
+func buildSagaOrchestrator(
+	cfg *config.Config, db *sql.DB, subRepo *subscription.Repo, log *logger.Logger,
+) (*saga.Orchestrator, func() error, error) {
+	commandPublisher, err := messaging.NewPublisher(
+		cfg.RabbitMQURL,
+		messaging.Topology{
+			Exchange:    sagaevent.Exchange,
+			Queue:       sagaevent.CommandsQueue,
+			RoutingKeys: sagaevent.CommandRoutingKeys(),
+		},
+		log.With("component", "saga_command_broker"),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	orchestrator, err := saga.NewOrchestrator(
+		saga.NewStore(db),
+		commandPublisher,
+		subscription.NewSagaCanceller(subRepo),
+		cfg.SagaTimeout,
+		log.With("component", "saga_orchestrator"),
+	)
+	if err != nil {
+		return nil, nil, errors.Join(err, commandPublisher.Close())
+	}
+	return orchestrator, commandPublisher.Close, nil
+}
+
+// buildNotificationPublisher wires the AMQP transport to the domain publisher and
+// returns a closer for the underlying broker connection.
+func buildNotificationPublisher(
+	cfg *config.Config, log *logger.Logger,
+) (*notificationclient.Publisher, func() error, error) {
+	amqpPublisher, err := messaging.NewPublisher(
+		cfg.RabbitMQURL,
+		messaging.Topology{
+			Exchange:    notifyevent.Exchange,
+			Queue:       notifyevent.Queue,
+			RoutingKeys: notifyevent.RoutingKeys(),
+		},
+		log.With("component", "notification_broker"),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	publisher, err := notificationclient.NewPublisher(
+		amqpPublisher, log.With("component", "notification_publisher"),
+	)
+	if err != nil {
+		return nil, nil, errors.Join(err, amqpPublisher.Close())
+	}
+	return publisher, amqpPublisher.Close, nil
 }
 
 func (d *dependencies) Close() error {

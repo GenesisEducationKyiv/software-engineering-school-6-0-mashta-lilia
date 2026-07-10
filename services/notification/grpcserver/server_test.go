@@ -41,10 +41,17 @@ func (f *fakeService) SendReleaseNotification(
 	return f.delivered, f.err
 }
 
+func mustNewServer(t *testing.T, svc *fakeService) *Server {
+	t.Helper()
+	srv, err := New(svc, logger.Nop())
+	require.NoError(t, err)
+	return srv
+}
+
 func TestServer_SendReleaseNotification_MapsPopulatedRelease(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{delivered: true}
-	srv := New(svc, logger.Nop())
+	srv := mustNewServer(t, svc)
 
 	resp, err := srv.SendReleaseNotification(
 		context.Background(),
@@ -74,7 +81,7 @@ func TestServer_SendReleaseNotification_MapsPopulatedRelease(t *testing.T) {
 func TestServer_SendConfirmation_MapsFields(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{delivered: true}
-	srv := New(svc, logger.Nop())
+	srv := mustNewServer(t, svc)
 
 	resp, err := srv.SendConfirmation(context.Background(), &notificationv1.SendConfirmationRequest{
 		Email:      "alice@example.com",
@@ -102,7 +109,7 @@ func TestServer_SendConfirmation_RejectsMissingFields(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			svc := &fakeService{delivered: true}
-			srv := New(svc, logger.Nop())
+			srv := mustNewServer(t, svc)
 
 			resp, err := srv.SendConfirmation(context.Background(), req)
 
@@ -125,7 +132,7 @@ func TestServer_SendReleaseNotification_RejectsMissingFields(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			svc := &fakeService{delivered: true}
-			srv := New(svc, logger.Nop())
+			srv := mustNewServer(t, svc)
 
 			resp, err := srv.SendReleaseNotification(context.Background(), req)
 
@@ -140,7 +147,7 @@ func TestServer_SendReleaseNotification_RejectsMissingFields(t *testing.T) {
 func TestServer_SendReleaseNotification_NilReleaseAllowed(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{delivered: true}
-	srv := New(svc, logger.Nop())
+	srv := mustNewServer(t, svc)
 
 	resp, err := srv.SendReleaseNotification(
 		context.Background(),
@@ -152,10 +159,12 @@ func TestServer_SendReleaseNotification_NilReleaseAllowed(t *testing.T) {
 	assert.Nil(t, svc.release)
 }
 
-func TestServer_ServiceErrorMapsToInternal(t *testing.T) {
+// A send failure is Unavailable, not Internal: it's a retryable SMTP/broker
+// blip today, not proof of a permanent server-side fault.
+func TestServer_SendConfirmation_ServiceErrorMapsToUnavailable(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{err: errors.New("smtp down")}
-	srv := New(svc, logger.Nop())
+	srv := mustNewServer(t, svc)
 
 	resp, err := srv.SendConfirmation(context.Background(), &notificationv1.SendConfirmationRequest{
 		Email: "a@b.c", ConfirmUrl: testConfirmURL, Repo: "golang/go",
@@ -163,5 +172,76 @@ func TestServer_ServiceErrorMapsToInternal(t *testing.T) {
 
 	assert.Nil(t, resp)
 	require.Error(t, err)
-	assert.Equal(t, codes.Internal, status.Code(err))
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+}
+
+func TestServer_SendReleaseNotification_ServiceErrorMapsToUnavailable(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{err: errors.New("smtp down")}
+	srv := mustNewServer(t, svc)
+
+	resp, err := srv.SendReleaseNotification(context.Background(), &notificationv1.SendReleaseNotificationRequest{
+		Email: "a@b.c", Repo: "golang/go",
+	})
+
+	assert.Nil(t, resp)
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+}
+
+func TestServer_VerifyEmail_MapsFields(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{delivered: true}
+	srv := mustNewServer(t, svc)
+
+	resp, err := srv.VerifyEmail(context.Background(), &notificationv1.VerifyEmailRequest{
+		Email:      "alice@example.com",
+		ConfirmUrl: testConfirmURL,
+		Repo:       "golang/go",
+	})
+
+	require.NoError(t, err)
+	assert.True(t, resp.GetDelivered())
+	require.NotNil(t, svc.confirmation)
+	assert.Equal(t, "alice@example.com", svc.confirmation.Email)
+	assert.Equal(t, testConfirmURL, svc.confirmation.ConfirmURL)
+	assert.Equal(t, "golang/go", svc.confirmation.Repo)
+}
+
+func TestServer_VerifyEmail_RejectsMissingFields(t *testing.T) {
+	t.Parallel()
+	cases := map[string]*notificationv1.VerifyEmailRequest{
+		"nil request":         nil,
+		"missing email":       {ConfirmUrl: testConfirmURL, Repo: "golang/go"},
+		"missing confirm_url": {Email: "a@b.c", Repo: "golang/go"},
+		"missing repo":        {Email: "a@b.c", ConfirmUrl: testConfirmURL},
+	}
+	for name, req := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			svc := &fakeService{delivered: true}
+			srv := mustNewServer(t, svc)
+
+			resp, err := srv.VerifyEmail(context.Background(), req)
+
+			assert.Nil(t, resp)
+			require.Error(t, err)
+			assert.Equal(t, codes.InvalidArgument, status.Code(err))
+			assert.Zero(t, svc.calls, "service must not be called for invalid input")
+		})
+	}
+}
+
+func TestServer_VerifyEmail_ServiceErrorMapsToUnavailable(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{err: errors.New("smtp down")}
+	srv := mustNewServer(t, svc)
+
+	resp, err := srv.VerifyEmail(context.Background(), &notificationv1.VerifyEmailRequest{
+		Email: "a@b.c", ConfirmUrl: testConfirmURL, Repo: "golang/go",
+	})
+
+	assert.Nil(t, resp)
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
 }

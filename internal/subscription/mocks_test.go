@@ -3,89 +3,77 @@ package subscription
 
 import (
 	"context"
+	"github-release-notifier/internal/saga"
+
+	"github.com/stretchr/testify/mock"
 )
 
 type mockSubscriptionRepo struct {
-	CreateFn           func(ctx context.Context, sub *Subscription) error
-	GetByTokenFn       func(ctx context.Context, token string) (*Subscription, error)
-	GetActiveByEmailFn func(ctx context.Context, email string) ([]Subscription, error)
-	UpdateStatusFn     func(ctx context.Context, id int64, status Status) error
-	ExistsFn           func(ctx context.Context, email, owner, name string) (bool, error)
+	mock.Mock
 }
 
 func (m *mockSubscriptionRepo) Create(ctx context.Context, sub *Subscription) error {
-	if m.CreateFn == nil {
-		panic("mockSubscriptionRepo.Create called but not configured")
-	}
-	return m.CreateFn(ctx, sub)
+	return m.Called(ctx, sub).Error(0)
 }
 
 func (m *mockSubscriptionRepo) GetByToken(ctx context.Context, token string) (*Subscription, error) {
-	if m.GetByTokenFn == nil {
-		panic("mockSubscriptionRepo.GetByToken called but not configured")
-	}
-	return m.GetByTokenFn(ctx, token)
+	args := m.Called(ctx, token)
+	sub, _ := args.Get(0).(*Subscription)
+	return sub, args.Error(1)
 }
 
 func (m *mockSubscriptionRepo) GetActiveByEmail(ctx context.Context, email string) ([]Subscription, error) {
-	if m.GetActiveByEmailFn == nil {
-		panic("mockSubscriptionRepo.GetActiveByEmail called but not configured")
-	}
-	return m.GetActiveByEmailFn(ctx, email)
+	args := m.Called(ctx, email)
+	subs, _ := args.Get(0).([]Subscription)
+	return subs, args.Error(1)
+}
+
+func (m *mockSubscriptionRepo) GetByEmailAndRepo(
+	ctx context.Context, email, owner, name string,
+) (*Subscription, error) {
+	args := m.Called(ctx, email, owner, name)
+	sub, _ := args.Get(0).(*Subscription)
+	return sub, args.Error(1)
 }
 
 func (m *mockSubscriptionRepo) UpdateStatus(ctx context.Context, id int64, status Status) error {
-	if m.UpdateStatusFn == nil {
-		panic("mockSubscriptionRepo.UpdateStatus called but not configured")
-	}
-	return m.UpdateStatusFn(ctx, id, status)
+	return m.Called(ctx, id, status).Error(0)
 }
 
-func (m *mockSubscriptionRepo) Exists(ctx context.Context, email, owner, name string) (bool, error) {
-	if m.ExistsFn == nil {
-		panic("mockSubscriptionRepo.Exists called but not configured")
-	}
-	return m.ExistsFn(ctx, email, owner, name)
+func (m *mockSubscriptionRepo) UpdateToken(ctx context.Context, id int64, token string) error {
+	return m.Called(ctx, id, token).Error(0)
 }
 
 type mockRepoUpserter struct {
-	UpsertFn func(ctx context.Context, owner, name string) error
+	mock.Mock
 }
 
 func (m *mockRepoUpserter) Upsert(ctx context.Context, owner, name string) error {
-	if m.UpsertFn == nil {
-		panic("mockRepoUpserter.Upsert called but not configured")
-	}
-	return m.UpsertFn(ctx, owner, name)
+	return m.Called(ctx, owner, name).Error(0)
 }
 
 type mockGitHubChecker struct {
-	RepoExistsFn func(ctx context.Context, owner, name string) (bool, error)
+	mock.Mock
 }
 
 func (m *mockGitHubChecker) RepoExists(ctx context.Context, owner, name string) (bool, error) {
-	if m.RepoExistsFn == nil {
-		panic("mockGitHubChecker.RepoExists called but not configured")
-	}
-	return m.RepoExistsFn(ctx, owner, name)
+	args := m.Called(ctx, owner, name)
+	return args.Bool(0), args.Error(1)
 }
 
-type mockConfirmationSender struct {
-	SendConfirmationFn func(ctx context.Context, email, confirmURL, repo string) error
+type mockSubscriptionSaga struct {
+	mock.Mock
 }
 
-func (m *mockConfirmationSender) SendConfirmation(ctx context.Context, email, confirmURL, repo string) error {
-	if m.SendConfirmationFn == nil {
-		panic("mockConfirmationSender.SendConfirmation called but not configured")
-	}
-	return m.SendConfirmationFn(ctx, email, confirmURL, repo)
+func (m *mockSubscriptionSaga) StartAndWait(ctx context.Context, data saga.SubscriptionData) error {
+	return m.Called(ctx, data).Error(0)
 }
 
-type fixedTokenGenerator struct {
-	Token string
-	Err   error
+type mockTokenGenerator struct {
+	mock.Mock
 }
 
-func (g fixedTokenGenerator) Generate() (string, error) {
-	return g.Token, g.Err
+func (m *mockTokenGenerator) Generate() (string, error) {
+	args := m.Called()
+	return args.String(0), args.Error(1)
 }

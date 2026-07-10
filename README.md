@@ -6,6 +6,7 @@ Built with Go, PostgreSQL, Redis, Chi, and SMTP.
 
 ## Bonus Points Achieved
 
+- **Message Broker (RabbitMQ)** -- Notification commands are published to a durable RabbitMQ exchange and consumed asynchronously by the notification service, decoupling the monolith from the notifier's availability. The consumer's decode/dispatch logic is unit-tested (ack/drop/requeue policy, validation, trace propagation). See [Message Broker](#message-broker-rabbitmq).
 - **Redis Caching** -- GitHub API responses are cached using a cache-aside (decorator) pattern with a 10-minute TTL. If Redis is unavailable, the system gracefully degrades to direct API calls with zero downtime.
 - **Integration Tests** -- 12 database integration tests run against a real PostgreSQL instance via `testcontainers-go`, verifying migrations, partial unique indexes, FK constraints, cascade deletes, and database triggers.
 - **Prometheus Metrics** -- `/metrics` endpoint exposes `http_requests_total` (counter by method/path/status), `http_request_duration_seconds` (histogram), and `http_requests_in_flight` (gauge). Uses Chi route patterns to avoid high-cardinality labels from dynamic path segments like tokens.
@@ -22,7 +23,7 @@ cp .env.example .env
 # Edit .env: set GITHUB_TOKEN and API_KEY (SMTP credentials belong to the
 # notification service; docker-compose points it at the bundled mailpit)
 
-# 2. Start everything (Postgres x2 + Redis + mailpit + notifier + app)
+# 2. Start everything (Postgres x2 + Redis + RabbitMQ + mailpit + notifier + app)
 docker compose up --build
 ```
 
@@ -51,16 +52,20 @@ internal/
   platform/postgres/                -- *sql.DB factory + golang-migrate runner
   platform/token/                   -- token.Generator (crypto/rand → hex)
   client/github/                    -- GitHub REST API client + Redis cache decorator
-  client/notification/              -- gRPC client adapter for the notification service
+  client/notification/              -- notification command publisher (RabbitMQ) + gRPC client
+  messaging/                        -- reconnecting RabbitMQ publisher + consumer (transport-agnostic)
+  notifyevent/                      -- broker wire contract (envelope + commands) shared by both sides
   gen/notification/v1/              -- generated protobuf/gRPC stubs (buf)
   api/rest/                         -- chi router
     subscription/                   -- subscribe/confirm/unsubscribe/list handlers
     health/                         -- /health handler
     middleware/                     -- API-key auth, per-IP rate limiting, metrics
-services/notification/              -- Notification microservice (gRPC, own Postgres)
+services/notification/              -- Notification microservice (RabbitMQ consumer + gRPC, own Postgres)
   (package notification)            -- domain: value types + application service + ports
-  app/                              -- composition root (lifecycle, DB, gRPC bootstrap)
-  grpcserver/                       -- gRPC transport mapping
+  app/                              -- composition root (lifecycle, DB, consumer + gRPC bootstrap)
+  consumer/                         -- broker consumer: decode envelope + dispatch to service
+  grpcserver/                       -- gRPC transport mapping (incl. VerifyEmail)
+  resthttp/                         -- REST verify-email endpoint (HW10, kept alongside gRPC)
   smtp/, store/                     -- SMTP mailer + sent_notifications ledger
   main/                             -- notifier entrypoint
 proto/notification/v1/              -- gRPC contract between monolith and notifier
@@ -81,7 +86,7 @@ User                    API                     Service                  DB     
  |                       |-- Subscribe() ------> |                       |                    |
  |                       |                       |-- normalizeEmail() -->|                    |
  |                       |                       |-- RepoExists() ---->(GitHub API)          |
- |                       |                       |-- Exists() --------> |                    |
+ |                       |                       |-- GetByEmailAndRepo->|                    |
  |                       |                       |-- Upsert(repo) ----> | (FK target first)  |
  |                       |                       |-- Create(sub) -----> | (status=pending)   |
  |                       |                       |-- SendConfirmation ->|                    |--> email
@@ -92,11 +97,77 @@ User                    API                     Service                  DB     
  |<-- 200 OK ----------- |                       |                       |                    |
 ```
 
-> **Notifier boundary:** `SendConfirmation` is a gRPC call to the notification microservice (`internal/client/notification`), which owns SMTP delivery and its own dedup ledger. The monolith no longer sends email directly (see [ADR 0014](docs/adr/0014-extract-notification-microservice.md)).
+> **Notifier boundary:** `SendConfirmation` **publishes a command to RabbitMQ** instead of blocking on the notifier. The notification microservice consumes it asynchronously and owns SMTP delivery plus its own dedup ledger. The monolith no longer sends email directly (see [ADR 0014](docs/adr/0014-extract-notification-microservice.md)) and is now decoupled from the notifier's availability (see [Message Broker](#message-broker-rabbitmq) below).
 
 **Why upsert the tracked repo before creating the subscription?** The `subscriptions` table has a foreign key to `tracked_repositories(owner, name)`. If we create the subscription first, the FK constraint will reject it. The upsert guarantees the FK target exists without creating duplicates (`ON CONFLICT DO NOTHING`).
 
-**Why rollback on email failure?** The database has a partial unique index `WHERE status != 'unsubscribed'` that prevents duplicate active/pending subscriptions for the same email+repo. If the confirmation email fails, the subscription remains in `pending` status, and the user gets a permanent `409 Conflict` on retry. The compensation rollback sets the status to `unsubscribed`, freeing the index slot so the user can try again.
+**Why rollback / refresh on a stuck `pending`?** The database has a partial unique index `WHERE status != 'unsubscribed'` that prevents duplicate active/pending subscriptions for the same email+repo, so a stranded `pending` row would otherwise give the user a permanent `409 Conflict` on retry. Two mechanisms keep re-subscription open: (1) if the **publish** to RabbitMQ fails, the monolith rolls the row back to `unsubscribed`, freeing the index slot; (2) because an async SMTP failure on the consumer side is invisible to the monolith (no rollback fires), re-subscribing over an existing `pending` row **refreshes its token and resends** the confirmation in place rather than returning `409`. An `active` subscription still returns `ErrAlreadyExists`.
+
+### Message Broker (RabbitMQ)
+
+Both notification paths — subscription confirmations and new-release alerts — are **commands published to RabbitMQ** by the monolith and **consumed asynchronously** by the notification service. This decouples the producer from the consumer: the monolith returns to the user without waiting on SMTP, and a notifier restart never drops work because the queue is durable.
+
+```
+Monolith (publisher)                 RabbitMQ                  Notification service (consumer)
+ |                                       |                                  |
+ |-- publish {type, trace_id, payload} ->| exchange "notifications"         |
+ |        routing key = type             |   (direct, durable)              |
+ |                                       |-- routed to queue -------------->| "notifications.email" (durable)
+ |                                       |                                  |-- decode envelope by type
+ |                                       |                                  |-- dedup ledger + SMTP send
+ |                                       |<------------- ack / nack --------|
+```
+
+- **Contract** (`internal/notifyevent`): a JSON `Envelope{ type, trace_id, payload }` carries one `ConfirmationCommand` or `ReleaseCommand`. The shared package keeps publisher and consumer from drifting, and `trace_id` propagates the request trace across the async hop.
+- **Topology**: one durable `direct` exchange `notifications`; one durable queue `notifications.email` bound by the command type used as the routing key. Both sides declare it idempotently, so no command is lost while the consumer is still starting.
+- **Delivery semantics** (`internal/messaging`): persistent messages, manual ack, prefetch 16. The consumer **acks** on success, **drops** (nack, no requeue) permanently bad input — malformed JSON, unknown type, missing fields — so it cannot poison-loop, and **requeues** (nack, requeue) on transient send failures so they are retried. Both the publisher and consumer reconnect automatically when the broker blips.
+- **gRPC retained**: the notifier still serves its gRPC endpoint (health surface + in-process integration tests). The broker is the production path; see the consumer logic in `services/notification/consumer`.
+
+### Subscribe Saga (Orchestrated)
+
+`POST /subscribe` runs as an **orchestrated saga** — a distributed transaction across the monolith (the subscription row) and the notification service (the confirmation email), with compensation:
+
+```
+Subscriber   Monolith (orchestrator)        RabbitMQ          Notifier (participant)
+   | POST /subscribe   |                        |                        |
+   |------------------>|-- reserve pending row  |                        |
+   |                   |-- persist saga --------|                        |
+   |                   |-- SendConfirmation --->| saga.commands -------->|-- dedup + SMTP
+   |                   |                        |<-- confirmation_sent --|
+   |                   |<- saga.replies --------|                        |
+   |<--- 200 / 503 ----|  (confirmation_failed or timeout -> cancel the subscription)
+```
+
+- **Orchestrator** (`internal/saga`): persists each saga in `saga_instances`, blocks the request for the outcome via an in-memory waiter the durable reply consumer signals, and returns the real `200`/`503` — not a fire-and-forget `202`.
+- **Compensation**: a `confirmation_failed` reply (or a timeout) cancels the subscription, freeing the partial-unique-index slot. A `time.Ticker` **reaper** compensates sagas whose reply never arrives, so a notifier crash cannot strand a subscription.
+- **Idempotency**: state transitions are single-winner conditional `UPDATE`s, the participant is deduped by the confirm-URL ledger, and duplicate replies are no-ops.
+
+### REST → gRPC Migration (verify-email)
+
+HW10 migrates one **synchronous inter-service call** from REST to gRPC, keeping the REST implementation alongside for comparison.
+
+```
+Monolith (Verifier)                         Notification service
+  |  transport = grpc (default) | rest      |
+  |--- VerifyEmail(email, confirm_url, repo) over chosen transport -->|
+  |                                          |-- same SendConfirmation service logic
+  |<------------------ delivered ------------|   (dedup ledger + SMTP)
+```
+
+- **Contract** (`proto/notification/v1`): a new Unary RPC `VerifyEmail(VerifyEmailRequest) → VerifyEmailResponse`. A *new* RPC (not a reuse of `SendConfirmation`) keeps the before/after migration story explicit. `buf lint` guards the contract; `buf generate` (`make proto`) regenerates the stubs.
+- **gRPC status codes** (`services/notification/grpcserver`): missing `email`/`confirm_url`/`repo` → `InvalidArgument`; a downstream send failure → `Internal`; success → `delivered`. The REST handler mirrors this as `400` / `500` / `200`.
+- **REST kept alongside** (`services/notification/resthttp`): `POST /api/v1/verify-email` serves the same JSON contract on `REST_ADDR` (default `:8081`), so both transports run against identical service logic.
+- **Swappable client** (`internal/client/notification`): both the gRPC `Client` and the `RESTClient` satisfy one `Verifier` interface; `NewVerifier(transport, target, log)` selects `grpc` (default) or `rest`.
+
+**Benchmark** (`make bench` — in-process server, no-op sender, so the delta is pure transport cost; 13th-gen i7, 16 logical CPUs):
+
+| Scenario | gRPC | REST | Winner |
+| --- | --- | --- | --- |
+| **Sequential latency** (1 caller) | ~392 µs/op (~2.5k req/s) | ~95 µs/op (~10.5k req/s) | **REST ~4×** |
+| **Parallel throughput** (16 cores) | ~31 µs/op (~32k req/s) | ~71 µs/op (~14k req/s) | **gRPC ~2.3×** |
+| **Allocations under load** | 10.5 KB/op | 32 KB/op | **gRPC ~3× less** |
+
+The honest takeaway: for a **single small synchronous call on loopback, REST/JSON has lower latency** — gRPC's HTTP/2 framing and flow-control overhead per call has nothing to amortize against. gRPC's structural advantages appear **under concurrency**: it multiplexes all RPCs over one HTTP/2 connection and pulls ~2.3× ahead on throughput with ~3× less memory churn, while HTTP/1.1 is bottlenecked by one in-flight request per connection. gRPC also wins on the qualities a benchmark can't show — a typed, versioned `.proto` contract, code generation, and first-class streaming — which is why it is the default transport here. The reaper- and broker-based production path is unchanged; this migration covers the one synchronous request/response hop.
 
 ### Background Poller Logic
 
@@ -229,7 +300,7 @@ curl http://localhost:8080/api/subscriptions?email=user@example.com \
 | `400` | Invalid email, invalid repo format, or malformed JSON |
 | `401` | Missing or invalid API key (subscriptions endpoint only) |
 | `404` | Repository not found on GitHub, or invalid confirmation/unsubscribe token |
-| `409` | Subscription already exists for this email+repo |
+| `409` | An **active** subscription already exists for this email+repo (a still-`pending` one is refreshed and the confirmation resent) |
 | `429` | Rate limit exceeded (includes `Retry-After` header) |
 | `503` | SMTP server unavailable (subscription was rolled back, safe to retry) |
 | `500` | Internal server error |
@@ -290,8 +361,9 @@ cp .env.example .env
 | `DB_NAME` | `release_notifier` | Database name |
 | `DB_SSLMODE` | `require` | PostgreSQL SSL mode (`disable` in local Docker Compose) |
 | `GITHUB_TOKEN` | -- | GitHub personal access token (optional, increases rate limit) |
-| `NOTIFIER_ADDR` | `localhost:50051` | Notification service gRPC address (`notifier:50051` in Docker Compose) |
+| `RABBITMQ_URL` | `amqp://localhost:5672/` | Message broker the monolith publishes notification commands to (`amqp://guest:guest@rabbitmq:5672/` in Docker Compose) |
 | `SCAN_INTERVAL` | `5m` | How often to check for new releases |
+| `SAGA_TIMEOUT` | `30s` | How long the subscribe saga waits for the confirmation outcome before the reaper compensates |
 | `API_KEY` | -- | API key for the `GET /api/subscriptions` endpoint |
 | `REDIS_ADDR` | `localhost:6379` | Redis address (`redis:6379` in Docker Compose) |
 | `REDIS_PASSWORD` | -- | Redis password |
@@ -304,13 +376,16 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GRPC_ADDR` | `:50051` | gRPC listen address |
+| `GRPC_ADDR` | `:50051` | gRPC listen address (health surface + integration tests; serves `VerifyEmail`) |
+| `REST_ADDR` | `:8081` | REST listen address for `POST /api/v1/verify-email` (HW10 transport kept alongside gRPC) |
+| `RABBITMQ_URL` | `amqp://localhost:5672/` | Message broker the notifier consumes notification commands from |
 | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` | `localhost` / `5432` / `postgres` / `postgres` | Notifier's own PostgreSQL (DB-per-service; `postgres-notifier` in Docker Compose) |
 | `DB_NAME` | `notification` | Notifier database name |
 | `SMTP_HOST` | `localhost` | SMTP server host (`mailpit` in Docker Compose) |
 | `SMTP_PORT` | `587` | SMTP server port |
 | `SMTP_USER` / `SMTP_PASSWORD` | -- | SMTP credentials |
 | `SMTP_FROM` | `noreply@example.com` | Sender email address |
+| `SMTP_TIMEOUT` | `30s` | Per-message SMTP delivery timeout (bounds the broker-consumer path, which has no request deadline) |
 
 ## Project Structure
 
@@ -325,7 +400,9 @@ cp .env.example .env
 │   │   └── middleware/          # API key auth, rate limiter, Prometheus metrics
 │   ├── client/
 │   │   ├── github/              # GitHub API client + Redis cache decorator
-│   │   └── notification/        # gRPC client adapter for the notifier
+│   │   └── notification/        # Notification command publisher (RabbitMQ) + gRPC client
+│   ├── messaging/               # Reconnecting RabbitMQ publisher + consumer (transport-agnostic)
+│   ├── notifyevent/             # Broker wire contract (envelope + commands), shared by both sides
 │   ├── gen/notification/v1/     # Generated protobuf/gRPC stubs (buf)
 │   ├── config/                  # Environment-based config
 │   ├── subscription/            # Subscription domain (Service + Repo + types + errors)
@@ -333,10 +410,12 @@ cp .env.example .env
 │   ├── repository/              # repository.Repository entity + Ref + Store (PG)
 │   ├── email/                   # email.Address value object
 │   └── platform/                # health.DBChecker, slog, postgres, token.Generator
-├── services/notification/       # Notification microservice (gRPC + own Postgres)
+├── services/notification/       # Notification microservice (RabbitMQ consumer + gRPC, own Postgres)
 │   ├── (package notification)   # Domain: value types + application service + ports
-│   ├── app/                     # Composition root (lifecycle, DB, gRPC bootstrap)
-│   ├── grpcserver/              # gRPC transport mapping
+│   ├── app/                     # Composition root (lifecycle, DB, consumer + gRPC bootstrap)
+│   ├── consumer/                # Broker consumer: decode envelope + dispatch to service
+│   ├── grpcserver/              # gRPC transport mapping (incl. VerifyEmail)
+│   ├── resthttp/                # REST verify-email endpoint (HW10, kept alongside gRPC)
 │   ├── smtp/                    # SMTP mailer + templates
 │   ├── store/                   # sent_notifications dedup ledger (PG)
 │   ├── migrations/              # Notifier schema (embedded, auto-applied on startup)
@@ -344,7 +423,7 @@ cp .env.example .env
 ├── proto/notification/v1/       # gRPC contract (buf generate)
 ├── tests/repository/            # Integration tests (testcontainers + real Postgres)
 ├── migrations/                  # SQL schema (auto-applied on startup)
-├── docker-compose.yml           # PostgreSQL 16 x2 + Redis 7 + mailpit + notifier + app
+├── docker-compose.yml           # PostgreSQL 16 x2 + Redis 7 + RabbitMQ + mailpit + notifier + app
 ├── Dockerfile                   # Multi-stage build (Alpine), monolith
 ├── Dockerfile.notifier          # Multi-stage build (Alpine), notification service
 ├── Makefile                     # build, proto, test, test-integration, lint, docker-up/down

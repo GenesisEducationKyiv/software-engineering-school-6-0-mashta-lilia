@@ -75,7 +75,7 @@ func TestTraceID_RejectsUnsafeRequestID(t *testing.T) {
 			req.Header.Set("X-Request-ID", header)
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
-			require.NotEmpty(t, got, "should fall back to generated UUID")
+			require.NotEmpty(t, got, "should fall back to a generated trace id")
 			assert.NotEqual(t, header, got, "unsafe request id must not be trusted")
 		})
 	}
@@ -103,7 +103,7 @@ func TestTraceID_RejectsMalformedTraceparent(t *testing.T) {
 			req.Header.Set("Traceparent", header)
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
-			require.NotEmpty(t, got, "should fall back to generated UUID, not bare value")
+			require.NotEmpty(t, got, "should fall back to a generated trace id, not bare value")
 			assert.NotEqual(t, header, got, "malformed traceparent must not be trusted")
 		})
 	}

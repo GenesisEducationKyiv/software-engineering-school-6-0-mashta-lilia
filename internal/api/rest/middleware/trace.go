@@ -4,8 +4,6 @@ import (
 	"github-release-notifier/internal/platform/tracectx"
 	"net/http"
 	"strings"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -29,7 +27,7 @@ func traceIDFromRequest(r *http.Request) string {
 	if requestID := strings.TrimSpace(r.Header.Get(headerRequestID)); isSafeRequestID(requestID) {
 		return requestID
 	}
-	return uuid.NewString()
+	return tracectx.NewID()
 }
 
 const maxRequestIDLength = 64
