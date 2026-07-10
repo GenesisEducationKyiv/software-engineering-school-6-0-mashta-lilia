@@ -1,11 +1,10 @@
 package config_test
 
 import (
+	"github-release-notifier/internal/config"
 	"strings"
 	"testing"
 	"time"
-
-	"github-release-notifier/internal/config"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,8 +15,7 @@ func setBaseEnv(t *testing.T) {
 	t.Setenv("API_KEY", "test-api-key")
 	for _, k := range []string{
 		"SERVER_PORT", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSLMODE",
-		"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
-		"GITHUB_TOKEN", "SCAN_INTERVAL", "BASE_URL", "REDIS_ADDR", "REDIS_PASSWORD",
+		"GITHUB_TOKEN", "SCAN_INTERVAL", "NOTIFIER_ADDR", "REDIS_ADDR", "REDIS_PASSWORD",
 		"REDIS_DB", "REDIS_CACHE_TTL", "TRUSTED_PROXY", "LOG_LEVEL", "SERVICE_NAME",
 	} {
 		t.Setenv(k, "")
@@ -34,13 +32,13 @@ func TestNewFromEnv_DefaultsAreApplied(t *testing.T) {
 	assert.Equal(t, "localhost", cfg.DBHost)
 	assert.Equal(t, "5432", cfg.DBPort)
 	assert.Equal(t, "require", cfg.DBSSLMode)
-	assert.Equal(t, 587, cfg.SMTPPort)
 	assert.Equal(t, 5*time.Minute, cfg.ScanInterval)
 	assert.Equal(t, 10*time.Minute, cfg.RedisCacheTTL)
 	assert.False(t, cfg.TrustedProxy)
 	assert.Equal(t, "info", cfg.LogLevel)
 	assert.Equal(t, "github-release-notifier", cfg.ServiceName)
 	assert.Equal(t, "test-api-key", cfg.APIKey)
+	assert.Equal(t, "localhost:50051", cfg.NotifierAddr)
 }
 
 func TestNewFromEnv_RequiresAPIKey(t *testing.T) {
@@ -51,16 +49,6 @@ func TestNewFromEnv_RequiresAPIKey(t *testing.T) {
 	assert.Nil(t, cfg)
 	require.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "api_key")
-}
-
-func TestNewFromEnv_RejectsUnparseableSMTPPort(t *testing.T) {
-	setBaseEnv(t)
-	t.Setenv("SMTP_PORT", "not-a-number")
-
-	cfg, err := config.NewFromEnv()
-	assert.Nil(t, cfg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "SMTP_PORT")
 }
 
 func TestNewFromEnv_RejectsUnparseableScanInterval(t *testing.T) {

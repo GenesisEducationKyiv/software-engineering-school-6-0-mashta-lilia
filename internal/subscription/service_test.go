@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	testEmail = "user@example.com"
-	testToken = "test-token-deterministic"
+	testEmail   = "user@example.com"
+	testToken   = "test-token-deterministic"
+	testBaseURL = "http://test.local"
 )
 
 func newTestService(
@@ -21,7 +22,8 @@ func newTestService(
 	gh *mockGitHubChecker,
 	mail *mockConfirmationSender,
 ) *Service {
-	return NewService(subs, repos, gh, mail, fixedTokenGenerator{Token: testToken})
+	return NewService(subs, repos, gh, mail, fixedTokenGenerator{Token: testToken},
+		NewConfirmLinkBuilder(testBaseURL))
 }
 
 func TestNewService_PanicsOnNilDependency(t *testing.T) {
@@ -31,41 +33,44 @@ func TestNewService_PanicsOnNilDependency(t *testing.T) {
 	gh := &mockGitHubChecker{}
 	mail := &mockConfirmationSender{}
 	tok := fixedTokenGenerator{Token: testToken}
+	links := NewConfirmLinkBuilder(testBaseURL)
 
 	cases := []struct {
 		name string
-		args [5]any
+		args [6]any
 	}{
-		{"subs", [5]any{nil, repos, gh, mail, tok}},
-		{"repos", [5]any{subs, nil, gh, mail, tok}},
-		{"github", [5]any{subs, repos, nil, mail, tok}},
-		{"mailer", [5]any{subs, repos, gh, nil, tok}},
-		{"tokens", [5]any{subs, repos, gh, mail, nil}},
+		{"subs", [6]any{nil, repos, gh, mail, tok, links}},
+		{"repos", [6]any{subs, nil, gh, mail, tok, links}},
+		{"github", [6]any{subs, repos, nil, mail, tok, links}},
+		{"mailer", [6]any{subs, repos, gh, nil, tok, links}},
+		{"tokens", [6]any{subs, repos, gh, mail, nil, links}},
+		{"links", [6]any{subs, repos, gh, mail, tok, nil}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			s, r, g, m, tg := castDeps(tc.args)
-			assert.Panics(t, func() { _ = NewService(s, r, g, m, tg) },
+			s, r, g, m, tg, l := castDeps(tc.args)
+			assert.Panics(t, func() { _ = NewService(s, r, g, m, tg, l) },
 				"expected panic for nil %s", tc.name)
 		})
 	}
 }
 
-func castDeps(args [5]any) (
-	subscriptionStore, repoUpserter, githubChecker, confirmationSender, tokenGen,
+func castDeps(args [6]any) (
+	subscriptionStore, repoUpserter, githubChecker, confirmationSender, tokenGen, confirmationLinkBuilder,
 ) {
 	asSubs, _ := args[0].(subscriptionStore)
 	asRepos, _ := args[1].(repoUpserter)
 	asGH, _ := args[2].(githubChecker)
 	asMail, _ := args[3].(confirmationSender)
 	asTok, _ := args[4].(tokenGen)
-	return asSubs, asRepos, asGH, asMail, asTok
+	asLinks, _ := args[5].(confirmationLinkBuilder)
+	return asSubs, asRepos, asGH, asMail, asTok, asLinks
 }
 
 func TestSubscribe_Success(t *testing.T) {
 	t.Parallel()
 	var createdSub *Subscription
-	var sentEmail, sentToken, sentRepo string
+	var sentEmail, sentConfirmURL, sentRepo string
 
 	svc := newTestService(
 		&mockSubscriptionRepo{
@@ -84,9 +89,9 @@ func TestSubscribe_Success(t *testing.T) {
 			RepoExistsFn: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
 		},
 		&mockConfirmationSender{
-			SendConfirmationFn: func(_ context.Context, email, token, repo string) error {
+			SendConfirmationFn: func(_ context.Context, email, confirmURL, repo string) error {
 				sentEmail = email
-				sentToken = token
+				sentConfirmURL = confirmURL
 				sentRepo = repo
 				return nil
 			},
@@ -101,7 +106,7 @@ func TestSubscribe_Success(t *testing.T) {
 	assert.Equal(t, StatusPending, createdSub.Status)
 	assert.Equal(t, testToken, createdSub.Token)
 	assert.Equal(t, testEmail, sentEmail)
-	assert.Equal(t, testToken, sentToken)
+	assert.Equal(t, testBaseURL+"/api/confirm/"+testToken, sentConfirmURL)
 	assert.Equal(t, "golang/go", sentRepo)
 }
 
@@ -208,6 +213,7 @@ func TestSubscribe_TokenGeneratorFailure_Propagates(t *testing.T) {
 		},
 		&mockConfirmationSender{},
 		fixedTokenGenerator{Err: tokenErr},
+		NewConfirmLinkBuilder(testBaseURL),
 	)
 	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 	require.Error(t, err)

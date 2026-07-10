@@ -10,14 +10,15 @@ import (
 )
 
 const (
-	defaultSMTPPort     = 587
 	defaultScanInterval = 5 * time.Minute
 	defaultCacheTTL     = 10 * time.Minute
 	defaultServiceName  = "github-release-notifier"
+	defaultNotifierAddr = "localhost:50051"
 )
 
 type Config struct {
 	ServerPort string
+	BaseURL    string
 	DBHost     string
 	DBPort     string
 	DBUser     string
@@ -25,18 +26,12 @@ type Config struct {
 	DBName     string
 	DBSSLMode  string
 
-	SMTPHost     string
-	SMTPPort     int
-	SMTPUser     string
-	SMTPPassword string
-	SMTPFrom     string
-
 	GitHubToken string
 
 	ScanInterval time.Duration
-	BaseURL      string
 
-	APIKey string
+	APIKey       string
+	NotifierAddr string
 
 	RedisAddr     string
 	RedisPassword string
@@ -57,10 +52,6 @@ func (c *Config) DatabaseURL() string {
 
 // Fail fast on a present-but-unparseable env var so silent fallback doesn't hide misconfig.
 func NewFromEnv() (*Config, error) {
-	smtpPort, err := envInt("SMTP_PORT", defaultSMTPPort)
-	if err != nil {
-		return nil, err
-	}
 	redisDB, err := envInt("REDIS_DB", 0)
 	if err != nil {
 		return nil, err
@@ -88,6 +79,7 @@ func NewFromEnv() (*Config, error) {
 
 	return &Config{
 		ServerPort: envOrDefault("SERVER_PORT", "8080"),
+		BaseURL:    envOrDefault("BASE_URL", "http://localhost:8080"),
 		DBHost:     envOrDefault("DB_HOST", "localhost"),
 		DBPort:     envOrDefault("DB_PORT", "5432"),
 		DBUser:     envOrDefault("DB_USER", "postgres"),
@@ -95,18 +87,12 @@ func NewFromEnv() (*Config, error) {
 		DBName:     envOrDefault("DB_NAME", "release_notifier"),
 		DBSSLMode:  envOrDefault("DB_SSLMODE", "require"),
 
-		SMTPHost:     envOrDefault("SMTP_HOST", "localhost"),
-		SMTPPort:     smtpPort,
-		SMTPUser:     envOrDefault("SMTP_USER", ""),
-		SMTPPassword: envOrDefault("SMTP_PASSWORD", ""),
-		SMTPFrom:     envOrDefault("SMTP_FROM", "noreply@example.com"),
-
 		GitHubToken: envOrDefault("GITHUB_TOKEN", ""),
 
 		ScanInterval: scanInterval,
-		BaseURL:      envOrDefault("BASE_URL", "http://localhost:8080"),
 
-		APIKey: apiKey,
+		APIKey:       apiKey,
+		NotifierAddr: envOrDefault("NOTIFIER_ADDR", defaultNotifierAddr),
 
 		RedisAddr:     envOrDefault("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: envOrDefault("REDIS_PASSWORD", ""),

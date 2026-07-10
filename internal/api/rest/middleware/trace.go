@@ -26,10 +26,28 @@ func traceIDFromRequest(r *http.Request) string {
 	if traceID := parseTraceparent(r.Header.Get(headerTraceparent)); traceID != "" {
 		return traceID
 	}
-	if requestID := strings.TrimSpace(r.Header.Get(headerRequestID)); requestID != "" {
+	if requestID := strings.TrimSpace(r.Header.Get(headerRequestID)); isSafeRequestID(requestID) {
 		return requestID
 	}
 	return uuid.NewString()
+}
+
+const maxRequestIDLength = 64
+
+// Unsafe header bytes must not reach logs or gRPC metadata, which rejects them and fails the RPC.
+func isSafeRequestID(s string) bool {
+	if s == "" || len(s) > maxRequestIDLength {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case r == '-' || r == '_' || r == '.':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func parseTraceparent(header string) string {

@@ -17,6 +17,7 @@ type Service struct {
 	github githubChecker
 	mailer confirmationSender
 	tokens tokenGen
+	links  confirmationLinkBuilder
 }
 
 // Panics on nil deps: built once at boot, so a wiring bug should crash startup, not requests.
@@ -26,11 +27,12 @@ func NewService(
 	gh githubChecker,
 	m confirmationSender,
 	tokens tokenGen,
+	links confirmationLinkBuilder,
 ) *Service {
-	if subs == nil || repos == nil || gh == nil || m == nil || tokens == nil {
+	if subs == nil || repos == nil || gh == nil || m == nil || tokens == nil || links == nil {
 		panic("subscription.NewService: all dependencies must be non-nil")
 	}
-	return &Service{subs: subs, repos: repos, github: gh, mailer: m, tokens: tokens}
+	return &Service{subs: subs, repos: repos, github: gh, mailer: m, tokens: tokens, links: links}
 }
 
 func (s *Service) Subscribe(ctx context.Context, rawEmail, rawRepo string) error {
@@ -113,7 +115,8 @@ func (s *Service) createPendingSubscription(
 func (s *Service) sendConfirmationOrRollback(
 	ctx context.Context, sub *Subscription, ref repository.Ref,
 ) error {
-	if err := s.mailer.SendConfirmation(ctx, sub.Email, sub.Token, ref.String()); err != nil {
+	confirmURL := s.links.ConfirmURL(sub.Token)
+	if err := s.mailer.SendConfirmation(ctx, sub.Email, confirmURL, ref.String()); err != nil {
 		// Detach cancel so rollback survives client disconnect; stuck pending row blocks retries.
 		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 		defer cancel()

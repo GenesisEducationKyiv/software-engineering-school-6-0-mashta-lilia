@@ -21,7 +21,8 @@ jobs:
           cache: true
 
       - name: Run integration tests
-        # Repository-level and full HTTP integration tests live under tests/.
+        # Repository-level and full HTTP integration tests live under tests/;
+        # the notifier's store integration tests live under services/notification/.
         # Skipping -short turns them on; testing.Short() guards inside each
         # file make sure unit-only CI does not pay the docker cost.
-        run: go test ./tests/... -count=1 -timeout 10m -race -v
+        run: go test ./tests/... ./services/notification/... -count=1 -timeout 10m -race -v

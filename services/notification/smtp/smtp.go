@@ -1,11 +1,12 @@
-package mailer
+package smtp
 
 import (
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github-release-notifier/internal/release"
+	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/services/notification"
 	"mime"
 	"net"
 	"net/smtp"
@@ -19,13 +20,17 @@ type SMTPMailer struct {
 	password  string
 	from      string
 	templates *TemplateBuilder
+	log       *logger.Logger
 }
 
 func NewSMTPMailer(
-	host string, port int, user, password, from string, templates *TemplateBuilder,
+	host string, port int, user, password, from string, templates *TemplateBuilder, log *logger.Logger,
 ) (*SMTPMailer, error) {
 	if templates == nil {
-		return nil, errors.New("mailer: templates is nil")
+		return nil, errors.New("smtp mailer: templates is nil")
+	}
+	if log == nil {
+		log = logger.Nop()
 	}
 	return &SMTPMailer{
 		host:      host,
@@ -34,19 +39,22 @@ func NewSMTPMailer(
 		password:  password,
 		from:      from,
 		templates: templates,
+		log:       log,
 	}, nil
 }
 
-func (m *SMTPMailer) SendConfirmation(ctx context.Context, email, token, repo string) error {
+func (m *SMTPMailer) SendConfirmation(ctx context.Context, confirmation notification.Confirmation) error {
 	templates, err := m.templateBuilder()
 	if err != nil {
 		return err
 	}
-	return m.deliver(ctx, templates.Confirmation(email, token, repo))
+	return m.deliver(ctx, templates.Confirmation(
+		confirmation.Email, confirmation.ConfirmURL, confirmation.Repo,
+	))
 }
 
 func (m *SMTPMailer) SendReleaseNotification(
-	ctx context.Context, email, repo string, rel *release.Release,
+	ctx context.Context, email, repo string, rel *notification.ReleaseInfo,
 ) error {
 	templates, err := m.templateBuilder()
 	if err != nil {
@@ -57,7 +65,7 @@ func (m *SMTPMailer) SendReleaseNotification(
 
 func (m *SMTPMailer) templateBuilder() (*TemplateBuilder, error) {
 	if m == nil || m.templates == nil {
-		return nil, errors.New("mailer: templates is nil")
+		return nil, errors.New("smtp mailer: templates is nil")
 	}
 	return m.templates, nil
 }
@@ -94,7 +102,7 @@ func (m *SMTPMailer) deliver(ctx context.Context, msg Message) error {
 	}
 	defer client.Close() //nolint:errcheck // SMTP client close error is safe to ignore
 
-	// Refuse to send PLAIN creds without STARTTLS — would leak to any passive observer.
+	// Refuse to send PLAIN creds without STARTTLS; otherwise credentials leak on the wire.
 	if ok, _ := client.Extension("STARTTLS"); ok {
 		tlsCfg := &tls.Config{ServerName: m.host, MinVersion: tls.VersionTLS12}
 		if err := client.StartTLS(tlsCfg); err != nil {
@@ -103,6 +111,10 @@ func (m *SMTPMailer) deliver(ctx context.Context, msg Message) error {
 	} else if m.user != "" {
 		return errors.New(
 			"SMTP: server does not support STARTTLS; refusing to send credentials over plaintext")
+	} else {
+		m.log.Warn(ctx, "smtp_insecure_send",
+			"reason", "server does not advertise STARTTLS; message sent without encryption",
+			"host", m.host)
 	}
 
 	if m.user != "" {
