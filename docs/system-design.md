@@ -89,53 +89,80 @@ graph TB
     subgraph Monolith["monolith: API + poller (main/main.go)"]
         API["api/rest<br/>(Chi router, middleware)"]
         Domains["domain packages<br/>(subscription, release)"]
+        Saga["saga<br/>(orchestrator + reaper)"]
         Repo["repository<br/>(Postgres queries)"]
         GHC["client/github<br/>(HTTP + Cache decorator)"]
-        NotifyClient["client/notification<br/>(RabbitMQ publisher)"]
+        NotifyClient["client/notification<br/>(RabbitMQ publisher +<br/>gRPC/REST verify-email clients)"]
 
         API --> Domains
         Domains --> Repo
         Domains --> GHC
+        Domains --> Saga
         Domains --> NotifyClient
     end
 
-    Broker[/"RabbitMQ<br/>exchange notifications,<br/>queue notifications.email"/]
+    CmdBroker[/"RabbitMQ<br/>exchange saga,<br/>queues saga.commands / saga.replies"/]
+    EventBroker[/"RabbitMQ<br/>exchange notifications,<br/>queue notifications.email"/]
 
     subgraph Notification["notification service (services/notification)"]
-        Consumer["consumer<br/>(decode envelope + dispatch)"]
-        GRPC["grpcserver<br/>(health surface + test transport)"]
+        Consumer["consumer<br/>(release notifications:<br/>decode envelope + dispatch)"]
+        SagaParticipant["sagaparticipant<br/>(confirmation commands:<br/>send + reply)"]
+        GRPC["grpcserver<br/>(health surface +<br/>verify-email comparison, HW10)"]
+        REST["resthttp<br/>(verify-email comparison, HW10)"]
         NotificationApp["notification.Service<br/>(dedup -> compose -> send)"]
         SMTPAdapter["smtp"]
-        Ledger["store"]
+        Ledger["store<br/>(dedup ledger)"]
 
         Consumer --> NotificationApp
+        SagaParticipant --> NotificationApp
         GRPC --> NotificationApp
+        REST --> NotificationApp
         NotificationApp --> SMTPAdapter
         NotificationApp --> Ledger
     end
 
-    DB[("PostgreSQL<br/>subscriptions,<br/>tracked_repositories")]
+    DB[("PostgreSQL<br/>subscriptions,<br/>tracked_repositories,<br/>saga_instances")]
     NotifyDB[("PostgreSQL<br/>sent_notifications")]
     Cache[("Redis<br/>(optional)<br/>release cache")]
     GitHub["GitHub REST API"]
     SMTPSrv["SMTP Server<br/>(Mailpit/provider)"]
 
     Repo --> DB
+    Saga --> DB
     GHC --> Cache
     GHC --> GitHub
-    NotifyClient -- "publish command" --> Broker
-    Broker -- "deliver" --> Consumer
+    Saga -- "publish command,<br/>consume reply" --> CmdBroker
+    CmdBroker -- "deliver command" --> SagaParticipant
+    SagaParticipant -- "publish reply" --> CmdBroker
+    NotifyClient -- "publish release command" --> EventBroker
+    EventBroker -- "deliver" --> Consumer
+    NotifyClient -. "sync gRPC/REST verify-email<br/>(benchmark only, HW10)" .-> GRPC
+    NotifyClient -. " " .-> REST
     Ledger --> NotifyDB
     SMTPAdapter --> SMTPSrv
 ```
 
 The dependency arrow still points **inward** inside each deployable. The
-monolith's `subscription` and `release` packages define the notification
-interfaces they consume; `internal/client/notification` implements those
-interfaces by **publishing commands to RabbitMQ**, which the notifier consumes
-asynchronously. The notification service owns its own Postgres database and is
-structured as `notification` (domain), `app`, `consumer`, `grpcserver`, `smtp`,
-and `store`.
+monolith's `subscription` package owns the confirmation step through
+`internal/saga` (an **orchestrated saga**, see §4.2): it publishes a command on
+its own exchange/queue pair and blocks on the reply, compensating (cancelling
+the subscription) on failure or timeout. `release` uses the older, simpler
+fire-and-forget path: `internal/client/notification` publishes a command to a
+*different* exchange/queue and returns immediately — no reply is expected,
+matching the at-most-once semantics of [ADR 0007](adr/0007-persist-before-notify-for-at-most-once.md).
+Both command families are consumed by the notifier and dispatched to the same
+`notification.Service`. The notification service owns its own Postgres
+database and is structured as `notification` (domain), `app`, `consumer`,
+`sagaparticipant`, `grpcserver`, `resthttp`, `smtp`, and `store`.
+
+The dotted arrows are the HW10 exercise: `internal/client/notification` also
+contains a synchronous gRPC client and a REST client that call the notifier's
+`grpcserver`/`resthttp` `VerifyEmail`/`verify-email` surface directly, to
+benchmark HTTP/2+protobuf against HTTP/1.1+JSON for the same operation
+(`internal/client/notification/verifyemail_bench_test.go`). Nothing in the live
+subscribe flow calls this path today — the composition root never wires
+`notification.NewVerifier` — so it's a comparison harness the notifier happens
+to serve in production, not a load-bearing dependency.
 
 Redis caching is added as a **decorator** on `GitHubClient` — both the base
 client and `CachedClient` satisfy the same interface, so the domain layer
@@ -145,6 +172,83 @@ error falls through to the GitHub API. The notification split is recorded in
 synchronous gRPC to durable broker commands (keeping the dedup ledger) is in
 [ADR 0015](adr/0015-sync-grpc-and-dedup-ledger.md) and
 [ADR 0016](adr/0016-async-notifications-via-rabbitmq.md).
+
+### 3.3 Layered Architecture (Dependency Direction)
+
+The container diagram above shows *what talks to what over the network*. This
+diagram shows the orthogonal view: how packages depend on each other *within*
+each deployable, and why. It updates the structure in
+[ADR 0001](adr/0001-clean-architecture-with-dependency-inversion.md), which
+predates the saga, the message broker, and the notification microservice
+split.
+
+```mermaid
+graph TB
+    subgraph Root["Composition Root — wires adapters to domain interfaces; may import anything"]
+        MonoApp["internal/app + main"]
+        NotifApp["services/notification/app + main"]
+    end
+
+    subgraph Adapters["Adapters — transport-in and external-client-out"]
+        RestAPI["internal/api/rest/*"]
+        ClientGH["internal/client/github"]
+        ClientNotif["internal/client/notification"]
+        NotifConsumer["services/notification/consumer<br/>services/notification/sagaparticipant"]
+        NotifTransport["services/notification/grpcserver<br/>services/notification/resthttp"]
+        SMTPAdapter["services/notification/smtp"]
+    end
+
+    subgraph Domain["Domain / feature packages"]
+        Sub["internal/subscription<br/>(owns its SQL persistence)"]
+        Rel["internal/release"]
+        SagaPkg["internal/saga<br/>(owns its SQL persistence)"]
+        RepoPkg["internal/repository<br/>(release's persistence + Ref)"]
+        Email["internal/email"]
+        NotifSvc["services/notification<br/>(Service: dedup -> compose -> send)"]
+        Ledger["services/notification/store"]
+    end
+
+    subgraph Platform["Platform / shared kernel — every layer above may import this"]
+        PlatformPkgs["internal/platform/*<br/>(logger, tracectx, token, health, postgres)"]
+        Msg["internal/messaging"]
+        Wire["internal/notifyevent<br/>internal/sagaevent"]
+        Gen["internal/gen/notification/v1"]
+    end
+
+    Root --> Adapters
+    Root --> Domain
+    Adapters --> Domain
+    Domain --> Platform
+    Adapters --> Platform
+    Root --> Platform
+```
+
+**The rule that actually holds, verified against every import in the module:**
+domain/feature packages never import adapter or composition-root packages.
+Adapters and the composition root import domain packages and platform
+packages; domain packages import platform packages and each other (e.g.
+`subscription` imports `repository` for `Ref`, `subscription` imports `saga`
+to hand off the confirmation step); nothing ever imports back out. This is
+enforced by an automated test, not just this diagram — see
+[`internal/archtest`](../internal/archtest).
+
+**Honest caveat, not smoothed over:** this codebase does not put every domain
+package's persistence in a separate package. `internal/release` externalizes
+its SQL into a sibling `internal/repository` package, but `internal/subscription`
+and `internal/saga` each keep their own SQL (`repo.go` / `store.go`) inside the
+domain package itself — a "package by feature" choice, not "package by layer,"
+for those two. The invariant the tests enforce is the one that matters for
+testability and swappability (business logic never depends on how it's
+delivered or which transport carries it), not "SQL never appears next to
+business logic."
+
+The **platform** layer is a deliberate exception to "domain imports nothing
+outward": `internal/messaging`'s `Action` enum (`Ack`/`Requeue`/`Drop`) is a
+small, transport-agnostic settlement contract that `internal/saga` and
+`services/notification/consumer`/`sagaparticipant` all need regardless of
+layer, the same way everything needs `internal/platform/logger`. It carries no
+AMQP-specific types across the boundary, so depending on it is not the same
+as depending on RabbitMQ.
 
 ---
 
@@ -191,9 +295,10 @@ sequenceDiagram
     participant API as API
     participant S as Subscription Service
     participant GH as GitHub Client (cached)
-    participant DB as Postgres
-    participant MQ as RabbitMQ
-    participant N as Notifier (consumer)
+    participant DB as Postgres (monolith)
+    participant SG as Saga Orchestrator
+    participant MQ as RabbitMQ (saga.commands/replies)
+    participant P as Notifier (sagaparticipant)
     participant M as SMTP
 
     U->>API: POST /subscribe {email, repo}
@@ -212,17 +317,32 @@ sequenceDiagram
     end
     Note over S: pending / none paths continue below
     S->>S: build confirm_url (BASE_URL + /api/confirm/{token})
-    S->>MQ: publish ConfirmationCommand
-    alt broker publish fails
-        S->>DB: UPDATE status='unsubscribed' (rollback)
+    S->>SG: StartAndWait(SubscriptionData)
+    activate SG
+    SG->>DB: INSERT saga_instances (awaiting_confirmation, timeout_at)
+    SG->>MQ: publish SendConfirmation command
+    Note over SG: blocks the request goroutine up to SagaTimeout
+    MQ->>P: deliver SendConfirmation command
+    P->>M: notification.Service.SendConfirmation<br/>(dedup ledger + SMTP send)
+    P->>MQ: publish confirmation_sent / confirmation_failed
+    MQ->>SG: deliver reply
+    alt confirmation_sent
+        SG->>DB: UPDATE saga_instances SET state='completed'
+        SG-->>S: nil
+    else confirmation_failed
+        SG->>SG: compensate() cancels the subscription
+        SG->>DB: UPDATE subscriptions status='unsubscribed';<br/>saga_instances state='failed'
+        SG-->>S: ErrConfirmationFailed
+    else no reply within SagaTimeout
+        SG-->>S: ErrConfirmationTimeout (outcome unknown, not "failed")
+        Note over SG,DB: The reaper later compensates only if no reply<br/>arrives within its own grace period —<br/>see README "Subscribe Saga"
+    end
+    deactivate SG
+    alt saga error (failed or timeout)
         S-->>API: 503 Service Unavailable
-    else accepted
+    else saga succeeded
         S-->>API: 200 OK
     end
-    Note over MQ,M: Asynchronously, later
-    MQ->>N: deliver ConfirmationCommand
-    N->>N: reserve dedup key (own Postgres ledger)
-    N->>M: send confirmation email
     Note over U,M: Email arrives with /confirm/{token} link
     U->>API: GET /confirm/{token}
     API->>S: Confirm(token)
