@@ -40,8 +40,8 @@ func (m *mockSubscriptionRepo) UpdateStatus(ctx context.Context, id int64, statu
 	return m.Called(ctx, id, status).Error(0)
 }
 
-func (m *mockSubscriptionRepo) UpdateToken(ctx context.Context, id int64, token string) error {
-	return m.Called(ctx, id, token).Error(0)
+func (m *mockSubscriptionRepo) UpdateToken(ctx context.Context, id int64, oldToken, newToken string) error {
+	return m.Called(ctx, id, oldToken, newToken).Error(0)
 }
 
 type mockRepoUpserter struct {

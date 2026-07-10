@@ -50,12 +50,23 @@ production path.
 
 A broker that requeues gives at-least-once delivery, which would normally risk
 duplicate emails — the exact thing ADR 0015's dedup ledger exists to prevent.
-That ledger makes redelivery safe: the notifier reserves the
-`sent_notifications` row before sending, so a redelivered release command loses
-the reservation and is acked as a dedup no-op rather than re-sent. The
-at-most-once product semantics of [ADR 0007](0007-persist-before-notify-for-at-most-once.md)
-are preserved; the broker only changes *when* and *how reliably* the command is
-delivered, not the de-duplication guarantee.
+The ledger makes redelivery safe, but a plain reserve-before-send ledger (the
+original ADR 0015 design) is *too* safe: it also swallows the requeue this ADR
+relies on for transient send failures, since a redelivered command would always
+find its row already reserved and get acked as a no-op without ever reaching
+SMTP again — the send is silently lost, not retried.
+
+The ledger therefore distinguishes reserved-but-unconfirmed from confirmed:
+`sent_notifications.sent_at` is set only after the send actually succeeds
+(`Service.reserveAndSend` calls `dedup.Confirm` post-send). A redelivery of a
+command whose send never got that far re-reserves the same row and genuinely
+retries SMTP; a redelivery of an already-confirmed send finds `sent_at` set and
+is acked as a true dedup no-op. This preserves the spirit of the at-most-once
+product semantics of [ADR 0007](0007-persist-before-notify-for-at-most-once.md)
+— duplicates are still the rare, narrow case — while making the broker's
+retry-on-transient-failure behavior real instead of a documented no-op. See
+ADR 0015's "Failure Window" section for the narrow duplicate-risk window this
+trades in.
 
 ### Consequences
 

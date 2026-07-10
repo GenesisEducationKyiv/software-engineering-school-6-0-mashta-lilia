@@ -47,6 +47,7 @@ func decodePayload[T any](t *testing.T, body []byte, wantType string) T {
 }
 
 func TestSendConfirmation_PublishesCommand(t *testing.T) {
+	t.Parallel()
 	b := &fakeBroker{}
 	p := newPublisher(t, b)
 
@@ -64,6 +65,7 @@ func TestSendConfirmation_PublishesCommand(t *testing.T) {
 }
 
 func TestSendReleaseNotification_PublishesCommand(t *testing.T) {
+	t.Parallel()
 	b := &fakeBroker{}
 	p := newPublisher(t, b)
 
@@ -85,6 +87,7 @@ func TestSendReleaseNotification_PublishesCommand(t *testing.T) {
 }
 
 func TestSendReleaseNotification_NilReleaseDoesNotPanic(t *testing.T) {
+	t.Parallel()
 	b := &fakeBroker{}
 	p := newPublisher(t, b)
 
@@ -96,6 +99,7 @@ func TestSendReleaseNotification_NilReleaseDoesNotPanic(t *testing.T) {
 }
 
 func TestPublish_PropagatesTraceID(t *testing.T) {
+	t.Parallel()
 	b := &fakeBroker{}
 	p := newPublisher(t, b)
 
@@ -108,6 +112,7 @@ func TestPublish_PropagatesTraceID(t *testing.T) {
 }
 
 func TestPublish_BrokerErrorIsReturned(t *testing.T) {
+	t.Parallel()
 	b := &fakeBroker{err: errors.New("broker down")}
 	p := newPublisher(t, b)
 
@@ -117,6 +122,7 @@ func TestPublish_BrokerErrorIsReturned(t *testing.T) {
 }
 
 func TestNewPublisher_RejectsNilBroker(t *testing.T) {
+	t.Parallel()
 	_, err := notificationclient.NewPublisher(nil, nil)
 	require.Error(t, err)
 }

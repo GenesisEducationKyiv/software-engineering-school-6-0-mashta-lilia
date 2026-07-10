@@ -60,7 +60,7 @@ func RunConsumer(ctx context.Context, cfg ConsumerConfig, log *logger.Logger, ha
 // consumeSession runs one connection's worth of consumption. It returns nil when
 // ctx is canceled and an error when the session drops (triggering a reconnect).
 func consumeSession(ctx context.Context, cfg ConsumerConfig, log *logger.Logger, handle Handler) error {
-	conn, err := amqp.Dial(cfg.URL)
+	conn, err := dialContext(ctx, cfg.URL)
 	if err != nil {
 		return fmt.Errorf("messaging: dial broker: %w", err)
 	}
@@ -121,17 +121,24 @@ func pump(
 
 func settle(ctx context.Context, log *logger.Logger, handle Handler, d amqp.Delivery) {
 	const multiple, requeue = false, true
+	action := handle(ctx, d.Body)
 	var err error
-	switch handle(ctx, d.Body) {
+	switch action {
 	case Ack:
 		err = d.Ack(multiple)
 	case Drop:
 		err = d.Nack(multiple, !requeue)
 	case Requeue:
 		err = d.Nack(multiple, requeue)
+	default:
+		// Defensive: an unrecognized Action must still be settled, or the message
+		// sits unacked until the channel drops and the broker redelivers it with
+		// no error logged to explain why.
+		log.Error(ctx, "consumer_settle_unknown_action", "action", int(action))
+		err = d.Nack(multiple, requeue)
 	}
 	if err != nil {
-		log.Error(ctx, "consumer_settle_failed", "err", err)
+		log.Error(ctx, "consumer_settle_failed", "action", int(action), "err", err)
 	}
 }
 

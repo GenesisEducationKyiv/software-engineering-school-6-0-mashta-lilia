@@ -48,6 +48,12 @@ func mustNewServer(t *testing.T, svc *fakeService) *Server {
 	return srv
 }
 
+func TestNew_RejectsNilService(t *testing.T) {
+	t.Parallel()
+	_, err := New(nil, logger.Nop())
+	require.Error(t, err)
+}
+
 func TestServer_SendReleaseNotification_MapsPopulatedRelease(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{delivered: true}

@@ -4,6 +4,7 @@
 package messaging
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -16,13 +17,39 @@ const (
 	defaultPrefetch   = 16
 )
 
-// Topology is the exchange/queue layout both sides declare on connect.
-// Declaration is idempotent, so the publisher can create the durable queue too
-// and no command is lost while the consumer is still starting.
+// Topology is the exchange/queue layout both sides idempotently declare on connect.
 type Topology struct {
 	Exchange    string
 	Queue       string
 	RoutingKeys []string
+}
+
+// dialContext dials the broker, aborting early if ctx is canceled first; plain
+// amqp.Dial takes no context and would otherwise block shutdown indefinitely on
+// a stalled TCP/AMQP handshake.
+func dialContext(ctx context.Context, url string) (*amqp.Connection, error) {
+	type dialResult struct {
+		conn *amqp.Connection
+		err  error
+	}
+	done := make(chan dialResult, 1)
+	go func() {
+		conn, err := amqp.Dial(url)
+		done <- dialResult{conn, err}
+	}()
+	select {
+	case <-ctx.Done():
+		// Close the connection in the background if the dial succeeds after we've
+		// already given up, so it isn't leaked.
+		go func() {
+			if r := <-done; r.conn != nil {
+				_ = r.conn.Close() //nolint:errcheck // best-effort close of a discarded connection
+			}
+		}()
+		return nil, ctx.Err()
+	case r := <-done:
+		return r.conn, r.err
+	}
 }
 
 func declareTopology(ch *amqp.Channel, topology Topology) error {

@@ -184,10 +184,10 @@ func TestSubscribe_RefreshesPendingSubscription(t *testing.T) {
 		Return(&Subscription{
 			ID: 7, Email: testEmail, RepoOwner: "golang", RepoName: "go", Status: StatusPending,
 		}, nil)
-	subs.On("UpdateToken", mock.Anything, mock.Anything, mock.Anything).Return(nil).
+	subs.On("UpdateToken", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).
 		Run(func(args mock.Arguments) {
 			updatedID, _ = args.Get(1).(int64)
-			updatedToken = args.String(2)
+			updatedToken = args.String(3)
 		})
 	gh := &mockGitHubChecker{}
 	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
@@ -208,6 +208,31 @@ func TestSubscribe_RefreshesPendingSubscription(t *testing.T) {
 	assert.Equal(t, newToken, startedData.Token, "saga runs with the refreshed token")
 	assert.Equal(t, int64(7), startedData.SubscriptionID)
 	subs.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+}
+
+// Two concurrent re-subscribes over the same pending row race on UpdateToken's
+// CAS guard; the loser must not silently overwrite the winner's token or email
+// out a confirm link for a token that was never actually written.
+func TestSubscribe_RefreshRaceLoserGetsAlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	subs := &mockSubscriptionRepo{}
+	subs.On("GetByEmailAndRepo", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&Subscription{
+			ID: 7, Email: testEmail, RepoOwner: "golang", RepoName: "go",
+			Token: "stale-token", Status: StatusPending,
+		}, nil)
+	subs.On("UpdateToken", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(ErrNotFound)
+	gh := &mockGitHubChecker{}
+	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+	mail := &mockConfirmationSender{}
+
+	svc := newTestService(subs, &mockRepoUpserter{}, gh, mail)
+	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
+	assert.ErrorIs(t, err, ErrAlreadyExists)
+	mail.AssertNotCalled(t, "SendConfirmation",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestSubscribe_GitHubAPIError(t *testing.T) {
