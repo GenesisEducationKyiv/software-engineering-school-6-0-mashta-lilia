@@ -102,6 +102,7 @@ func (c *Client) doRequest(ctx context.Context, rawURL string) (*http.Response, 
 			return resp, nil
 		}
 
+		rateLimitHitsTotal.Inc()
 		resp.Body.Close() //nolint:errcheck,gosec // discarding 429 response body before retry
 
 		if attempt == maxRetries {

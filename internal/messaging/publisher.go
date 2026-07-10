@@ -11,15 +11,15 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// Publisher publishes persistent JSON messages to a durable exchange. It holds a
-// single connection/channel guarded by a mutex and transparently redials after a
-// failed publish, so a broker blip does not need handling at every call site.
+// Publisher publishes persistent JSON messages to a durable exchange, waiting
+// for the broker's publisher-confirm before returning and redialing
+// transparently on failure.
 type Publisher struct {
 	url      string
 	topology Topology
 	log      *logger.Logger
 
-	mu   sync.Mutex
+	mu   sync.RWMutex
 	conn *amqp.Connection
 	ch   *amqp.Channel
 }
@@ -37,13 +37,15 @@ func NewPublisher(url string, topology Topology, log *logger.Logger) (*Publisher
 	return &Publisher{url: url, topology: topology, log: log}, nil
 }
 
-// Publish sends body to the exchange under routingKey. It is safe for concurrent
-// use; publishes are serialized on a single channel.
+// Publish sends body to the exchange under routingKey and waits for the
+// broker's publisher-confirm, so a returned nil error means RabbitMQ has
+// durably accepted the message, not just that it left the app. It is safe for
+// concurrent use: amqp091-go's Channel serializes its own writes internally
+// and matches each deferred confirm to its own publish by delivery tag, so
+// concurrent callers only contend on the (fast) channel lookup below, not on
+// the network I/O — a redial is the only path that blocks other publishers.
 func (p *Publisher) Publish(ctx context.Context, routingKey string, body []byte) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	ch, err := p.channel()
+	ch, err := p.getChannel(ctx)
 	if err != nil {
 		return err
 	}
@@ -52,7 +54,8 @@ func (p *Publisher) Publish(ctx context.Context, routingKey string, body []byte)
 	defer cancel()
 
 	const mandatory, immediate = false, false
-	err = ch.PublishWithContext(pubCtx, p.topology.Exchange, routingKey, mandatory, immediate,
+	confirmation, err := ch.PublishWithDeferredConfirmWithContext(
+		pubCtx, p.topology.Exchange, routingKey, mandatory, immediate,
 		amqp.Publishing{
 			ContentType:  "application/json",
 			DeliveryMode: amqp.Persistent,
@@ -60,28 +63,60 @@ func (p *Publisher) Publish(ctx context.Context, routingKey string, body []byte)
 			Body:         body,
 		})
 	if err != nil {
-		// The channel may be dead; drop it so the next call redials.
+		// The channel may be dead; drop it, but only if it's still the one we just
+		// used, so a publish failure doesn't undo a redial another goroutine already did.
 		return errors.Join(
 			fmt.Errorf("messaging: publish to %s/%s: %w", p.topology.Exchange, routingKey, err),
-			p.reset(),
+			p.resetIfCurrent(ch),
 		)
+	}
+
+	ok, err := confirmation.WaitContext(pubCtx)
+	if err != nil {
+		// Same reasoning as above: the wait timed out or ctx was canceled, which
+		// leaves the channel's state unknown, so force the next publish to redial.
+		return errors.Join(
+			fmt.Errorf("messaging: await broker confirm for %s/%s: %w", p.topology.Exchange, routingKey, err),
+			p.resetIfCurrent(ch),
+		)
+	}
+	if !ok {
+		return fmt.Errorf("messaging: broker nacked publish to %s/%s", p.topology.Exchange, routingKey)
 	}
 	return nil
 }
 
-// channel returns a live channel, dialing and declaring topology on first use or
-// after a reset. Callers must hold p.mu.
-func (p *Publisher) channel() (*amqp.Channel, error) {
+// getChannel returns a live channel, dialing and declaring topology if none is
+// cached or the cached one has died. The common case only takes a read lock,
+// so concurrent publishers don't serialize on redial bookkeeping.
+func (p *Publisher) getChannel(ctx context.Context) (*amqp.Channel, error) {
+	if ch, ok := p.liveChannel(); ok {
+		return ch, nil
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// Re-check: another goroutine may have redialed while we waited for the lock.
 	if p.ch != nil && !p.ch.IsClosed() {
 		return p.ch, nil
 	}
-	conn, err := amqp.Dial(p.url)
+	_ = p.resetLocked() //nolint:errcheck // best-effort close of stale state before redial
+
+	conn, err := dialContext(ctx, p.url)
 	if err != nil {
 		return nil, fmt.Errorf("messaging: dial broker: %w", err)
 	}
 	ch, err := conn.Channel()
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("messaging: open channel: %w", err), conn.Close())
+	}
+	// Confirm mode is required for PublishWithDeferredConfirmWithContext to
+	// track broker acks instead of silently discarding them.
+	const noWait = false
+	if err := ch.Confirm(noWait); err != nil {
+		return nil, errors.Join(
+			fmt.Errorf("messaging: enable publisher confirms: %w", err), ch.Close(), conn.Close(),
+		)
 	}
 	if err := declareTopology(ch, p.topology); err != nil {
 		return nil, errors.Join(err, ch.Close(), conn.Close())
@@ -90,9 +125,29 @@ func (p *Publisher) channel() (*amqp.Channel, error) {
 	return ch, nil
 }
 
-// reset closes and clears the cached connection, returning any close error.
-// Callers must hold p.mu.
-func (p *Publisher) reset() error {
+func (p *Publisher) liveChannel() (*amqp.Channel, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.ch != nil && !p.ch.IsClosed() {
+		return p.ch, true
+	}
+	return nil, false
+}
+
+// resetIfCurrent clears the cached channel only if failed is still the cached
+// one, so a publish failure on an already-replaced channel can't undo the
+// replacement.
+func (p *Publisher) resetIfCurrent(failed *amqp.Channel) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.ch != failed {
+		return nil
+	}
+	return p.resetLocked()
+}
+
+// resetLocked closes and clears the cached connection. Callers must hold p.mu (write lock).
+func (p *Publisher) resetLocked() error {
 	var err error
 	if p.ch != nil {
 		err = errors.Join(err, p.ch.Close())
@@ -109,5 +164,5 @@ func (p *Publisher) reset() error {
 func (p *Publisher) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.reset()
+	return p.resetLocked()
 }

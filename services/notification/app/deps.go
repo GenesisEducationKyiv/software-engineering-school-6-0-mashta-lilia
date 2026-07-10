@@ -33,6 +33,12 @@ func buildDependencies(
 	if err != nil {
 		return nil, fmt.Errorf("creating notification store: %w", err)
 	}
+	depsReady := false
+	defer func() {
+		if !depsReady {
+			closeQuietly(ctx, log, "notification store", ledger.Close)
+		}
+	}()
 
 	templates := smtp.NewTemplateBuilder()
 	mail, err := smtp.NewSMTPMailer(
@@ -41,25 +47,21 @@ func buildDependencies(
 		cfg.SMTPFrom, cfg.SMTPTimeout, templates, log.With("component", "notification_smtp"),
 	)
 	if err != nil {
-		closeQuietly(ctx, log, "notification store", ledger.Close)
 		return nil, fmt.Errorf("creating SMTP mailer: %w", err)
 	}
 
 	service, err := notification.NewService(mail, ledger, log.With("component", "notification_service"))
 	if err != nil {
-		closeQuietly(ctx, log, "notification store", ledger.Close)
 		return nil, fmt.Errorf("creating notification service: %w", err)
 	}
 
 	cons, err := consumer.New(service, log.With("component", "notification_consumer"))
 	if err != nil {
-		closeQuietly(ctx, log, "notification store", ledger.Close)
 		return nil, fmt.Errorf("creating notification consumer: %w", err)
 	}
 
 	notificationServer, err := grpcserver.New(service, log.With("component", "notification_server"))
 	if err != nil {
-		closeQuietly(ctx, log, "notification store", ledger.Close)
 		return nil, fmt.Errorf("creating notification server: %w", err)
 	}
 

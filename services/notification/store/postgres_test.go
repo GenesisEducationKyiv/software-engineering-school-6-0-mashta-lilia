@@ -51,7 +51,7 @@ func runTests(m *testing.M) int {
 	return m.Run()
 }
 
-func TestIntegration_Store_ReserveIsIdempotent(t *testing.T) {
+func TestIntegration_Store_ReserveIsIdempotentAfterConfirm(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -59,19 +59,48 @@ func TestIntegration_Store_ReserveIsIdempotent(t *testing.T) {
 
 	store := store.New(testDB, logger.Nop())
 	ctx := context.Background()
+	const dedupKey = "release:golang/go:v1:alice@example.com"
 
-	reserved, err := store.Reserve(ctx, "release", "release:golang/go:v1:alice@example.com")
+	reserved, err := store.Reserve(ctx, "release", dedupKey)
 	require.NoError(t, err)
 	assert.True(t, reserved)
 
-	reserved, err = store.Reserve(ctx, "release", "release:golang/go:v1:alice@example.com")
+	require.NoError(t, store.Confirm(ctx, dedupKey))
+
+	reserved, err = store.Reserve(ctx, "release", dedupKey)
 	require.NoError(t, err)
-	assert.False(t, reserved)
+	assert.False(t, reserved, "a confirmed send is a true duplicate")
 
 	var count int
 	err = testDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM sent_notifications").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
+}
+
+func TestIntegration_Store_ReserveRetriesUnconfirmedRow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	truncateNotifications(t)
+
+	store := store.New(testDB, logger.Nop())
+	ctx := context.Background()
+	const dedupKey = "release:golang/go:v2:alice@example.com"
+
+	reserved, err := store.Reserve(ctx, "release", dedupKey)
+	require.NoError(t, err)
+	require.True(t, reserved)
+
+	// The first attempt never confirmed (e.g. SMTP failed), so a redelivery
+	// must be able to reserve the same key again instead of losing the send.
+	reserved, err = store.Reserve(ctx, "release", dedupKey)
+	require.NoError(t, err)
+	assert.True(t, reserved, "an unconfirmed reservation must be retryable")
+
+	var count int
+	err = testDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM sent_notifications").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "retry must reuse the existing row, not insert a second one")
 }
 
 func TestIntegration_Store_ReservePersistsMetadata(t *testing.T) {
