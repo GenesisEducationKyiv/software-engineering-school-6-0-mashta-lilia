@@ -2,10 +2,10 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/platform/tracectx"
 	"github-release-notifier/services/notification"
-	"strings"
 
 	notificationv1 "github-release-notifier/internal/gen/notification/v1"
 
@@ -28,11 +28,14 @@ type Server struct {
 	log     *logger.Logger
 }
 
-func New(service applicationService, log *logger.Logger) *Server {
+func New(service applicationService, log *logger.Logger) (*Server, error) {
+	if service == nil {
+		return nil, errors.New("notification grpc server: service is nil")
+	}
 	if log == nil {
 		log = logger.Nop()
 	}
-	return &Server{service: service, log: log}
+	return &Server{service: service, log: log}, nil
 }
 
 func (s *Server) SendConfirmation(
@@ -103,24 +106,21 @@ func TraceUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
+// traceIDFromMetadata mirrors the HTTP middleware's validation (tracectx.ParseTraceparent /
+// tracectx.IsSafeExternalID) so a malformed or unsafe id is rejected identically on both
+// transports instead of the gRPC side trusting it unchecked.
 func traceIDFromMetadata(ctx context.Context) string {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ""
 	}
-	if ids := md.Get("x-request-id"); len(ids) > 0 {
+	if parents := md.Get("traceparent"); len(parents) > 0 {
+		if traceID, ok := tracectx.ParseTraceparent(parents[0]); ok {
+			return traceID
+		}
+	}
+	if ids := md.Get("x-request-id"); len(ids) > 0 && tracectx.IsSafeExternalID(ids[0]) {
 		return ids[0]
 	}
-	if parents := md.Get("traceparent"); len(parents) > 0 {
-		return traceIDFromTraceparent(parents[0])
-	}
 	return ""
-}
-
-func traceIDFromTraceparent(value string) string {
-	parts := strings.Split(value, "-")
-	if len(parts) < 4 || len(parts[1]) != 32 {
-		return ""
-	}
-	return parts[1]
 }

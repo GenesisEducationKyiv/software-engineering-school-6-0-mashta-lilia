@@ -1,7 +1,7 @@
 # ADR 0015: Synchronous gRPC with Dedup Ledger
 
 Date: 2026-06-10
-Status: Accepted
+Status: Accepted — transport superseded by [ADR 0016](0016-async-notifications-via-rabbitmq.md); the reserve-then-send ledger below was refined to a reserve/confirm ledger once ADR 0016 added broker redelivery (see that ADR's "Why redelivery is safe" section)
 Deciders: Project Author
 
 ## Context and Problem Statement
@@ -49,15 +49,25 @@ so structured logs keep correlation across the network boundary.
 
 ### Failure Window
 
-Reserve-then-send preserves at-most-once, but it has a known miss window: if the
-notifier inserts the ledger row and then SMTP or the monolith-to-notifier
-connection fails, the row remains. The notification will not be retried
-automatically, so a release email can be missed but not duplicated. This is the
-same product trade-off as ADR 0007.
+Reserve-then-send originally preserved at-most-once with a known miss window:
+if the notifier inserted the ledger row and then SMTP or the
+monolith-to-notifier connection failed, the row remained and the notification
+was never retried, so a release email could be missed but not duplicated. This
+was the same product trade-off as ADR 0007.
+
+**Update (ADR 0016):** once notification commands started flowing through a
+requeueing broker, that miss window silently defeated the broker's own retry —
+a redelivery after an SMTP failure would find the row already reserved and get
+acked as a dedup no-op without ever resending. The ledger now has the `PENDING`
+/ `FAILED` state this ADR originally deferred: `sent_at` is set only when
+`Confirm` runs after a successful send, so an unconfirmed row is retried on
+redelivery and only a confirmed row is treated as a true duplicate. See ADR
+0016's "Why redelivery is safe" section for the current mechanics.
 
 Confirmations are keyed by fresh subscription tokens, so a user retry creates a
 new `confirm:{token}` key and can send another confirmation. Release
-notifications are the deliberately deduped at-most-once path.
+notifications are the deliberately deduped at-most-once (now: at-least-once
+until confirmed) path.
 
 ### Consequences
 
@@ -66,5 +76,8 @@ notifications are the deliberately deduped at-most-once path.
 * Good, because the gRPC proto is the cross-service contract.
 * Bad, because transport errors cannot always prove whether SMTP delivery
   happened after a reservation.
-* Bad, because the current ledger has no `PENDING` or `FAILED` state. A future
-  upgrade can add statuses and a retry worker if the product wants fewer misses.
+* Bad, because the reserve/confirm split narrows but does not close the
+  duplicate risk: a crash or DB failure between a successful send and the
+  `Confirm` write leaves the row unconfirmed, so a redelivery can resend. This
+  trades a (smaller) duplicate risk for the missed-notification risk described
+  above; see ADR 0016.

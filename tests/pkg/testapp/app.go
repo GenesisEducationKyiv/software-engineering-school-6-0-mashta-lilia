@@ -44,6 +44,7 @@ const (
 	rateLimitWindow         = time.Minute
 	postgresReadyOccurrence = 2
 	postgresStartupTimeout  = 60 * time.Second
+	notifierSMTPTimeout     = 30 * time.Second
 )
 
 const APIKey = "test-api-key-12345"
@@ -110,10 +111,13 @@ func New(ctx context.Context) (*App, func(), error) {
 		return nil, cleanup, fmt.Errorf("notification client: %w", err)
 	}
 
-	svc := subscription.NewService(
+	svc, err := subscription.NewService(
 		subRepo, repoStore, gh, notifier, token.New(),
 		subscription.NewConfirmLinkBuilder("http://test.local"),
 	)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("subscription service: %w", err)
+	}
 	handler := subhandler.NewHandler(svc, log)
 	hc := health.NewDBChecker(db)
 	router := rest.NewRouter(handler, hc, APIKey, rl, "", log)
@@ -159,7 +163,7 @@ func newNotificationClient(
 
 	templates := notificationsmtp.NewTemplateBuilder()
 	mail, err := notificationsmtp.NewSMTPMailer(
-		mp.Host, mp.SMTPPort, "", "", "noreply@test.local", templates, log,
+		mp.Host, mp.SMTPPort, "", "", "noreply@test.local", notifierSMTPTimeout, templates, log,
 	)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("notification smtp: %w", err)
@@ -174,8 +178,12 @@ func newNotificationClient(
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("notification listener: %w", err)
 	}
+	notificationServer, err := grpcserver.New(notificationService, log)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("notification grpc server: %w", err)
+	}
 	server := grpc.NewServer(grpc.UnaryInterceptor(grpcserver.TraceUnaryServerInterceptor()))
-	notificationv1.RegisterNotificationServiceServer(server, grpcserver.New(notificationService, log))
+	notificationv1.RegisterNotificationServiceServer(server, notificationServer)
 	go func() {
 		if err := server.Serve(listener); err != nil {
 			slog.Warn("notification test server stopped", "err", err)

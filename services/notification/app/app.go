@@ -46,7 +46,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	defer closeQuietly(ctx, a.logger, "dependencies", deps.Close)
 
-	return runGRPCServer(ctx, a.cfg, deps, a.logger)
+	return runServers(ctx, a.cfg, deps, a.logger)
 }
 
 func closeQuietly(ctx context.Context, log *logger.Logger, name string, closer func() error) {

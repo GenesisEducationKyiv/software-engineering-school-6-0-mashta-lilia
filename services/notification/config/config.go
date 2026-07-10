@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/kelseyhightower/envconfig"
 )
 
 type Config struct {
-	GRPCAddr string `envconfig:"GRPC_ADDR" default:":50051"`
+	GRPCAddr    string `envconfig:"GRPC_ADDR" default:":50051"`
+	RabbitMQURL string `envconfig:"RABBITMQ_URL" default:"amqp://localhost:5672/"`
 
 	DBHost     string `envconfig:"DB_HOST" default:"localhost"`
 	DBPort     string `envconfig:"DB_PORT" default:"5432"`
@@ -18,11 +20,12 @@ type Config struct {
 	DBName     string `envconfig:"DB_NAME" default:"notification"`
 	DBSSLMode  string `envconfig:"DB_SSLMODE" default:"require"`
 
-	SMTPHost     string `envconfig:"SMTP_HOST" default:"localhost"`
-	SMTPPort     int    `envconfig:"SMTP_PORT" default:"587"`
-	SMTPUser     string `envconfig:"SMTP_USER"`
-	SMTPPassword string `envconfig:"SMTP_PASSWORD"`
-	SMTPFrom     string `envconfig:"SMTP_FROM" default:"noreply@example.com"`
+	SMTPHost     string        `envconfig:"SMTP_HOST" default:"localhost"`
+	SMTPPort     int           `envconfig:"SMTP_PORT" default:"587"`
+	SMTPUser     string        `envconfig:"SMTP_USER"`
+	SMTPPassword string        `envconfig:"SMTP_PASSWORD"`
+	SMTPFrom     string        `envconfig:"SMTP_FROM" default:"noreply@example.com"`
+	SMTPTimeout  time.Duration `envconfig:"SMTP_TIMEOUT" default:"30s"`
 
 	LogLevel    string `envconfig:"LOG_LEVEL" default:"info"`
 	ServiceName string `envconfig:"SERVICE_NAME" default:"github-release-notifier-notification"`

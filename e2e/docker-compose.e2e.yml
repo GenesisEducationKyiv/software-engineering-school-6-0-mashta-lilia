@@ -26,6 +26,16 @@ services:
       timeout: 5s
       retries: 20
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5673:5672"   # off-by-one to avoid clashing with the dev compose stack
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
   postgres-notifier:
     image: postgres:16-alpine
     environment:
@@ -61,6 +71,8 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       GRPC_ADDR: ":50051"
       DB_HOST: postgres-notifier
@@ -74,6 +86,7 @@ services:
       SMTP_USER: ""
       SMTP_PASSWORD: ""
       SMTP_FROM: "noreply@e2e.local"
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       LOG_LEVEL: "info"
       SERVICE_NAME: github-release-notifier-notification
     # No host port: the unauthenticated gRPC endpoint stays internal to the stack.
@@ -92,6 +105,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       notifier:
         condition: service_healthy
     environment:
@@ -106,7 +121,7 @@ services:
       GITHUB_TOKEN: ""
       SCAN_INTERVAL: "1h"   # disable polling traffic during e2e
       API_KEY: "e2e-api-key"
-      NOTIFIER_ADDR: "notifier:50051"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
       REDIS_ADDR: "redis:6379"
       REDIS_PASSWORD: ""
       REDIS_DB: "0"

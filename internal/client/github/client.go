@@ -86,9 +86,11 @@ func (c *Client) doRequest(ctx context.Context, rawURL string) (*http.Response, 
 		if c.token != "" {
 			req.Header.Set("Authorization", "Bearer "+c.token)
 		}
-		if traceID, ok := tracectx.FromContext(ctx); ok && len(traceID) == 32 {
-			req.Header.Set("Traceparent", "00-"+traceID+"-0000000000000000-01")
+		if traceID, ok := tracectx.FromContext(ctx); ok && tracectx.IsValidID(traceID) {
 			req.Header.Set("X-Request-ID", traceID)
+			if traceparent, ok := tracectx.Traceparent(traceID); ok {
+				req.Header.Set("Traceparent", traceparent)
+			}
 		}
 
 		resp, err := c.httpClient.Do(req)
