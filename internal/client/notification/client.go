@@ -61,11 +61,15 @@ func (c *Client) SendConfirmation(ctx context.Context, email, confirmURL, repo s
 		Repo:       repo,
 	})
 	if err != nil {
+		notificationRequestsTotal.WithLabelValues(kindConfirmation, outcomeFailed).Inc()
 		return transportError("send confirmation", err)
 	}
 	if !resp.GetDelivered() {
-		c.log.Info(ctx, "notification_deduped", "kind", "confirmation", "repo", repo)
+		notificationRequestsTotal.WithLabelValues(kindConfirmation, outcomeDeduped).Inc()
+		c.log.Info(ctx, "notification_deduped", "kind", kindConfirmation, "repo", repo)
+		return nil
 	}
+	notificationRequestsTotal.WithLabelValues(kindConfirmation, outcomeSent).Inc()
 	return nil
 }
 
@@ -80,11 +84,15 @@ func (c *Client) SendReleaseNotification(
 		Release: releaseToProto(rel),
 	})
 	if err != nil {
+		notificationRequestsTotal.WithLabelValues(kindRelease, outcomeFailed).Inc()
 		return transportError("send release notification", err)
 	}
 	if !resp.GetDelivered() {
-		c.log.Info(ctx, "notification_deduped", "kind", "release", "repo", repo)
+		notificationRequestsTotal.WithLabelValues(kindRelease, outcomeDeduped).Inc()
+		c.log.Info(ctx, "notification_deduped", "kind", kindRelease, "repo", repo)
+		return nil
 	}
+	notificationRequestsTotal.WithLabelValues(kindRelease, outcomeSent).Inc()
 	return nil
 }
 
