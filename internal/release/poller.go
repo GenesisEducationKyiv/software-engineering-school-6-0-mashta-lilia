@@ -115,14 +115,13 @@ func (p *Poller) scan(parentCtx context.Context) {
 	}
 	defer p.scanLock.Unlock()
 
-  start := time.Now()
-  defer func() {
-      scanDurationSeconds.Observe(time.Since(start).Seconds())
-      scanCyclesTotal.Inc()
-  }()
+	start := time.Now()
+	defer func() {
+		scanDurationSeconds.Observe(time.Since(start).Seconds())
+		scanCyclesTotal.Inc()
+	}()
 
-  ctx := tracectx.WithTraceID(parentCtx, tracectx.NewID())
-
+	ctx := tracectx.WithTraceID(parentCtx, tracectx.NewID())
 	repos, err := p.repos.GetAll(ctx)
 	if err != nil {
 		p.log.Error(ctx, "poller_get_repos_failed", "err", err)
