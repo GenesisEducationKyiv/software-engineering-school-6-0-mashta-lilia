@@ -226,13 +226,12 @@ func TestSubscribe_RefreshRaceLoserGetsAlreadyExists(t *testing.T) {
 		Return(ErrNotFound)
 	gh := &mockGitHubChecker{}
 	gh.On("RepoExists", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
-	mail := &mockConfirmationSender{}
+	orch := &mockSubscriptionSaga{}
 
-	svc := newTestService(subs, &mockRepoUpserter{}, gh, mail)
+	svc := newTestService(subs, &mockRepoUpserter{}, gh, orch)
 	err := svc.Subscribe(context.Background(), testEmail, "golang/go")
 	assert.ErrorIs(t, err, ErrAlreadyExists)
-	mail.AssertNotCalled(t, "SendConfirmation",
-		mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	orch.AssertNotCalled(t, "StartAndWait", mock.Anything, mock.Anything)
 }
 
 func TestSubscribe_GitHubAPIError(t *testing.T) {

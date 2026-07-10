@@ -2,13 +2,12 @@ package api_test
 
 import (
 	"context"
+	"github-release-notifier/internal/subscription"
+	"github-release-notifier/tests/pkg/testdb"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
-
-	"github-release-notifier/internal/subscription"
-	"github-release-notifier/tests/pkg/testdb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

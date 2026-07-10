@@ -2,14 +2,13 @@ package smtp_test
 
 import (
 	"context"
+	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/services/notification"
+	"github-release-notifier/services/notification/smtp"
 	"net"
 	"strconv"
 	"testing"
 	"time"
-
-	"github-release-notifier/internal/platform/logger"
-	"github-release-notifier/services/notification"
-	"github-release-notifier/services/notification/smtp"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

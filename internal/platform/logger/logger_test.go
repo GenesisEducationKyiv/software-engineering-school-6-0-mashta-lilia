@@ -4,10 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github-release-notifier/internal/platform/tracectx"
 	"testing"
 	"time"
-
-	"github-release-notifier/internal/platform/tracectx"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

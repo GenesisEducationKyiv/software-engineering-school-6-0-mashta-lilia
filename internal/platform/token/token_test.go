@@ -2,9 +2,8 @@ package token_test
 
 import (
 	"encoding/hex"
-	"testing"
-
 	"github-release-notifier/internal/platform/token"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

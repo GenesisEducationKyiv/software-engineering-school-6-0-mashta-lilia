@@ -2,9 +2,8 @@ package health_test
 
 import (
 	"context"
-	"testing"
-
 	"github-release-notifier/internal/platform/health"
+	"testing"
 
 	"github.com/stretchr/testify/require"
 )

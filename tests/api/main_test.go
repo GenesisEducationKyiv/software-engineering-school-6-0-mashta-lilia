@@ -3,11 +3,10 @@ package api_test
 import (
 	"context"
 	"flag"
+	"github-release-notifier/tests/pkg/testapp"
 	"log/slog"
 	"os"
 	"testing"
-
-	"github-release-notifier/tests/pkg/testapp"
 )
 
 var (
