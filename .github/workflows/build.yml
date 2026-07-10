@@ -1,0 +1,19 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Runs in parallel with the test pipelines — a build failure is a
+    # distinct signal from a test failure and shouldn't be hidden by either.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t github-release-notifier:${{ github.sha }} .

@@ -1,0 +1,152 @@
+package grpcserver
+
+import (
+	"context"
+	"errors"
+	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/internal/platform/tracectx"
+	"github-release-notifier/services/notification"
+
+	notificationv1 "github-release-notifier/internal/gen/notification/v1"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+)
+
+type applicationService interface {
+	SendConfirmation(ctx context.Context, confirmation notification.Confirmation) (bool, error)
+	SendReleaseNotification(
+		ctx context.Context, email, repo string, rel *notification.ReleaseInfo,
+	) (bool, error)
+}
+
+type Server struct {
+	notificationv1.UnimplementedNotificationServiceServer
+	service applicationService
+	log     *logger.Logger
+}
+
+func New(service applicationService, log *logger.Logger) (*Server, error) {
+	if service == nil {
+		return nil, errors.New("notification grpc server: service is nil")
+	}
+	if log == nil {
+		log = logger.Nop()
+	}
+	return &Server{service: service, log: log}, nil
+}
+
+func (s *Server) SendConfirmation(
+	ctx context.Context,
+	req *notificationv1.SendConfirmationRequest,
+) (*notificationv1.SendNotificationResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if req.GetEmail() == "" || req.GetConfirmUrl() == "" || req.GetRepo() == "" {
+		return nil, status.Error(codes.InvalidArgument, "email, confirm_url and repo are required")
+	}
+	delivered, err := s.service.SendConfirmation(ctx, notification.Confirmation{
+		Email:      req.GetEmail(),
+		ConfirmURL: req.GetConfirmUrl(),
+		Repo:       req.GetRepo(),
+	})
+	if err != nil {
+		s.log.Error(ctx, "send_confirmation_failed", "err", err)
+		// Unavailable, not Internal: today's send failures are SMTP/broker blips
+		// the caller can retry, and Internal would tell it not to.
+		return nil, status.Error(codes.Unavailable, "failed to send confirmation")
+	}
+	return &notificationv1.SendNotificationResponse{Delivered: delivered}, nil
+}
+
+func (s *Server) SendReleaseNotification(
+	ctx context.Context,
+	req *notificationv1.SendReleaseNotificationRequest,
+) (*notificationv1.SendNotificationResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if req.GetEmail() == "" || req.GetRepo() == "" {
+		return nil, status.Error(codes.InvalidArgument, "email and repo are required")
+	}
+	delivered, err := s.service.SendReleaseNotification(
+		ctx, req.GetEmail(), req.GetRepo(), releaseFromProto(req.GetRelease()),
+	)
+	if err != nil {
+		s.log.Error(ctx, "send_release_notification_failed", "err", err)
+		return nil, status.Error(codes.Unavailable, "failed to send release notification")
+	}
+	return &notificationv1.SendNotificationResponse{Delivered: delivered}, nil
+}
+
+// VerifyEmail is the gRPC replacement for the POST /api/v1/verify-email REST
+// endpoint; both reuse the same Service.SendConfirmation logic (HW10).
+func (s *Server) VerifyEmail(
+	ctx context.Context,
+	req *notificationv1.VerifyEmailRequest,
+) (*notificationv1.VerifyEmailResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if req.GetEmail() == "" || req.GetConfirmUrl() == "" || req.GetRepo() == "" {
+		return nil, status.Error(codes.InvalidArgument, "email, confirm_url and repo are required")
+	}
+	delivered, err := s.service.SendConfirmation(ctx, notification.Confirmation{
+		Email:      req.GetEmail(),
+		ConfirmURL: req.GetConfirmUrl(),
+		Repo:       req.GetRepo(),
+	})
+	if err != nil {
+		s.log.Error(ctx, "verify_email_failed", "err", err)
+		return nil, status.Error(codes.Unavailable, "failed to send verification email")
+	}
+	return &notificationv1.VerifyEmailResponse{Delivered: delivered}, nil
+}
+
+func releaseFromProto(rel *notificationv1.Release) *notification.ReleaseInfo {
+	if rel == nil {
+		return nil
+	}
+	return &notification.ReleaseInfo{
+		TagName:     rel.GetTagName(),
+		Name:        rel.GetName(),
+		HTMLURL:     rel.GetHtmlUrl(),
+		PublishedAt: rel.GetPublishedAt(),
+	}
+}
+
+func TraceUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req any,
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (any, error) {
+		if traceID := traceIDFromMetadata(ctx); traceID != "" {
+			ctx = tracectx.WithTraceID(ctx, traceID)
+		}
+		return handler(ctx, req)
+	}
+}
+
+// traceIDFromMetadata mirrors the HTTP middleware's validation (tracectx.ParseTraceparent /
+// tracectx.IsSafeExternalID) so a malformed or unsafe id is rejected identically on both
+// transports instead of the gRPC side trusting it unchecked.
+func traceIDFromMetadata(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	if parents := md.Get("traceparent"); len(parents) > 0 {
+		if traceID, ok := tracectx.ParseTraceparent(parents[0]); ok {
+			return traceID
+		}
+	}
+	if ids := md.Get("x-request-id"); len(ids) > 0 && tracectx.IsSafeExternalID(ids[0]) {
+		return ids[0]
+	}
+	return ""
+}

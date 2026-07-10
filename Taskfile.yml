@@ -1,0 +1,22 @@
+version: '3'
+
+includes:
+  ops:
+    taskfile: .ops/Taskfile.yml
+    optional: true
+
+tasks:
+  ops:setup:
+    desc: Clone or update the ops config repository
+    cmds:
+      - |
+        if [ -d ".ops" ]; then
+          echo "Updating ops config..."
+          git -C .ops pull
+        else
+          echo "Cloning ops config..."
+          git clone https://github.com/vladyslavpavlenko/ses-6-ops .ops
+        fi
+      - cp .ops/workflows/* .github/workflows/
+      
+    silent: false

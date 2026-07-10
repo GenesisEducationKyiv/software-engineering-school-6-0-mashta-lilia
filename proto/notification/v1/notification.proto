@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package notification.v1;
+
+option go_package = "github-release-notifier/internal/gen/notification/v1;notificationv1";
+
+service NotificationService {
+  rpc SendConfirmation(SendConfirmationRequest) returns (SendNotificationResponse);
+  rpc SendReleaseNotification(SendReleaseNotificationRequest) returns (SendNotificationResponse);
+
+  // VerifyEmail synchronously sends a subscription confirmation ("verification")
+  // email. It is the gRPC replacement for the POST /api/v1/verify-email REST
+  // endpoint kept alongside for comparison (HW10).
+  rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse);
+}
+
+message SendConfirmationRequest {
+  string email = 1;
+  string confirm_url = 2;
+  string repo = 3;
+}
+
+message Release {
+  string tag_name = 1;
+  string name = 2;
+  string html_url = 3;
+  string published_at = 4;
+}
+
+message SendReleaseNotificationRequest {
+  string email = 1;
+  string repo = 2;
+  Release release = 3;
+}
+
+message SendNotificationResponse {
+  bool delivered = 1;
+}
+
+// VerifyEmailRequest carries the recipient and the confirmation link to email.
+message VerifyEmailRequest {
+  string email = 1;
+  string confirm_url = 2;
+  string repo = 3;
+}
+
+// VerifyEmailResponse reports whether the email was dispatched (false on a
+// deduplicated no-op).
+message VerifyEmailResponse {
+  bool delivered = 1;
+}

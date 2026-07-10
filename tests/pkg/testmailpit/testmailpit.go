@@ -1,0 +1,165 @@
+// Package testmailpit boots a mailpit container and exposes the REST subset tests assert on.
+package testmailpit
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
+)
+
+const (
+	startupTimeout = 60 * time.Second
+	pollInterval   = 100 * time.Millisecond
+	listLimit      = 200
+)
+
+type Container struct {
+	c        testcontainers.Container
+	Host     string
+	SMTPPort int
+	HTTPURL  string
+}
+
+func New(ctx context.Context) (*Container, func(), error) {
+	req := testcontainers.ContainerRequest{
+		Image:        "axllent/mailpit:v1.18",
+		ExposedPorts: []string{"1025/tcp", "8025/tcp"},
+		WaitingFor: wait.ForHTTP("/api/v1/info").
+			WithPort("8025/tcp").
+			WithStartupTimeout(startupTimeout),
+	}
+	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+	if err != nil {
+		return nil, func() {}, err
+	}
+	terminate := func() {
+		if err := c.Terminate(context.Background()); err != nil {
+			slog.Warn("terminate mailpit", "err", err)
+		}
+	}
+
+	host, err := c.Host(ctx)
+	if err != nil {
+		return nil, terminate, err
+	}
+	smtpPort, err := c.MappedPort(ctx, "1025")
+	if err != nil {
+		return nil, terminate, err
+	}
+	httpPort, err := c.MappedPort(ctx, "8025")
+	if err != nil {
+		return nil, terminate, err
+	}
+
+	return &Container{
+		c:        c,
+		Host:     host,
+		SMTPPort: smtpPort.Int(),
+		HTTPURL:  fmt.Sprintf("http://%s:%d", host, httpPort.Int()),
+	}, terminate, nil
+}
+
+type Message struct {
+	ID      string `json:"ID"`
+	From    Addr   `json:"From"`
+	To      []Addr `json:"To"`
+	Subject string `json:"Subject"`
+}
+
+type Addr struct {
+	Address string `json:"Address"`
+}
+
+type messagesResponse struct {
+	Total    int       `json:"total"`
+	Messages []Message `json:"messages"`
+}
+
+func (mp *Container) ListMessages(ctx context.Context) ([]Message, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		fmt.Sprintf("%s/api/v1/messages?limit=%d", mp.HTTPURL, listLimit), http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck // body close error is safe to ignore
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // diagnostic only
+		return nil, fmt.Errorf("mailpit list: %d %s", resp.StatusCode, string(body))
+	}
+	var out messagesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Messages, nil
+}
+
+func (mp *Container) MessageBody(ctx context.Context, id string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		mp.HTTPURL+"/api/v1/message/"+id, http.NoBody)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close() //nolint:errcheck // body close error is safe to ignore
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("mailpit get message: %d", resp.StatusCode)
+	}
+	var msg struct {
+		Text string `json:"Text"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&msg); err != nil {
+		return "", err
+	}
+	return msg.Text, nil
+}
+
+func (mp *Container) Reset(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		mp.HTTPURL+"/api/v1/messages", http.NoBody)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close() //nolint:errcheck // body close error is safe to ignore
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("mailpit reset: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (mp *Container) WaitForMessage(ctx context.Context, timeout time.Duration) (Message, error) {
+	pollCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	for {
+		msgs, err := mp.ListMessages(pollCtx)
+		if err == nil && len(msgs) > 0 {
+			return msgs[0], nil
+		}
+		select {
+		case <-pollCtx.Done():
+			return Message{}, fmt.Errorf("no message received within %s: %w", timeout, pollCtx.Err())
+		case <-time.After(pollInterval):
+		}
+	}
+}

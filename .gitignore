@@ -1,0 +1,27 @@
+bin/
+.env
+*.exe
+vendor/
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+*.out
+coverage.html
+
+# Local Go build cache (sandboxed builds)
+.gocache/
+
+# ops config (local cache)
+.ops/
+.golangci.yaml

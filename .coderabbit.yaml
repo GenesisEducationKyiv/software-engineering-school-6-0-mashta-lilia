@@ -1,0 +1,165 @@
+language: en-US
+tone_instructions: |
+  Be concise and constructive. Focus on bugs, security issues, and significant
+  design problems. When flagging an issue, briefly explain why it matters.
+  Do not nitpick formatting, naming, or complexity — those are enforced by
+  golangci-lint.
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  commit_status: true
+  fail_commit_status: false
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: true
+  assess_linked_issues: true
+  related_prs: true
+  abort_on_close: true
+
+  tools:
+    golangci-lint: { enabled: true }
+    gitleaks:      { enabled: true }
+    hadolint:      { enabled: true }
+    actionlint:    { enabled: true }
+    yamllint:      { enabled: true }
+    markdownlint:  { enabled: true }
+    shellcheck:    { enabled: true }
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    base_branches: [main]
+    labels: [ready-for-review]
+
+  finishing_touches:
+    docstrings:  { enabled: false }
+    unit_tests:  { enabled: true }
+
+  pre_merge_checks:
+    title:
+      mode: warning
+      requirements: |
+        Must start with a type prefix (feat/fix/chore/refactor/docs/test)
+        followed by a colon and a space.
+    description:
+      mode: warning
+    custom_checks:
+      - name: PR description sections
+        mode: warning
+        instructions: |
+          PR description must include a Summary section describing what changed and why,
+          and a Test plan section listing how the change was verified.
+
+  path_filters:
+    - '!**/*.pb.go'
+    - '!**/*.pb.gw.go'
+    - '!**/*.mod'
+    - '!**/*.sum'
+    - '!**/vendor/**'
+    - '!**/.git/**'
+    - '!**/.ops/**'
+    - '!**/mocks/**'
+    - '!**/*_mock.go'
+
+  path_instructions:
+    - path: '**/*.go'
+      instructions: |
+        Baseline Go review.
+
+        Errors:
+        - Every error must be checked — no _ = ... for errors.
+        - Wrap with fmt.Errorf("...: %w", err) when adding context;
+          use errors.New when there is no format string.
+        - Error strings: lowercase, no trailing punctuation.
+        - The error must be the last return value.
+
+        Correctness and concurrency:
+        - Flag potential nil-pointer dereferences and data races.
+        - Every goroutine must have a clear exit tied to context cancellation.
+        - context.Context must be propagated through every layer.
+        - defer must be used for resources that need closing
+          (rows, response bodies, files, locks).
+
+        Security:
+        - Flag hardcoded secrets, tokens, or credentials.
+        - Use crypto/rand (not `math/rand`) for tokens or IDs.
+        - Do not log sensitive data — emails, API keys, full request bodies.
+
+        Contracts:
+        - Flag breaking changes in exported function signatures or interface definitions.
+        - Type assertions must use the two-value form (v, ok := x.(T)) — never the
+          single-value form that panics on mismatch.
+
+        Performance:
+        - Pre-allocate slices when length is known.
+        - Flag unbounded caches or in-memory state that grows without limit.
+
+        Do NOT duplicate warnings already produced by golangci-lint
+        (formatting, naming, cyclomatic complexity, ineffective assignments).
+
+    - path: '**/*_test.go'
+      instructions: |
+        Test review.
+        - Mock external dependencies through interfaces, not concrete types.
+        - Verify happy and error paths (validation, not-found, conflict, 5xx).
+        - Use t.Parallel() where safe and t.Cleanup() for teardown.
+        - Flag missing critical scenarios — concurrency, soft-delete filtering,
+          partial failure, cache fallback.
+        - For mutation tests, confirm only the intended row/field changed.
+        - Prefer table-driven tests for functions with multiple input/output combinations.
+
+    - path: '**/*.sql'
+      instructions: |
+        SQL / migration review.
+        - Primary keys mandatory; never JSON/JSONB or TEXT.
+        - Use TIMESTAMPTZ for timestamps; prefer JSONB over JSON.
+        - Index foreign keys and frequently filtered columns.
+        - Use CREATE INDEX CONCURRENTLY for online migrations.
+        - Avoid IF NOT EXISTS in production migrations — it hides drift.
+        - Every up migration must have a corresponding down migration.
+        - Prefer soft deletes (`deleted_at`) over hard deletes.
+        - Use CHECK constraints to enforce enum-like columns instead of free-form TEXT.
+        - Review for data-loss risk on every column drop or type change.
+
+    - path: '**/proto/**'
+      instructions: |
+        Protobuf review.
+        - Stable versioning (v1, v2) for production APIs.
+        - Pagination uses keyset principles with page_token and page_size.
+        - Validation errors use BadRequest details; business-rule errors use ErrorInfo.
+        - Filters live inside request messages, grouped in a oneof.
+        - Avoid reserved words (`descriptor`, `private`) as field names.
+
+    - path: '**/Dockerfile*'
+      instructions: |
+        - Multi-stage builds; pin base images to a tag or digest, not :latest.
+        - Run as a non-root user in the final stage.
+        - Never copy .env or secrets into the image.
+        - Prefer COPY over ADD unless extracting archives.
+
+    - path: '**/.github/workflows/*.{yml,yaml}'
+      instructions: |
+        - Pin third-party actions to a SHA or version tag, never @latest.
+        - Use GitHub Secrets — no plaintext credentials.
+        - Apply least-privilege permissions: blocks.
+        - Flag any step that interpolates untrusted input directly into a shell
+          command (script-injection risk).
+
+chat:
+  auto_reply: true
+  art: false
+
+knowledge_base:
+  learnings:
+    scope: global
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - README.md
+      - CONVENTIONS.md
+      - CLAUDE.md

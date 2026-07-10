@@ -1,0 +1,206 @@
+package app
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"github-release-notifier/internal/api/rest"
+	"github-release-notifier/internal/api/rest/middleware"
+	"github-release-notifier/internal/client/github"
+	notificationclient "github-release-notifier/internal/client/notification"
+	"github-release-notifier/internal/config"
+	"github-release-notifier/internal/messaging"
+	"github-release-notifier/internal/notifyevent"
+	"github-release-notifier/internal/platform/health"
+	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/internal/platform/token"
+	"github-release-notifier/internal/release"
+	"github-release-notifier/internal/repository"
+	"github-release-notifier/internal/saga"
+	"github-release-notifier/internal/sagaevent"
+	"github-release-notifier/internal/subscription"
+	"net/http"
+	"time"
+
+	subhandler "github-release-notifier/internal/api/rest/subscription"
+
+	"github.com/redis/go-redis/v9"
+)
+
+const (
+	rateLimitRequests = 10
+	redisPingTimeout  = 2 * time.Second
+)
+
+type dependencies struct {
+	router           http.Handler
+	poller           *release.Poller
+	orchestrator     *saga.Orchestrator
+	subscribeLimiter *middleware.RateLimiter
+	closers          []func() error
+}
+
+func newRedisClient(cfg *config.Config) *redis.Client {
+	return redis.NewClient(&redis.Options{
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
+}
+
+func buildDependencies(
+	ctx context.Context, cfg *config.Config, db *sql.DB, rdb *redis.Client, log *logger.Logger,
+) (*dependencies, error) {
+	subRepo, err := subscription.NewRepoWithContext(ctx, db, log.With("component", "subscription_repo"))
+	if err != nil {
+		return nil, fmt.Errorf("creating subscription repo: %w", err)
+	}
+	closers := []func() error{subRepo.Close}
+	repoStore, err := repository.NewStoreWithContext(ctx, db, log.With("component", "repository_store"))
+	if err != nil {
+		closeQuietly(ctx, log, "subscription repo", subRepo.Close)
+		return nil, fmt.Errorf("creating tracked repo store: %w", err)
+	}
+	closers = append(closers, repoStore.Close)
+	depsReady := false
+	defer func() {
+		if !depsReady {
+			for _, closeFn := range closers {
+				closeQuietly(ctx, log, "dependency", closeFn)
+			}
+		}
+	}()
+
+	base := github.NewClient(cfg.GitHubToken)
+	ghClient := selectGitHubClient(ctx, base, rdb, cfg.RedisCacheTTL, log)
+
+	notifier, notifierClose, err := buildNotificationPublisher(cfg, log)
+	if err != nil {
+		return nil, fmt.Errorf("creating notification publisher: %w", err)
+	}
+	closers = append(closers, notifierClose)
+
+	orchestrator, sagaClose, err := buildSagaOrchestrator(cfg, db, subRepo, log)
+	if err != nil {
+		return nil, fmt.Errorf("creating saga orchestrator: %w", err)
+	}
+	closers = append(closers, sagaClose)
+
+	tokenGen := token.New()
+	confirmLinks := subscription.NewConfirmLinkBuilder(cfg.BaseURL)
+	subService, err := subscription.NewService(
+		subRepo, repoStore, ghClient, orchestrator, tokenGen, confirmLinks,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating subscription service: %w", err)
+	}
+
+	poller, err := release.NewPoller(
+		repoStore, subRepo, ghClient, notifier, cfg.ScanInterval, log.With("component", "poller"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating poller: %w", err)
+	}
+
+	handler := subhandler.NewHandler(subService, log.With("component", "subscription_handler"))
+	healthChecker := health.NewDBChecker(db)
+	subscribeLimiter := middleware.NewRateLimiter(rateLimitRequests, time.Minute, cfg.TrustedProxy, log)
+
+	router := rest.NewRouter(handler, healthChecker, cfg.APIKey, subscribeLimiter, "swagger.yaml", log)
+
+	depsReady = true
+	return &dependencies{
+		router:           router,
+		poller:           poller,
+		orchestrator:     orchestrator,
+		subscribeLimiter: subscribeLimiter,
+		closers:          closers,
+	}, nil
+}
+
+// buildSagaOrchestrator wires the saga command publisher, store, and compensation
+// adapter into the orchestrator, returning a closer for the broker connection.
+func buildSagaOrchestrator(
+	cfg *config.Config, db *sql.DB, subRepo *subscription.Repo, log *logger.Logger,
+) (*saga.Orchestrator, func() error, error) {
+	commandPublisher, err := messaging.NewPublisher(
+		cfg.RabbitMQURL,
+		messaging.Topology{
+			Exchange:    sagaevent.Exchange,
+			Queue:       sagaevent.CommandsQueue,
+			RoutingKeys: sagaevent.CommandRoutingKeys(),
+		},
+		log.With("component", "saga_command_broker"),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	orchestrator, err := saga.NewOrchestrator(
+		saga.NewStore(db),
+		commandPublisher,
+		subscription.NewSagaCanceller(subRepo),
+		cfg.SagaTimeout,
+		log.With("component", "saga_orchestrator"),
+	)
+	if err != nil {
+		return nil, nil, errors.Join(err, commandPublisher.Close())
+	}
+	return orchestrator, commandPublisher.Close, nil
+}
+
+// buildNotificationPublisher wires the AMQP transport to the domain publisher and
+// returns a closer for the underlying broker connection.
+func buildNotificationPublisher(
+	cfg *config.Config, log *logger.Logger,
+) (*notificationclient.Publisher, func() error, error) {
+	amqpPublisher, err := messaging.NewPublisher(
+		cfg.RabbitMQURL,
+		messaging.Topology{
+			Exchange:    notifyevent.Exchange,
+			Queue:       notifyevent.Queue,
+			RoutingKeys: notifyevent.RoutingKeys(),
+		},
+		log.With("component", "notification_broker"),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	publisher, err := notificationclient.NewPublisher(
+		amqpPublisher, log.With("component", "notification_publisher"),
+	)
+	if err != nil {
+		return nil, nil, errors.Join(err, amqpPublisher.Close())
+	}
+	return publisher, amqpPublisher.Close, nil
+}
+
+func (d *dependencies) Close() error {
+	if d == nil {
+		return nil
+	}
+	var err error
+	for _, closeFn := range d.closers {
+		err = errors.Join(err, closeFn())
+	}
+	return err
+}
+
+type githubClient interface {
+	RepoExists(ctx context.Context, owner, name string) (bool, error)
+	GetLatestRelease(ctx context.Context, owner, name string) (*release.Release, error)
+}
+
+func selectGitHubClient( //nolint:ireturn // composition root chooses between concrete impls
+	ctx context.Context, base *github.Client, rdb *redis.Client, ttl time.Duration,
+	log *logger.Logger,
+) githubClient {
+	pingCtx, cancel := context.WithTimeout(ctx, redisPingTimeout)
+	defer cancel()
+	if err := rdb.Ping(pingCtx).Err(); err != nil {
+		log.Warn(ctx, "redis_unavailable", "err", err, "cache_enabled", false)
+		return base
+	}
+	log.Info(ctx, "redis_connected", "cache_enabled", true)
+	return github.NewCachedClient(base, rdb, ttl, log.With("component", "github_cache"))
+}

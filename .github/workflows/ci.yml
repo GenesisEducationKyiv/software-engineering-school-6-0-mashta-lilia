@@ -1,0 +1,10 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    uses: vladyslavpavlenko/ses-6-ops/.github/workflows/ci.yml@main

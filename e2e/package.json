@@ -1,0 +1,17 @@
+{
+  "name": "github-release-notifier-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "End-to-end browser tests driving the running stack with Playwright.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "install-browsers": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.7.0",
+    "pg": "^8.13.0",
+    "typescript": "^5.6.0"
+  }
+}

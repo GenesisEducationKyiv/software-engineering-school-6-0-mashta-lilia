@@ -1,0 +1,12 @@
+# Minimal Alertmanager config: alerts are grouped and visible in the Alertmanager
+# UI (http://localhost:9093). The default receiver has no destination wired up —
+# add a Slack/email/webhook receiver here to route notifications outward.
+route:
+  receiver: default
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+
+receivers:
+  - name: default

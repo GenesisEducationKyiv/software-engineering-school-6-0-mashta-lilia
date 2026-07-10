@@ -1,0 +1,55 @@
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      hints.enabled: false
+      templates:
+        - condition:
+            equals:
+              docker.container.labels.com.docker.compose.service: app
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
+              json.message_key: msg
+              json.keys_under_root: true
+              json.add_error_key: true
+
+# Windows Docker Desktop fallback:
+# Disable the autodiscover block above and enable this filestream input after
+# mounting a shared app-logs volume at /var/log/app in both app and filebeat.
+# filebeat.inputs:
+#   - type: filestream
+#     id: app-json-file
+#     paths:
+#       - /var/log/app/*.log
+#     parsers:
+#       - ndjson:
+#           message_key: msg
+#           keys_under_root: true
+#           add_error_key: true
+
+processors:
+  - drop_fields:
+      fields: ["agent", "ecs", "input", "host", "log", "stream"]
+      ignore_missing: true
+  # Volume control: debug lines are high-volume / low-value for the ES dashboards.
+  # They stay in container stdout but are not shipped. App-level slog sampling
+  # additionally thins repetitive higher-level lines at the source.
+  - drop_event:
+      when:
+        equals:
+          level: debug
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+
+# Retention: ILM rolls the app-logs index daily and deletes it after 7 days so
+# Elasticsearch storage does not grow without bound.
+setup.ilm.enabled: true
+setup.ilm.rollover_alias: "app-logs"
+setup.ilm.pattern: "{now/d}-000001"
+setup.ilm.policy_name: "app-logs"
+setup.ilm.policy_file: /usr/share/filebeat/ilm-policy.json
+setup.template.name: "app-logs"
+setup.template.pattern: "app-logs-*"
+logging.level: info
