@@ -1,7 +1,7 @@
 # ADR 0001: Layered Architecture with Dependency Inversion
 
 Date: 2026-05-08
-Status: Accepted
+Status: Accepted — the dependency-inversion principle below is still current; the package tree is from before the saga, the message broker, and the notification microservice split, and is superseded by [system-design.md §3.3](../system-design.md#33-layered-architecture-dependency-direction)
 Deciders: Project Author
 
 ## Context and Problem Statement
@@ -53,6 +53,16 @@ internal/
   client/mailer/     ← SMTP transport + email templates
   api/rest/          ← chi router + subscription/, health/, middleware/ sub-pkgs
 ```
+
+**Update:** the tree above is the shape as of this ADR's date. `storage/` no
+longer exists as a standalone package — `release`'s persistence lives in
+`internal/repository` and `subscription`'s lives in `internal/subscription`
+itself — and the module has since grown a `saga` package, a `messaging`
+platform package, wire-contract packages (`notifyevent`, `sagaevent`), and an
+entire second deployable (`services/notification`). The principle below is
+unchanged; see [system-design.md §3.3](../system-design.md#33-layered-architecture-dependency-direction)
+for the current package-to-layer mapping and [`internal/archtest`](../../internal/archtest)
+for the automated check.
 
 The dependency arrow points **inward**: outer layers (`api`, `storage`,
 `client`) import the domain packages (`subscription`, `release`), never the
