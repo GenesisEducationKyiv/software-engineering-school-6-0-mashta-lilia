@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/internal/subscription"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,8 +13,6 @@ import (
 	"testing"
 
 	resthandler "github-release-notifier/internal/api/rest/subscription"
-	"github-release-notifier/internal/platform/logger"
-	"github-release-notifier/internal/subscription"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"

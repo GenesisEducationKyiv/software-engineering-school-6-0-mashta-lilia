@@ -4,14 +4,13 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/internal/release"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github-release-notifier/internal/platform/logger"
-	"github-release-notifier/internal/release"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"

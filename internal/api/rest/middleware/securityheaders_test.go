@@ -1,11 +1,10 @@
 package middleware_test
 
 import (
+	"github-release-notifier/internal/api/rest/middleware"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github-release-notifier/internal/api/rest/middleware"
 
 	"github.com/stretchr/testify/assert"
 )

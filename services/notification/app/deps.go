@@ -5,10 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github-release-notifier/internal/messaging"
 	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/internal/sagaevent"
 	"github-release-notifier/services/notification"
 	"github-release-notifier/services/notification/config"
+	"github-release-notifier/services/notification/consumer"
 	"github-release-notifier/services/notification/grpcserver"
+	"github-release-notifier/services/notification/resthttp"
+	"github-release-notifier/services/notification/sagaparticipant"
 	"github-release-notifier/services/notification/smtp"
 	"github-release-notifier/services/notification/store"
 
@@ -17,6 +22,9 @@ import (
 
 type dependencies struct {
 	notificationServer notificationv1.NotificationServiceServer
+	consumer           *consumer.Consumer
+	sagaParticipant    *sagaparticipant.Participant
+	restHandler        *resthttp.Handler
 	closers            []func() error
 }
 
@@ -27,27 +35,74 @@ func buildDependencies(
 	if err != nil {
 		return nil, fmt.Errorf("creating notification store: %w", err)
 	}
+	depsReady := false
+	defer func() {
+		if !depsReady {
+			closeQuietly(ctx, log, "notification store", ledger.Close)
+		}
+	}()
 
 	templates := smtp.NewTemplateBuilder()
 	mail, err := smtp.NewSMTPMailer(
 		cfg.SMTPHost, cfg.SMTPPort,
 		cfg.SMTPUser, cfg.SMTPPassword,
-		cfg.SMTPFrom, templates, log.With("component", "notification_smtp"),
+		cfg.SMTPFrom, cfg.SMTPTimeout, templates, log.With("component", "notification_smtp"),
 	)
 	if err != nil {
-		closeQuietly(ctx, log, "notification store", ledger.Close)
 		return nil, fmt.Errorf("creating SMTP mailer: %w", err)
 	}
 
 	service, err := notification.NewService(mail, ledger, log.With("component", "notification_service"))
 	if err != nil {
-		closeQuietly(ctx, log, "notification store", ledger.Close)
 		return nil, fmt.Errorf("creating notification service: %w", err)
 	}
 
+	cons, err := consumer.New(service, log.With("component", "notification_consumer"))
+	if err != nil {
+		return nil, fmt.Errorf("creating notification consumer: %w", err)
+	}
+
+	notificationServer, err := grpcserver.New(service, log.With("component", "notification_server"))
+	if err != nil {
+		return nil, fmt.Errorf("creating notification server: %w", err)
+	}
+
+	sagaReplyPublisher, err := messaging.NewPublisher(
+		cfg.RabbitMQURL,
+		messaging.Topology{
+			Exchange:    sagaevent.Exchange,
+			Queue:       sagaevent.RepliesQueue,
+			RoutingKeys: sagaevent.ReplyRoutingKeys(),
+		},
+		log.With("component", "saga_reply_broker"),
+	)
+	if err != nil {
+		closeQuietly(ctx, log, "notification store", ledger.Close)
+		return nil, fmt.Errorf("creating saga reply publisher: %w", err)
+	}
+
+	participant, err := sagaparticipant.New(
+		service, sagaReplyPublisher, log.With("component", "saga_participant"),
+	)
+	if err != nil {
+		closeQuietly(ctx, log, "saga reply publisher", sagaReplyPublisher.Close)
+		closeQuietly(ctx, log, "notification store", ledger.Close)
+		return nil, fmt.Errorf("creating saga participant: %w", err)
+	}
+
+	restHandler, err := resthttp.NewHandler(service, log.With("component", "notification_rest"))
+	if err != nil {
+		closeQuietly(ctx, log, "saga reply publisher", sagaReplyPublisher.Close)
+		closeQuietly(ctx, log, "notification store", ledger.Close)
+		return nil, fmt.Errorf("creating notification rest handler: %w", err)
+	}
+
 	return &dependencies{
-		notificationServer: grpcserver.New(service, log.With("component", "notification_server")),
-		closers:            []func() error{ledger.Close},
+		notificationServer: notificationServer,
+		consumer:           cons,
+		sagaParticipant:    participant,
+		restHandler:        restHandler,
+		closers:            []func() error{sagaReplyPublisher.Close, ledger.Close},
 	}, nil
 }
 

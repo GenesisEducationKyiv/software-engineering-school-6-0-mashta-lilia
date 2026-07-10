@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	NotificationService_SendConfirmation_FullMethodName        = "/notification.v1.NotificationService/SendConfirmation"
 	NotificationService_SendReleaseNotification_FullMethodName = "/notification.v1.NotificationService/SendReleaseNotification"
+	NotificationService_VerifyEmail_FullMethodName             = "/notification.v1.NotificationService/VerifyEmail"
 )
 
 // NotificationServiceClient is the client API for NotificationService service.
@@ -29,6 +30,10 @@ const (
 type NotificationServiceClient interface {
 	SendConfirmation(ctx context.Context, in *SendConfirmationRequest, opts ...grpc.CallOption) (*SendNotificationResponse, error)
 	SendReleaseNotification(ctx context.Context, in *SendReleaseNotificationRequest, opts ...grpc.CallOption) (*SendNotificationResponse, error)
+	// VerifyEmail synchronously sends a subscription confirmation ("verification")
+	// email. It is the gRPC replacement for the POST /api/v1/verify-email REST
+	// endpoint kept alongside for comparison (HW10).
+	VerifyEmail(ctx context.Context, in *VerifyEmailRequest, opts ...grpc.CallOption) (*VerifyEmailResponse, error)
 }
 
 type notificationServiceClient struct {
@@ -59,12 +64,26 @@ func (c *notificationServiceClient) SendReleaseNotification(ctx context.Context,
 	return out, nil
 }
 
+func (c *notificationServiceClient) VerifyEmail(ctx context.Context, in *VerifyEmailRequest, opts ...grpc.CallOption) (*VerifyEmailResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyEmailResponse)
+	err := c.cc.Invoke(ctx, NotificationService_VerifyEmail_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NotificationServiceServer is the server API for NotificationService service.
 // All implementations must embed UnimplementedNotificationServiceServer
 // for forward compatibility.
 type NotificationServiceServer interface {
 	SendConfirmation(context.Context, *SendConfirmationRequest) (*SendNotificationResponse, error)
 	SendReleaseNotification(context.Context, *SendReleaseNotificationRequest) (*SendNotificationResponse, error)
+	// VerifyEmail synchronously sends a subscription confirmation ("verification")
+	// email. It is the gRPC replacement for the POST /api/v1/verify-email REST
+	// endpoint kept alongside for comparison (HW10).
+	VerifyEmail(context.Context, *VerifyEmailRequest) (*VerifyEmailResponse, error)
 	mustEmbedUnimplementedNotificationServiceServer()
 }
 
@@ -80,6 +99,9 @@ func (UnimplementedNotificationServiceServer) SendConfirmation(context.Context, 
 }
 func (UnimplementedNotificationServiceServer) SendReleaseNotification(context.Context, *SendReleaseNotificationRequest) (*SendNotificationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendReleaseNotification not implemented")
+}
+func (UnimplementedNotificationServiceServer) VerifyEmail(context.Context, *VerifyEmailRequest) (*VerifyEmailResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VerifyEmail not implemented")
 }
 func (UnimplementedNotificationServiceServer) mustEmbedUnimplementedNotificationServiceServer() {}
 func (UnimplementedNotificationServiceServer) testEmbeddedByValue()                             {}
@@ -138,6 +160,24 @@ func _NotificationService_SendReleaseNotification_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NotificationService_VerifyEmail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyEmailRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NotificationServiceServer).VerifyEmail(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NotificationService_VerifyEmail_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NotificationServiceServer).VerifyEmail(ctx, req.(*VerifyEmailRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NotificationService_ServiceDesc is the grpc.ServiceDesc for NotificationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -152,6 +192,10 @@ var NotificationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendReleaseNotification",
 			Handler:    _NotificationService_SendReleaseNotification_Handler,
+		},
+		{
+			MethodName: "VerifyEmail",
+			Handler:    _NotificationService_VerifyEmail_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

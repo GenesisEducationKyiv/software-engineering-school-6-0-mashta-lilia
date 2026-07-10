@@ -13,7 +13,8 @@ const (
 	defaultScanInterval = 5 * time.Minute
 	defaultCacheTTL     = 10 * time.Minute
 	defaultServiceName  = "github-release-notifier"
-	defaultNotifierAddr = "localhost:50051"
+	defaultRabbitMQURL  = "amqp://localhost:5672/"
+	defaultSagaTimeout  = 30 * time.Second
 )
 
 type Config struct {
@@ -30,8 +31,9 @@ type Config struct {
 
 	ScanInterval time.Duration
 
-	APIKey       string
-	NotifierAddr string
+	APIKey      string
+	RabbitMQURL string
+	SagaTimeout time.Duration
 
 	RedisAddr     string
 	RedisPassword string
@@ -76,6 +78,10 @@ func NewFromEnv() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	sagaTimeout, err := envDuration("SAGA_TIMEOUT", defaultSagaTimeout)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Config{
 		ServerPort: envOrDefault("SERVER_PORT", "8080"),
@@ -91,8 +97,9 @@ func NewFromEnv() (*Config, error) {
 
 		ScanInterval: scanInterval,
 
-		APIKey:       apiKey,
-		NotifierAddr: envOrDefault("NOTIFIER_ADDR", defaultNotifierAddr),
+		APIKey:      apiKey,
+		RabbitMQURL: envOrDefault("RABBITMQ_URL", defaultRabbitMQURL),
+		SagaTimeout: sagaTimeout,
 
 		RedisAddr:     envOrDefault("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: envOrDefault("REDIS_PASSWORD", ""),

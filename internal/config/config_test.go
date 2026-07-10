@@ -15,7 +15,7 @@ func setBaseEnv(t *testing.T) {
 	t.Setenv("API_KEY", "test-api-key")
 	for _, k := range []string{
 		"SERVER_PORT", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSLMODE",
-		"GITHUB_TOKEN", "SCAN_INTERVAL", "NOTIFIER_ADDR", "REDIS_ADDR", "REDIS_PASSWORD",
+		"GITHUB_TOKEN", "SCAN_INTERVAL", "RABBITMQ_URL", "REDIS_ADDR", "REDIS_PASSWORD",
 		"REDIS_DB", "REDIS_CACHE_TTL", "TRUSTED_PROXY", "LOG_LEVEL", "SERVICE_NAME",
 	} {
 		t.Setenv(k, "")
@@ -38,7 +38,7 @@ func TestNewFromEnv_DefaultsAreApplied(t *testing.T) {
 	assert.Equal(t, "info", cfg.LogLevel)
 	assert.Equal(t, "github-release-notifier", cfg.ServiceName)
 	assert.Equal(t, "test-api-key", cfg.APIKey)
-	assert.Equal(t, "localhost:50051", cfg.NotifierAddr)
+	assert.Equal(t, "amqp://localhost:5672/", cfg.RabbitMQURL)
 }
 
 func TestNewFromEnv_RequiresAPIKey(t *testing.T) {

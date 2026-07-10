@@ -5,13 +5,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github-release-notifier/internal/platform/logger"
+	"github-release-notifier/internal/repository"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github-release-notifier/internal/platform/logger"
-	"github-release-notifier/internal/repository"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

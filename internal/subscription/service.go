@@ -6,33 +6,32 @@ import (
 	"fmt"
 	"github-release-notifier/internal/email"
 	"github-release-notifier/internal/repository"
-	"time"
+	"github-release-notifier/internal/saga"
 )
-
-const rollbackTimeout = 5 * time.Second
 
 type Service struct {
 	subs   subscriptionStore
 	repos  repoUpserter
 	github githubChecker
-	mailer confirmationSender
+	saga   subscriptionSaga
 	tokens tokenGen
 	links  confirmationLinkBuilder
 }
 
-// Panics on nil deps: built once at boot, so a wiring bug should crash startup, not requests.
+// Errors on any nil dep: built once at boot, so a wiring bug fails startup
+// rather than surfacing on a request.
 func NewService(
 	subs subscriptionStore,
 	repos repoUpserter,
 	gh githubChecker,
-	m confirmationSender,
+	orch subscriptionSaga,
 	tokens tokenGen,
 	links confirmationLinkBuilder,
-) *Service {
-	if subs == nil || repos == nil || gh == nil || m == nil || tokens == nil || links == nil {
-		panic("subscription.NewService: all dependencies must be non-nil")
+) (*Service, error) {
+	if subs == nil || repos == nil || gh == nil || orch == nil || tokens == nil || links == nil {
+		return nil, errors.New("subscription.NewService: all dependencies must be non-nil")
 	}
-	return &Service{subs: subs, repos: repos, github: gh, mailer: m, tokens: tokens, links: links}
+	return &Service{subs: subs, repos: repos, github: gh, saga: orch, tokens: tokens, links: links}, nil
 }
 
 func (s *Service) Subscribe(ctx context.Context, rawEmail, rawRepo string) error {
@@ -43,14 +42,24 @@ func (s *Service) Subscribe(ctx context.Context, rawEmail, rawRepo string) error
 	if err := s.ensureRepoExistsOnGitHub(ctx, ref); err != nil {
 		return err
 	}
-	if err := s.ensureNoActiveSubscription(ctx, addr, ref); err != nil {
-		return err
-	}
-	sub, err := s.createPendingSubscription(ctx, addr, ref)
+	sub, err := s.reserveSubscription(ctx, addr, ref)
 	if err != nil {
 		return err
 	}
-	return s.sendConfirmationOrRollback(ctx, sub, ref)
+	// Hand off to the orchestrated saga: it dispatches the confirmation and
+	// compensates (cancels the row) if delivery fails or times out.
+	if err := s.saga.StartAndWait(ctx, saga.SubscriptionData{
+		Email:          sub.Email,
+		Repo:           ref.String(),
+		Owner:          ref.Owner,
+		Name:           ref.Name,
+		Token:          sub.Token,
+		ConfirmURL:     s.links.ConfirmURL(sub.Token),
+		SubscriptionID: sub.ID,
+	}); err != nil {
+		return fmt.Errorf("%w: %w", ErrEmailSendFailed, err)
+	}
+	return nil
 }
 
 func parseSubscribeInput(rawEmail, rawRepo string) (email.Address, repository.Ref, error) {
@@ -76,17 +85,46 @@ func (s *Service) ensureRepoExistsOnGitHub(ctx context.Context, ref repository.R
 	return nil
 }
 
-func (s *Service) ensureNoActiveSubscription(
+// reserveSubscription refreshes a still-pending row (so a never-delivered
+// confirmation can be retried) instead of rejecting the re-subscribe.
+func (s *Service) reserveSubscription(
 	ctx context.Context, addr email.Address, ref repository.Ref,
-) error {
-	already, err := s.subs.Exists(ctx, addr.String(), ref.Owner, ref.Name)
+) (*Subscription, error) {
+	existing, err := s.subs.GetByEmailAndRepo(ctx, addr.String(), ref.Owner, ref.Name)
+	switch {
+	case err == nil:
+		if existing.Status == StatusActive {
+			return nil, ErrAlreadyExists
+		}
+		return s.refreshPendingSubscription(ctx, existing)
+	case errors.Is(err, ErrNotFound):
+		return s.createPendingSubscription(ctx, addr, ref)
+	default:
+		return nil, fmt.Errorf("checking existing subscription: %w", err)
+	}
+}
+
+// refreshPendingSubscription re-issues the token on a still-pending row so the
+// confirmation can be resent without tripping the partial unique index (ADR-0008).
+// UpdateToken is a CAS on the old token: if a concurrent re-subscribe already
+// refreshed this row, ours loses the race (ErrNotFound) and we report
+// ErrAlreadyExists rather than emailing a confirm link for a token we never
+// actually wrote.
+func (s *Service) refreshPendingSubscription(
+	ctx context.Context, sub *Subscription,
+) (*Subscription, error) {
+	token, err := s.tokens.Generate()
 	if err != nil {
-		return fmt.Errorf("checking existing subscription: %w", err)
+		return nil, fmt.Errorf("generating token: %w", err)
 	}
-	if already {
-		return ErrAlreadyExists
+	if err := s.subs.UpdateToken(ctx, sub.ID, sub.Token, token); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, ErrAlreadyExists
+		}
+		return nil, fmt.Errorf("refreshing confirmation token: %w", err)
 	}
-	return nil
+	sub.Token = token
+	return sub, nil
 }
 
 func (s *Service) createPendingSubscription(
@@ -110,25 +148,6 @@ func (s *Service) createPendingSubscription(
 		return nil, fmt.Errorf("creating subscription: %w", err)
 	}
 	return sub, nil
-}
-
-func (s *Service) sendConfirmationOrRollback(
-	ctx context.Context, sub *Subscription, ref repository.Ref,
-) error {
-	confirmURL := s.links.ConfirmURL(sub.Token)
-	if err := s.mailer.SendConfirmation(ctx, sub.Email, confirmURL, ref.String()); err != nil {
-		// Detach cancel so rollback survives client disconnect; stuck pending row blocks retries.
-		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
-		defer cancel()
-		if rbErr := s.subs.UpdateStatus(rollbackCtx, sub.ID, StatusUnsubscribed); rbErr != nil {
-			return errors.Join(
-				fmt.Errorf("%w: %w", ErrEmailSendFailed, err),
-				fmt.Errorf("rollback after email failure: %w", rbErr),
-			)
-		}
-		return fmt.Errorf("%w: %w", ErrEmailSendFailed, err)
-	}
-	return nil
 }
 
 func (s *Service) Confirm(ctx context.Context, token string) error {

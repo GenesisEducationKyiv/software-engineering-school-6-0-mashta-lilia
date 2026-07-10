@@ -20,7 +20,8 @@ The format follows [MADR 3.0](https://adr.github.io/madr/).
 | 0012 | Superseded | [Adapter→Domain Sibling Imports Permitted](0012-adapter-to-domain-sibling-imports.md) | Historical carve-out from rulebook §5; superseded by vertical slicing (2026-05-19). |
 | 0013 | Accepted | [Do not commit `vendor/`](0013-vendor-third-party-dependencies.md) | Deviates from rulebook §2; `go.sum` provides the same supply-chain integrity without the diff cost. |
 | 0014 | Accepted | [Extract Notification Microservice](0014-extract-notification-microservice.md) | Records the HW7 service boundary and DB-per-service split. |
-| 0015 | Accepted | [Synchronous gRPC with Dedup Ledger](0015-sync-grpc-and-dedup-ledger.md) | Captures transport/error semantics and the at-most-once failure window. |
+| 0015 | Accepted* | [Synchronous gRPC with Dedup Ledger](0015-sync-grpc-and-dedup-ledger.md) | Captures transport/error semantics and the at-most-once failure window. *Transport superseded by 0016; dedup ledger still current. |
+| 0016 | Accepted | [Asynchronous Notifications via RabbitMQ](0016-async-notifications-via-rabbitmq.md) | Switches the monolith→notifier hop from sync gRPC to durable broker commands; explains why the existing dedup ledger keeps redelivery safe. |
 
 ## When to Add a New ADR
 

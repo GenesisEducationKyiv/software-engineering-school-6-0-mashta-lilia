@@ -1,11 +1,10 @@
 package api_test
 
 import (
-	"net/http"
-	"testing"
-
 	"github-release-notifier/internal/subscription"
 	"github-release-notifier/tests/pkg/testdb"
+	"net/http"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

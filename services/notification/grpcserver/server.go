@@ -2,10 +2,10 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/platform/tracectx"
 	"github-release-notifier/services/notification"
-	"strings"
 
 	notificationv1 "github-release-notifier/internal/gen/notification/v1"
 
@@ -28,11 +28,14 @@ type Server struct {
 	log     *logger.Logger
 }
 
-func New(service applicationService, log *logger.Logger) *Server {
+func New(service applicationService, log *logger.Logger) (*Server, error) {
+	if service == nil {
+		return nil, errors.New("notification grpc server: service is nil")
+	}
 	if log == nil {
 		log = logger.Nop()
 	}
-	return &Server{service: service, log: log}
+	return &Server{service: service, log: log}, nil
 }
 
 func (s *Server) SendConfirmation(
@@ -52,7 +55,9 @@ func (s *Server) SendConfirmation(
 	})
 	if err != nil {
 		s.log.Error(ctx, "send_confirmation_failed", "err", err)
-		return nil, status.Error(codes.Internal, "failed to send confirmation")
+		// Unavailable, not Internal: today's send failures are SMTP/broker blips
+		// the caller can retry, and Internal would tell it not to.
+		return nil, status.Error(codes.Unavailable, "failed to send confirmation")
 	}
 	return &notificationv1.SendNotificationResponse{Delivered: delivered}, nil
 }
@@ -72,9 +77,33 @@ func (s *Server) SendReleaseNotification(
 	)
 	if err != nil {
 		s.log.Error(ctx, "send_release_notification_failed", "err", err)
-		return nil, status.Error(codes.Internal, "failed to send release notification")
+		return nil, status.Error(codes.Unavailable, "failed to send release notification")
 	}
 	return &notificationv1.SendNotificationResponse{Delivered: delivered}, nil
+}
+
+// VerifyEmail is the gRPC replacement for the POST /api/v1/verify-email REST
+// endpoint; both reuse the same Service.SendConfirmation logic (HW10).
+func (s *Server) VerifyEmail(
+	ctx context.Context,
+	req *notificationv1.VerifyEmailRequest,
+) (*notificationv1.VerifyEmailResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if req.GetEmail() == "" || req.GetConfirmUrl() == "" || req.GetRepo() == "" {
+		return nil, status.Error(codes.InvalidArgument, "email, confirm_url and repo are required")
+	}
+	delivered, err := s.service.SendConfirmation(ctx, notification.Confirmation{
+		Email:      req.GetEmail(),
+		ConfirmURL: req.GetConfirmUrl(),
+		Repo:       req.GetRepo(),
+	})
+	if err != nil {
+		s.log.Error(ctx, "verify_email_failed", "err", err)
+		return nil, status.Error(codes.Unavailable, "failed to send verification email")
+	}
+	return &notificationv1.VerifyEmailResponse{Delivered: delivered}, nil
 }
 
 func releaseFromProto(rel *notificationv1.Release) *notification.ReleaseInfo {
@@ -103,24 +132,21 @@ func TraceUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
+// traceIDFromMetadata mirrors the HTTP middleware's validation (tracectx.ParseTraceparent /
+// tracectx.IsSafeExternalID) so a malformed or unsafe id is rejected identically on both
+// transports instead of the gRPC side trusting it unchecked.
 func traceIDFromMetadata(ctx context.Context) string {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ""
 	}
-	if ids := md.Get("x-request-id"); len(ids) > 0 {
+	if parents := md.Get("traceparent"); len(parents) > 0 {
+		if traceID, ok := tracectx.ParseTraceparent(parents[0]); ok {
+			return traceID
+		}
+	}
+	if ids := md.Get("x-request-id"); len(ids) > 0 && tracectx.IsSafeExternalID(ids[0]) {
 		return ids[0]
 	}
-	if parents := md.Get("traceparent"); len(parents) > 0 {
-		return traceIDFromTraceparent(parents[0])
-	}
 	return ""
-}
-
-func traceIDFromTraceparent(value string) string {
-	parts := strings.Split(value, "-")
-	if len(parts) < 4 || len(parts[1]) != 32 {
-		return ""
-	}
-	return parts[1]
 }

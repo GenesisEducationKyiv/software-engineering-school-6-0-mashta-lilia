@@ -2,15 +2,14 @@ package middleware_test
 
 import (
 	"encoding/json"
+	"github-release-notifier/internal/api/rest/middleware"
+	"github-release-notifier/internal/platform/logger"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
 	"testing/synctest"
 	"time"
-
-	"github-release-notifier/internal/api/rest/middleware"
-	"github-release-notifier/internal/platform/logger"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

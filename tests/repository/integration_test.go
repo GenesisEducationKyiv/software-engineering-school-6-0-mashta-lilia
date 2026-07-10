@@ -5,15 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
-	"log/slog"
-	"os"
-	"testing"
-	"time"
-
 	"github-release-notifier/internal/platform/logger"
 	"github-release-notifier/internal/repository"
 	"github-release-notifier/internal/subscription"
 	"github-release-notifier/tests/pkg/testdb"
+	"log/slog"
+	"os"
+	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -206,7 +205,7 @@ func TestIntegration_SubscriptionRepo_UpdateStatus_TriggersUpdatedAt(t *testing.
 		"updated_at trigger should advance the timestamp")
 }
 
-func TestIntegration_SubscriptionRepo_Exists(t *testing.T) {
+func TestIntegration_SubscriptionRepo_GetByEmailAndRepo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -216,9 +215,8 @@ func TestIntegration_SubscriptionRepo_Exists(t *testing.T) {
 	repo := subscription.NewRepo(testDB, logger.Nop())
 	ctx := context.Background()
 
-	exists, err := repo.Exists(ctx, "user@example.com", "golang", "go")
-	require.NoError(t, err)
-	assert.False(t, exists)
+	_, err := repo.GetByEmailAndRepo(ctx, "user@example.com", "golang", "go")
+	assert.ErrorIs(t, err, subscription.ErrNotFound)
 
 	sub := &subscription.Subscription{
 		Email:     "user@example.com",
@@ -229,14 +227,13 @@ func TestIntegration_SubscriptionRepo_Exists(t *testing.T) {
 	}
 	require.NoError(t, repo.Create(ctx, sub))
 
-	exists, err = repo.Exists(ctx, "user@example.com", "golang", "go")
+	found, err := repo.GetByEmailAndRepo(ctx, "user@example.com", "golang", "go")
 	require.NoError(t, err)
-	assert.True(t, exists)
+	assert.Equal(t, sub.ID, found.ID)
 
 	require.NoError(t, repo.UpdateStatus(ctx, sub.ID, subscription.StatusUnsubscribed))
-	exists, err = repo.Exists(ctx, "user@example.com", "golang", "go")
-	require.NoError(t, err)
-	assert.False(t, exists, "unsubscribed rows should not count as existing")
+	_, err = repo.GetByEmailAndRepo(ctx, "user@example.com", "golang", "go")
+	assert.ErrorIs(t, err, subscription.ErrNotFound, "unsubscribed rows should not count as existing")
 }
 
 func TestIntegration_SubscriptionRepo_PartialUniqueIndex(t *testing.T) {

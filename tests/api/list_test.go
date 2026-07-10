@@ -2,12 +2,11 @@ package api_test
 
 import (
 	"encoding/json"
+	"github-release-notifier/internal/subscription"
+	"github-release-notifier/tests/pkg/testdb"
 	"net/http"
 	"net/url"
 	"testing"
-
-	"github-release-notifier/internal/subscription"
-	"github-release-notifier/tests/pkg/testdb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

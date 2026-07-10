@@ -2,9 +2,8 @@ package email_test
 
 import (
 	"errors"
-	"testing"
-
 	"github-release-notifier/internal/email"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

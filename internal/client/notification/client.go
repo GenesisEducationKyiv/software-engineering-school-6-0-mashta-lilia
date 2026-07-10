@@ -16,7 +16,7 @@ import (
 )
 
 // Bounds each RPC so a wedged notifier cannot park poller workers forever.
-const callTimeout = 30 * time.Second
+const CallTimeout = 30 * time.Second
 
 type Client struct {
 	client notificationv1.NotificationServiceClient
@@ -53,7 +53,7 @@ func NewClient(client notificationv1.NotificationServiceClient, log *logger.Logg
 }
 
 func (c *Client) SendConfirmation(ctx context.Context, email, confirmURL, repo string) error {
-	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	ctx, cancel := context.WithTimeout(ctx, CallTimeout)
 	defer cancel()
 	resp, err := c.client.SendConfirmation(ctx, &notificationv1.SendConfirmationRequest{
 		Email:      email,
@@ -76,7 +76,7 @@ func (c *Client) SendConfirmation(ctx context.Context, email, confirmURL, repo s
 func (c *Client) SendReleaseNotification(
 	ctx context.Context, email, repo string, rel *release.Release,
 ) error {
-	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	ctx, cancel := context.WithTimeout(ctx, CallTimeout)
 	defer cancel()
 	resp, err := c.client.SendReleaseNotification(ctx, &notificationv1.SendReleaseNotificationRequest{
 		Email:   email,
@@ -94,6 +94,21 @@ func (c *Client) SendReleaseNotification(
 	}
 	notificationRequestsTotal.WithLabelValues(kindRelease, outcomeSent).Inc()
 	return nil
+}
+
+// VerifyEmail is the gRPC counterpart of the REST verify-email call (HW10).
+func (c *Client) VerifyEmail(ctx context.Context, email, confirmURL, repo string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, CallTimeout)
+	defer cancel()
+	resp, err := c.client.VerifyEmail(ctx, &notificationv1.VerifyEmailRequest{
+		Email:      email,
+		ConfirmUrl: confirmURL,
+		Repo:       repo,
+	})
+	if err != nil {
+		return false, transportError("verify email", err)
+	}
+	return resp.GetDelivered(), nil
 }
 
 func releaseToProto(rel *release.Release) *notificationv1.Release {

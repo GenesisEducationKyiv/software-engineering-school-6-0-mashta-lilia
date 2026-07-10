@@ -15,6 +15,7 @@ import (
 	platformpostgres "github-release-notifier/internal/platform/postgres"
 	"github-release-notifier/internal/platform/token"
 	"github-release-notifier/internal/repository"
+	"github-release-notifier/internal/saga"
 	"github-release-notifier/internal/subscription"
 	"github-release-notifier/services/notification"
 	"github-release-notifier/services/notification/grpcserver"
@@ -44,9 +45,21 @@ const (
 	rateLimitWindow         = time.Minute
 	postgresReadyOccurrence = 2
 	postgresStartupTimeout  = 60 * time.Second
+	notifierSMTPTimeout     = 30 * time.Second
 )
 
 const APIKey = "test-api-key-12345"
+
+// syncSaga drives confirmation synchronously over the in-process gRPC client for
+// the integration harness, standing in for the broker-backed orchestrator that
+// the production composition root wires.
+type syncSaga struct {
+	client *notificationclient.Client
+}
+
+func (s syncSaga) StartAndWait(ctx context.Context, data saga.SubscriptionData) error {
+	return s.client.SendConfirmation(ctx, data.Email, data.ConfirmURL, data.Repo)
+}
 
 type App struct {
 	Server      *httptest.Server
@@ -110,10 +123,13 @@ func New(ctx context.Context) (*App, func(), error) {
 		return nil, cleanup, fmt.Errorf("notification client: %w", err)
 	}
 
-	svc := subscription.NewService(
-		subRepo, repoStore, gh, notifier, token.New(),
+	svc, err := subscription.NewService(
+		subRepo, repoStore, gh, syncSaga{client: notifier}, token.New(),
 		subscription.NewConfirmLinkBuilder("http://test.local"),
 	)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("subscription service: %w", err)
+	}
 	handler := subhandler.NewHandler(svc, log)
 	hc := health.NewDBChecker(db)
 	router := rest.NewRouter(handler, hc, APIKey, rl, "", log)
@@ -159,7 +175,7 @@ func newNotificationClient(
 
 	templates := notificationsmtp.NewTemplateBuilder()
 	mail, err := notificationsmtp.NewSMTPMailer(
-		mp.Host, mp.SMTPPort, "", "", "noreply@test.local", templates, log,
+		mp.Host, mp.SMTPPort, "", "", "noreply@test.local", notifierSMTPTimeout, templates, log,
 	)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("notification smtp: %w", err)
@@ -174,8 +190,12 @@ func newNotificationClient(
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("notification listener: %w", err)
 	}
+	notificationServer, err := grpcserver.New(notificationService, log)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("notification grpc server: %w", err)
+	}
 	server := grpc.NewServer(grpc.UnaryInterceptor(grpcserver.TraceUnaryServerInterceptor()))
-	notificationv1.RegisterNotificationServiceServer(server, grpcserver.New(notificationService, log))
+	notificationv1.RegisterNotificationServiceServer(server, notificationServer)
 	go func() {
 		if err := server.Serve(listener); err != nil {
 			slog.Warn("notification test server stopped", "err", err)

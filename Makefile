@@ -1,4 +1,4 @@
-.PHONY: run build proto build-notifier run-notifier test test-integration test-e2e test-all lint docker-up docker-down migrate-up migrate-down kibana-bootstrap
+.PHONY: run build proto buf-lint bench build-notifier run-notifier test test-integration test-e2e test-all lint docker-up docker-down migrate-up migrate-down kibana-bootstrap
 
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -13,6 +13,13 @@ build:
 
 proto:
 	buf generate
+
+buf-lint:
+	buf lint
+
+# REST vs gRPC verify-email comparison (HW10). In-process server, no-op sender.
+bench:
+	go test -run='^$$' -bench='VerifyEmail' -benchmem ./internal/client/notification/...
 
 build-notifier:
 	go build -ldflags "$(LDFLAGS)" -o bin/notifier ./services/notification/cmd/notifier
